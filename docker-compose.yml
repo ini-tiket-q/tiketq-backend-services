@@ -1,0 +1,93 @@
+version: '3.9'
+
+services:
+  api-gateway:
+    build:
+      context: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - auth-service
+      - user-service
+      - flights-service
+      - ferries-service
+      - hotels-service
+      - ppob-service
+      - payment-service
+    networks:
+      - tiketq-net
+
+  auth-service:
+    build:
+      context: ./auth-service
+    container_name: auth-service
+    networks:
+      - tiketq-net
+
+  user-service:
+    build:
+      context: ./user-service
+    container_name: user-service
+    networks:
+      - tiketq-net
+
+  flights-service:
+    build:
+      context: ./flights-service
+    container_name: flights-service
+    networks:
+      - tiketq-net
+
+  ferries-service:
+    build:
+      context: ./ferries-service
+    container_name: ferries-service
+    networks:
+      - tiketq-net
+
+  hotels-service:
+    build:
+      context: ./hotels-service
+    container_name: hotels-service
+    networks:
+      - tiketq-net
+
+  ppob-service:
+    build:
+      context: ./ppob-service
+    container_name: ppob-service
+    networks:
+      - tiketq-net
+
+  payment-service:
+    build:
+      context: ./payment-service
+    container_name: payment-service
+    networks:
+      - tiketq-net
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tiketq_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - tiketq-net
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.co
