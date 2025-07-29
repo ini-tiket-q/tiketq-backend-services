@@ -88,6 +88,9 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 │   └── routes/
 │        └── payment.py
 │
+├── secrets/                     # Create this please, see Docker-compose for reference
+│   └── db_user.txt
+│
 └── postgres/
     └── init.sql                 # DB schema, for user and ticker tables only
 
