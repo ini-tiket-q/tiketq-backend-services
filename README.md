@@ -30,8 +30,6 @@ Monorepo for TiketQ OTA microservices — flights, ferries, hotels, PPOB, paymen
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── models.py
-│   └── routes/
-│       └── user.py
 │
 ├── user-service/
 │   ├── app.py
@@ -39,6 +37,8 @@ Monorepo for TiketQ OTA microservices — flights, ferries, hotels, PPOB, paymen
 │   ├── requirements.txt
 │   ├── requirements.txt
 │   └── models.py
+│   └── routes/
+│       └── user.py
 │
 ├── flights-service/
 │   ├── app.py
