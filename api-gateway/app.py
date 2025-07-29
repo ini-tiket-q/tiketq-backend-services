@@ -11,6 +11,12 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 
+PUBLIC_ROUTES = {
+    "/auth/login",
+    "/auth/register",
+    "/auth/verify-token",
+}
+
 # Load auth service URL
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 
@@ -31,23 +37,18 @@ async def verify_token(token: str) -> bool:
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """
-    Middleware to check token before routing request.
-    Skip for login/register routes.
-    """
-    path = request.url.path
+    path = request.url.path.lower()
 
-    # Public routes — no token required
-    if path.startswith("/auth/login") or path.startswith("/auth/register"):
+    # Check if request path starts with any public route prefix
+    if any(path.startswith(route) for route in PUBLIC_ROUTES):
         return await call_next(request)
 
-    # Extract Bearer token
     auth_header = request.headers.get("Authorization")
-    token = auth_header.split(" ")[1] if auth_header and " " in auth_header else None
+    token = None
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
 
-    # Validate with auth-service
-    is_valid = await verify_token(token)
-    if not is_valid:
+    if not token or not await verify_token(token):
         return Response(content="Unauthorized", status_code=401)
 
     return await call_next(request)
