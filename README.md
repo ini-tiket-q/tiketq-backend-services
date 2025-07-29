@@ -30,27 +30,36 @@ Monorepo for TiketQ OTA microservices — flights, ferries, hotels, PPOB, paymen
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── models.py
+│   └── routes/
+│       └── user.py
+│
+├── user-service/
+│   ├── app.py
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── requirements.txt
+│   └── models.py
 │
 ├── flights-service/
 │   ├── app.py
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── services/
-│       └── garuda_api.py
+│       └── get_flight.py
 │
 ├── ferries-service/
 │   ├── app.py
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── services/
-│       └── pelni_api.py
+│       └── get_schedule.py
 │
 ├── hotels-service/
 │   ├── app.py
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── services/
-│       └── tiketcom_wrapper.py
+│       └── get_hotels.py
 │
 ├── ppob-service/
 │   ├── app.py
