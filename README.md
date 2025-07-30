@@ -207,7 +207,7 @@ The system implements a comprehensive RBAC system with two roles:
 | Transaction | `GET /transactions/{id}` | ✅* | ✅ | Get transaction |
 | Transaction | `POST /transactions/{id}/refund` | ❌ | ✅ | Process refund |
 
-*Users can only access their own profiles
+*Users can only access their own profiles/transactions
 
 ### 📚 API Documentation
 
@@ -221,7 +221,8 @@ All services provide comprehensive API documentation:
 #### **Service-Specific Documentation**
 - **Auth Service**: Complete authentication and user management APIs
 - **User Service**: User profile management with RBAC protection
-- **OpenAPI Specifications**: Available in `auth-service/openapi.json` and `user-service/openapi.json`
+- **Transaction Service**: Transaction management, order processing, and payment handling
+- **OpenAPI Specifications**: Available in each service directory
 
 ### Architecture: Ports and Adapters (Hexagonal Architecture)
 To ensure maintainability and adaptability, the services are designed following the **Ports and Adapters** architectural pattern, also known as Hexagonal Architecture. This design separates the core business logic from external dependencies, allowing each component to evolve independently.
@@ -245,6 +246,8 @@ Each service follows a consistent structure:
 ```bash
 /service-name/
 ├── app.py                    # Entry point for the service (API server)
+├── Dockerfile                # Container configuration
+├── requirements.txt          # Python dependencies
 ├── domain/                   # Business logic and domain models
 │   ├── models.py             # Data models representing core entities
 │   ├── services.py           # Business use cases and domain services (ports)
