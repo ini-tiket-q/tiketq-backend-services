@@ -260,9 +260,9 @@ Each service follows a consistent structure:
 ```
 
 ### Database Usage
-- The database (PostgreSQL) stores **user-related data**, **authentication data**, and **ticketing information**.
+- The database (PostgreSQL) stores **user-related data**, **authentication data**, **transaction data**, and **ticketing information**.
 - **Role-based access control** is enforced at both application and database levels.
-- Only services that require persistent user or ticket data interact with the database via well-defined repository interfaces and adapters.
+- Only services that require persistent data interact with the database via well-defined repository interfaces and adapters.
 - External API data is consumed directly by service adapters without persistence, except where caching or state is explicitly needed.
 
 ## Architecture Diagram
