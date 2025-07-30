@@ -10,6 +10,7 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 ├── .env
 ├── README.md
 ├── RBAC_DOCUMENTATION.md      # RBAC implementation guide
+├── API_SPECIFICATIONS.md       # Detailed API specifications
 │
 ├── nginx/
 │   └── nginx.conf
@@ -44,7 +45,7 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 │
 ├── user-service/
 │   ├── app.py                   # User profile management service
-│   ├── Dockerfile
+│   ├── Dockerfile               # Container configuration
 │   ├── requirements.txt
 │   ├── test_user_service.py     # User service test script
 │   ├── openapi.json             # OpenAPI specification
@@ -59,9 +60,27 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 │   └── routes/
 │        └── user_routes.py      # REST API adapter (inbound) with RBAC
 │
+├── transaction-service/
+│   ├── app.py                   # Transaction management service
+│   ├── Dockerfile               # Container configuration
+│   ├── requirements.txt
+│   ├── README.md                # Transaction service documentation
+│   ├── domain/
+│   │    ├── models.py           # Transaction, Order, Payment models
+│   │    ├── services.py         # Business logic (ports)
+│   │    └── repository.py       # Transaction DB interface
+│   ├── adapters/
+│   │    ├── db.py               # DB adapter for transaction data
+│   │    ├── payment_gateway.py  # Payment gateway integration
+│   │    └── webhook_handler.py  # Webhook handlers
+│   └── routes/
+│        ├── transaction_routes.py # Transaction management API
+│        ├── order_routes.py      # Order processing API
+│        └── payment_routes.py    # Payment processing API
+│
 ├── flights-service/
 │   ├── app.py
-│   ├── Dockerfile
+│   ├── Dockerfile               # Container configuration
 │   ├── requirements.txt
 │   ├── domain/
 │   │    ├── models.py           # Flight domain models
@@ -73,17 +92,47 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 │        └── flights.py          # Inbound API
 │
 ├── ferries-service/
-│   ├── ... (same pattern)
+│   ├── app.py
+│   ├── Dockerfile               # Container configuration
+│   ├── requirements.txt
+│   ├── domain/
+│   │    ├── models.py           # Ferry domain models
+│   │    ├── services.py         # Business logic (ports)
+│   │    └── repository.py       # Repository interfaces
+│   ├── adapters/
+│   │    └── external_api.py     # External ferry provider clients
+│   └── routes/
+│        └── ferries.py          # Inbound API
 │
 ├── hotels-service/
-│   ├── ... (same pattern)
+│   ├── app.py
+│   ├── Dockerfile               # Container configuration
+│   ├── requirements.txt
+│   ├── domain/
+│   │    ├── models.py           # Hotel domain models
+│   │    ├── services.py         # Business logic (ports)
+│   │    └── repository.py       # Repository interfaces
+│   ├── adapters/
+│   │    └── external_api.py     # External hotel provider clients
+│   └── routes/
+│        └── hotels.py           # Inbound API
 │
 ├── ppob-service/
-│   ├── ... (same pattern)
+│   ├── app.py
+│   ├── Dockerfile               # Container configuration
+│   ├── requirements.txt
+│   ├── domain/
+│   │    ├── models.py           # PPOB domain models
+│   │    ├── services.py         # Business logic (ports)
+│   │    └── repository.py       # Repository interfaces
+│   ├── adapters/
+│   │    └── external_api.py     # External PPOB provider clients
+│   └── routes/
+│        └── ppob.py             # Inbound API
 │
 ├── payment-service/
 │   ├── app.py
-│   ├── Dockerfile
+│   ├── Dockerfile               # Container configuration
 │   ├── requirements.txt
 │   ├── domain/
 │   │    ├── models.py
@@ -99,7 +148,7 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 │   └── db_user.txt
 │
 └── postgres/
-    └── init.sql                 # DB schema with user, auth, and role tables
+    └── init.sql                 # DB schema with user, auth, role, and transaction tables
 
 ```
 
@@ -111,6 +160,7 @@ The backend is implemented as a collection of loosely coupled microservices with
 - `api-gateway`: Routes incoming client requests to appropriate services.
 - `auth-service`: Manages user authentication, authorization, and **Role-Based Access Control (RBAC)**.
 - `user-service`: Handles user profile management with **RBAC-protected endpoints**.
+- `transaction-service`: Manages booking transactions, order processing, and payment confirmations.
 - `flights-service`, `ferries-service`, `hotels-service`, `ppob-service`: Integrate with various external APIs to provide booking and information services.
 - `payment-service`: Manages payment processing and related webhooks.
 - `postgres`: Contains database schema initialization scripts with role support.
@@ -153,6 +203,9 @@ The system implements a comprehensive RBAC system with two roles:
 | User | `PUT /users/{id}` | ✅* | ✅ | Update profile |
 | User | `DELETE /users/{id}` | ❌ | ✅ | Delete profile |
 | User | `GET /users/` | ❌ | ✅ | List all users |
+| Transaction | `POST /transactions/` | ✅ | ✅ | Create transaction |
+| Transaction | `GET /transactions/{id}` | ✅* | ✅ | Get transaction |
+| Transaction | `POST /transactions/{id}/refund` | ❌ | ✅ | Process refund |
 
 *Users can only access their own profiles
 
