@@ -1,0 +1,466 @@
+{
+  "openapi": "3.0.2",
+  "info": {
+    "title": "TiketQ User Service",
+    "description": "User profile management service with Role-Based Access Control (RBAC)",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "User Profiles",
+      "description": "User profile management operations with RBAC protection"
+    },
+    {
+      "name": "User Management",
+      "description": "Admin-only user management operations"
+    }
+  ],
+  "paths": {
+    "/users/": {
+      "post": {
+        "tags": ["User Management"],
+        "summary": "Create user profile",
+        "description": "Create a new user profile. Admin access required.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileCreate"
+              },
+              "example": {
+                "email": "user@example.com",
+                "first_name": "John",
+                "last_name": "Doe",
+                "phone_number": "+1234567890",
+                "date_of_birth": "1990-01-01",
+                "address": "123 Main St, City, Country",
+                "role": "user"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User profile created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid data or user already exists"
+          },
+          "401": {
+            "description": "Invalid authentication credentials"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "get": {
+        "tags": ["User Management"],
+        "summary": "List all users",
+        "description": "Get a list of all user profiles with pagination. Admin access required.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of users retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserProfile"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/users/{user_id}": {
+      "get": {
+        "tags": ["User Profiles"],
+        "summary": "Get user profile by ID",
+        "description": "Get user profile by ID. Users can only access their own profile, admins can access any profile.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the user to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials"
+          },
+          "403": {
+            "description": "Access denied - can only access own profile"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      },
+      "put": {
+        "tags": ["User Profiles"],
+        "summary": "Update user profile",
+        "description": "Update user profile information. Users can only update their own profile, admins can update any profile.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the user to update"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileUpdate"
+              },
+              "example": {
+                "first_name": "Jane",
+                "phone_number": "+0987654321",
+                "address": "456 New St, City, Country"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User profile updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid data"
+          },
+          "401": {
+            "description": "Invalid authentication credentials"
+          },
+          "403": {
+            "description": "Access denied - can only update own profile"
+          },
+          "404": {
+            "description": "User not found"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["User Management"],
+        "summary": "Delete user profile",
+        "description": "Delete a user profile. Admin access required.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the user to delete"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "User profile deleted successfully"
+          },
+          "401": {
+            "description": "Invalid authentication credentials"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/users/email/{email}": {
+      "get": {
+        "tags": ["User Profiles"],
+        "summary": "Get user profile by email",
+        "description": "Get user profile by email address. Users can only access their own profile, admins can access any profile.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "email"
+            },
+            "description": "Email address of the user to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials"
+          },
+          "403": {
+            "description": "Access denied - can only access own profile"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "UserRole": {
+        "type": "string",
+        "enum": ["user", "admin"],
+        "description": "User role enumeration"
+      },
+      "UserProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "User profile ID"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "User's email address"
+          },
+          "first_name": {
+            "type": "string",
+            "description": "User's first name"
+          },
+          "last_name": {
+            "type": "string",
+            "description": "User's last name"
+          },
+          "phone_number": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's phone number"
+          },
+          "date_of_birth": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's date of birth"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's address"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole",
+            "description": "User's role"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Profile creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Profile last update timestamp"
+          }
+        },
+        "required": ["email", "first_name", "last_name", "role"]
+      },
+      "UserProfileCreate": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "User's email address"
+          },
+          "first_name": {
+            "type": "string",
+            "description": "User's first name"
+          },
+          "last_name": {
+            "type": "string",
+            "description": "User's last name"
+          },
+          "phone_number": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's phone number"
+          },
+          "date_of_birth": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's date of birth"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's address"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole",
+            "default": "user",
+            "description": "User's role"
+          }
+        },
+        "required": ["email", "first_name", "last_name"]
+      },
+      "UserProfileUpdate": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's first name"
+          },
+          "last_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's last name"
+          },
+          "phone_number": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's phone number"
+          },
+          "date_of_birth": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's date of birth"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "description": "User's address"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole",
+            "nullable": true,
+            "description": "User's role"
+          }
+        }
+      }
+    }
+  }
+} 

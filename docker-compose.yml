@@ -8,7 +8,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env               # Your app configs (no secrets here)
     depends_on:
       - auth-service
       - user-service
@@ -19,20 +19,27 @@ services:
       - payment-service
     networks:
       - tiketq-net
+    restart: unless-stopped
 
   auth-service:
     build:
       context: ./auth-service
     container_name: auth-service
+    env_file:
+      - .env
     networks:
       - tiketq-net
+    restart: unless-stopped
 
   user-service:
     build:
       context: ./user-service
     container_name: user-service
+    env_file:
+      - .env
     networks:
       - tiketq-net
+    restart: unless-stopped
 
   flights-service:
     build:
@@ -40,6 +47,7 @@ services:
     container_name: flights-service
     networks:
       - tiketq-net
+    restart: unless-stopped
 
   ferries-service:
     build:
@@ -47,6 +55,7 @@ services:
     container_name: ferries-service
     networks:
       - tiketq-net
+    restart: unless-stopped
 
   hotels-service:
     build:
@@ -54,6 +63,7 @@ services:
     container_name: hotels-service
     networks:
       - tiketq-net
+    restart: unless-stopped
 
   ppob-service:
     build:
@@ -61,6 +71,7 @@ services:
     container_name: ppob-service
     networks:
       - tiketq-net
+    restart: unless-stopped
 
   payment-service:
     build:
@@ -68,21 +79,26 @@ services:
     container_name: payment-service
     networks:
       - tiketq-net
+    restart: unless-stopped
 
   postgres:
     image: postgres:15
     container_name: postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: tiketq_db
+      POSTGRES_USER_FILE: /run/secrets/db_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5432:5432"
     networks:
       - tiketq-net
+    secrets:
+      - db_user
+      - db_password
+    restart: unless-stopped
 
   nginx:
     image: nginx:latest
@@ -90,4 +106,20 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.co
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - tiketq-net
+    restart: unless-stopped
+
+secrets:
+  db_user:
+    file: ./secrets/db_user.txt
+  db_password:
+    file: ./secrets/db_password.txt
+
+networks:
+  tiketq-net:
+    driver: bridge
+
+volumes:
+  postgres_data:

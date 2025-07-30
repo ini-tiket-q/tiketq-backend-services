@@ -2,8 +2,9 @@ import os
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
-from domain.models import UserCreate, Token, UserInDB
+from domain.models import UserCreate, Token, UserInDB, TokenData, UserRole, UserResponse
 from adapters.db import DBUserRepository
+from typing import Optional
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 repo = DBUserRepository()
@@ -29,9 +30,9 @@ def register_user(user: UserCreate) -> Token:
         raise ValueError("User already exists")
 
     hashed = hash_password(user.password)
-    user_db = UserInDB(email=user.email, password=user.password, hashed_password=hashed)
-    repo.create_user(user_db)
-    token = create_token({"sub": user.email})
+    user_db = UserInDB(email=user.email, password=user.password, hashed_password=hashed, role=user.role)
+    created_user = repo.create_user(user_db)
+    token = create_token({"sub": user.email, "role": user.role.value})
     return Token(access_token=token)
 
 def login_user(email: str, password: str) -> Token:
@@ -39,7 +40,7 @@ def login_user(email: str, password: str) -> Token:
     if not user or not verify_password(password, user.hashed_password):
         raise ValueError("Invalid credentials")
 
-    token = create_token({"sub": user.email})
+    token = create_token({"sub": user.email, "role": user.role.value})
     return Token(access_token=token)
 
 def verify_token(token: str) -> bool:
@@ -48,3 +49,36 @@ def verify_token(token: str) -> bool:
         return True
     except JWTError:
         return False
+
+def decode_token(token: str) -> Optional[TokenData]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        role: str = payload.get("role", "user")
+        if email is None:
+            return None
+        return TokenData(email=email, role=UserRole(role))
+    except JWTError:
+        return None
+
+def get_user_by_email(email: str) -> Optional[UserResponse]:
+    user = repo.get_user_by_email(email)
+    if user:
+        return UserResponse(id=user.id, email=user.email, role=user.role)
+    return None
+
+def get_user_by_id(user_id: int) -> Optional[UserResponse]:
+    user = repo.get_user_by_id(user_id)
+    if user:
+        return UserResponse(id=user.id, email=user.email, role=user.role)
+    return None
+
+def get_all_users() -> list[UserResponse]:
+    users = repo.get_all_users()
+    return [UserResponse(id=user.id, email=user.email, role=user.role) for user in users]
+
+def update_user_role(user_id: int, role: UserRole) -> Optional[UserResponse]:
+    updated_user = repo.update_user_role(user_id, role)
+    if updated_user:
+        return UserResponse(id=updated_user.id, email=updated_user.email, role=updated_user.role)
+    return None

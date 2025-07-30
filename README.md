@@ -9,6 +9,7 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 ├── docker-compose.yml
 ├── .env
 ├── README.md
+├── RBAC_DOCUMENTATION.md      # RBAC implementation guide
 │
 ├── nginx/
 │   └── nginx.conf
@@ -29,28 +30,34 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 │   ├── app.py                   # Adapter: inbound API
 │   ├── Dockerfile
 │   ├── requirements.txt
+│   ├── test_rbac.py             # RBAC test script
+│   ├── openapi.json             # OpenAPI specification
 │   ├── domain/
-│   │    ├── models.py           # Core domain models (User, Token, etc)
-│   │    ├── services.py         # Business logic (ports)
+│   │    ├── models.py           # Core domain models (User, Token, Role, etc)
+│   │    ├── services.py         # Business logic (ports) with RBAC
 │   │    └── repository.py       # Repository interfaces (DB port)
 │   ├── adapters/
-│   │    ├── db.py               # DB implementation (adapter)
+│   │    ├── db.py               # DB implementation (adapter) with role support
 │   │    └── api.py              # External API clients if any
 │   └── routes/
-│        └── auth_routes.py      # REST API adapter (inbound)
+│        └── auth_routes.py      # REST API adapter (inbound) with RBAC middleware
 │
 ├── user-service/
-│   ├── app.py
+│   ├── app.py                   # User profile management service
 │   ├── Dockerfile
 │   ├── requirements.txt
+│   ├── test_user_service.py     # User service test script
+│   ├── openapi.json             # OpenAPI specification
+│   ├── README.md                # User service documentation
 │   ├── domain/
-│   │    ├── models.py
-│   │    ├── services.py
+│   │    ├── models.py           # User profile models with role support
+│   │    ├── services.py         # Business logic (ports)
 │   │    └── repository.py       # User DB interface
 │   ├── adapters/
-│   │    ├── db.py               # DB adapter for user data
+│   │    ├── db.py               # DB adapter for user data with role support
+│   │    └── api.py              # External API clients if any
 │   └── routes/
-│        └── user.py
+│        └── user_routes.py      # REST API adapter (inbound) with RBAC
 │
 ├── flights-service/
 │   ├── app.py
@@ -92,7 +99,7 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 │   └── db_user.txt
 │
 └── postgres/
-    └── init.sql                 # DB schema, for user and ticker tables only
+    └── init.sql                 # DB schema with user, auth, and role tables
 
 ```
 
@@ -102,11 +109,66 @@ This repository contains the backend microservices for TiketQ, an OTA (Online Tr
 The backend is implemented as a collection of loosely coupled microservices within a monorepo, each responsible for a specific domain:
 
 - `api-gateway`: Routes incoming client requests to appropriate services.
-- `auth-service`: Manages user authentication and authorization.
-- `user-service`: Handles user profile and related data.
+- `auth-service`: Manages user authentication, authorization, and **Role-Based Access Control (RBAC)**.
+- `user-service`: Handles user profile management with **RBAC-protected endpoints**.
 - `flights-service`, `ferries-service`, `hotels-service`, `ppob-service`: Integrate with various external APIs to provide booking and information services.
 - `payment-service`: Manages payment processing and related webhooks.
-- `postgres`: Contains database schema initialization scripts.
+- `postgres`: Contains database schema initialization scripts with role support.
+
+### 🔐 Role-Based Access Control (RBAC)
+
+The system implements a comprehensive RBAC system with two roles:
+
+#### **USER Role**
+- Can access their own profile information
+- Can update their own profile
+- Cannot access other users' data
+- Cannot perform administrative functions
+
+#### **ADMIN Role**
+- Full access to all user data
+- Can create, read, update, and delete any user profile
+- Can manage user roles
+- Can list all users in the system
+
+#### **RBAC Features**
+- **JWT Token Enhancement**: Tokens include role information
+- **Role-based Authorization**: Different access levels based on user role
+- **Ownership Validation**: Users can only access their own data
+- **Database Constraints**: Role values are constrained at database level
+- **Middleware Protection**: All protected endpoints use RBAC middleware
+
+#### **Protected Endpoints**
+
+| Service | Endpoint | USER | ADMIN | Description |
+|---------|----------|------|-------|-------------|
+| Auth | `/auth/register` | ✅ | ✅ | Register new user |
+| Auth | `/auth/login` | ✅ | ✅ | Login user |
+| Auth | `/auth/me` | ✅ | ✅ | Get own info |
+| Auth | `/auth/users` | ❌ | ✅ | List all users |
+| Auth | `/auth/users/{id}` | ❌ | ✅ | Get specific user |
+| Auth | `/auth/users/{id}/role` | ❌ | ✅ | Update user role |
+| User | `POST /users/` | ❌ | ✅ | Create profile |
+| User | `GET /users/{id}` | ✅* | ✅ | Get profile |
+| User | `PUT /users/{id}` | ✅* | ✅ | Update profile |
+| User | `DELETE /users/{id}` | ❌ | ✅ | Delete profile |
+| User | `GET /users/` | ❌ | ✅ | List all users |
+
+*Users can only access their own profiles
+
+### 📚 API Documentation
+
+All services provide comprehensive API documentation:
+
+#### **Interactive Documentation**
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **OpenAPI JSON**: http://localhost:8000/openapi.json
+
+#### **Service-Specific Documentation**
+- **Auth Service**: Complete authentication and user management APIs
+- **User Service**: User profile management with RBAC protection
+- **OpenAPI Specifications**: Available in `auth-service/openapi.json` and `user-service/openapi.json`
 
 ### Architecture: Ports and Adapters (Hexagonal Architecture)
 To ensure maintainability and adaptability, the services are designed following the **Ports and Adapters** architectural pattern, also known as Hexagonal Architecture. This design separates the core business logic from external dependencies, allowing each component to evolve independently.
@@ -142,7 +204,8 @@ Each service follows a consistent structure:
 ```
 
 ### Database Usage
-- The database (PostgreSQL) stores only **user-related data** and **ticketing information**.
+- The database (PostgreSQL) stores **user-related data**, **authentication data**, and **ticketing information**.
+- **Role-based access control** is enforced at both application and database levels.
 - Only services that require persistent user or ticket data interact with the database via well-defined repository interfaces and adapters.
 - External API data is consumed directly by service adapters without persistence, except where caching or state is explicitly needed.
 
@@ -158,8 +221,8 @@ Each service follows a consistent structure:
  +---------------+        +----------------+
  | Auth Service  |        |  Other Services |
  | (User tokens) |        | (Flights, Hotels,|
- +---------------+        |  Ferries, PPOB,  |
-         |                |  Payments, User) |
+ | (RBAC)        |        |  Ferries, PPOB,  |
+ +---------------+        |  Payments, User) |
          |                +-----------------+
          |                         |
          |                         |
@@ -167,24 +230,35 @@ Each service follows a consistent structure:
          |           |                            |
  +---------------+  +----------------+        +----------------+
  |   Database    |  | External APIs  |        | External APIs  |
- | (User, Tickets)|  | (Flight APIs,  |        | (Midtrans, PLN,|
- +---------------+  | Hotels, etc)   |        |  other 3rd party|
-                    +----------------+        +----------------+
+ | (User, Auth,  |  | (Flight APIs,  |        | (Midtrans, PLN,|
+ |  Roles)       |  | Hotels, etc)   |        |  other 3rd party|
+ +---------------+  +----------------+        +----------------+
 ```
 
 ### Communication Flow
 1. The **API Gateway** serves as the entry point, routing client requests to appropriate microservices.
-2. It validates requests by communicating with the **Auth Service**.
-3. Microservices process requests by invoking their domain logic.
+2. It validates requests by communicating with the **Auth Service** using **RBAC-protected tokens**.
+3. Microservices process requests by invoking their domain logic with **role-based authorization**.
 4. To fulfil requests, services interact with external APIs via outbound adapters or with the database where applicable.
 5. Responses are returned back through the API Gateway to the client.
 
 ### Getting Started
 - Ensure environment variables are correctly set in .env.
 - Run docker-compose up to start all services and dependencies.
-- Explore each service’s /routes directory to understand available API endpoints.
+- Explore each service's /routes directory to understand available API endpoints.
 - Review the /domain folders for business logic implementation.
 - Adapters in /adapters demonstrate integration with databases and external APIs.
+
+### Testing RBAC
+```bash
+# Test auth-service RBAC functionality
+cd auth-service
+python test_rbac.py
+
+# Test user-service functionality
+cd user-service
+python test_user_service.py
+```
 
 ### Example commands to run the stack
 
@@ -192,12 +266,27 @@ Each service follows a consistent structure:
 # Start all services with Docker Compose
 docker-compose up -d
 
-# View logs of a specific service, e.g., flights-service
-docker-compose logs -f flights-service
+# View logs of a specific service, e.g., auth-service
+docker-compose logs -f auth-service
 
 # Run API Gateway locally (if you want to skip Docker)
 cd api-gateway
 pip install -r requirements.txt
 python app.py
 
+# Test RBAC functionality
+curl -X POST "http://localhost:8000/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@example.com", "password": "adminpass", "role": "admin"}'
+
+# Access API documentation
+# Swagger UI: http://localhost:8000/docs
+# ReDoc: http://localhost:8000/redoc
 ```
+
+### Documentation
+- **RBAC_DOCUMENTATION.md**: Comprehensive guide to the RBAC implementation
+- **user-service/README.md**: Detailed documentation for the user service
+- **OpenAPI Specifications**: Available in each service directory
+- **Interactive API Docs**: Swagger UI and ReDoc for all services
+- Each service contains its own documentation and test scripts

@@ -3,21 +3,20 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 
-# Load all env vars from root .env
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
-from routes.auth_routes import router
+from routes.user_routes import router
 
 app = FastAPI(
-    title="TiketQ Auth Service",
-    description="Authentication and Authorization service with Role-Based Access Control (RBAC)",
+    title="TiketQ User Service",
+    description="User profile management service with Role-Based Access Control (RBAC)",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_tags=[
         {
-            "name": "Authentication",
-            "description": "User authentication and authorization endpoints"
+            "name": "User Profiles",
+            "description": "User profile management operations with RBAC protection"
         },
         {
             "name": "User Management",
@@ -26,11 +25,10 @@ app = FastAPI(
     ]
 )
 
-app.include_router(router, prefix="/auth", tags=["Authentication", "User Management"])
+app.include_router(router, prefix="/users", tags=["User Profiles", "User Management"])
 
-# Optional: create tables automatically at startup (for dev)
 from adapters.db import Base, engine
 
 @app.on_event("startup")
 def on_startup():
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine) 
