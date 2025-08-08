@@ -15,6 +15,7 @@ services:
       - flights-service
       - ferries-service
       - hotels-service
+      - trains-service
       - ppob-service
       - payment-service
     networks:
@@ -61,6 +62,18 @@ services:
     build:
       context: ./hotels-service
     container_name: hotels-service
+    networks:
+      - tiketq-net
+    restart: unless-stopped
+
+  trains-service:
+    build:
+      context: ./trains-service
+    container_name: trains-service
+    env_file:
+      - .env
+    ports:
+      - "8006:8000"
     networks:
       - tiketq-net
     restart: unless-stopped
