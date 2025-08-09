@@ -1,73 +1,175 @@
-from sqlalchemy import Column, Integer, String, DateTime, Numeric, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime, timezone
-from .enums import (
-    TransactionStatus,
-    OrderStatus,
-    PaymentStatus,
-    RefundStatus,
-    Currency,
-    ServiceType,
-    TransactionType,
-    PaymentMethod,
-    PaymentGateway
-)
+from datetime import datetime
+from enum import Enum
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
+from uuid import uuid4
 
-Base = declarative_base()
+class TransactionType(str, Enum):
+    BOOKING = "BOOKING"
+    PAYMENT = "PAYMENT"
+    REFUND = "REFUND"
+    CANCELLATION = "CANCELLATION"
 
-class Transaction(Base):
-    __tablename__ = "transactions"
+class TransactionStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    REFUNDED = "REFUNDED"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False)
-    order_id = Column(String(255), unique=True, nullable=False)
-    transaction_type = Column(String(50), nullable=False, default=TransactionType.BOOKING.value)
-    amount = Column(Numeric(10,2), nullable=False)
-    currency = Column(String(3), default=Currency.IDR.value)
-    status = Column(String(50), nullable=False, default=TransactionStatus.PENDING.value)
-    payment_method = Column(String(50), default=PaymentMethod.VIRTUAL_ACCOUNT.value)
-    payment_gateway = Column(String(50), default=PaymentGateway.GOPAY.value)
-    gateway_transaction_id = Column(String(255))
-    metadata = Column(JSON)
-    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+class PaymentMethod(str, Enum):
+    CREDIT_CARD = "CREDIT_CARD"
+    DEBIT_CARD = "DEBIT_CARD"
+    BANK_TRANSFER = "BANK_TRANSFER"
+    E_WALLET = "E_WALLET"
+    VIRTUAL_ACCOUNT = "VIRTUAL_ACCOUNT"
+    CASH = "CASH"
 
-class Order(Base):
-    __tablename__ = "orders"
+class PaymentGateway(str, Enum):
+    MIDTRANS = "MIDTRANS"
+    XENDIT = "XENDIT"
+    GOPAY = "GOPAY"
+    OVO = "OVO"
+    DANA = "DANA"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False)
-    order_number = Column(String(255), unique=True, nullable=False)
-    service_type = Column(String(50), nullable=False, default=ServiceType.FLIGHTS.value)
-    service_id = Column(String(255), nullable=False)
-    quantity = Column(Integer, nullable=False)
-    unit_price = Column(Numeric(10,2), nullable=False)
-    total_amount = Column(Numeric(10,2), nullable=False)
-    status = Column(String(50), nullable=False, default=OrderStatus.DRAFT.value)
-    booking_details = Column(JSON)
-    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+class OrderStatus(str, Enum):
+    DRAFT = "DRAFT"
+    CONFIRMED = "CONFIRMED"
+    PAID = "PAID"
+    CANCELLED = "CANCELLED"
+    COMPLETED = "COMPLETED"
 
-class Payment(Base):
-    __tablename__ = "payments"
+class RefundStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
-    id = Column(Integer, primary_key=True, index=True)
-    transaction_id = Column(Integer, nullable=False)
-    payment_method = Column(String(50), nullable=False, default=PaymentMethod.VIRTUAL_ACCOUNT.value)
-    amount = Column(Numeric(10,2), nullable=False)
-    currency = Column(String(3), default=Currency.IDR.value)
-    status = Column(String(50), nullable=False, default=PaymentStatus.PENDING.value)
-    gateway_response = Column(JSON)
-    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+class PaymentStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    REFUNDED = "REFUNDED"
 
-class Refund(Base):
-    __tablename__ = "refunds"
+class ServiceType(str, Enum):
+    FLIGHTS = "FLIGHTS"
+    HOTELS = "HOTELS"
+    FERRIES = "FERRIES"
+    PPOB = "PPOB"
 
-    id = Column(Integer, primary_key=True, index=True)
-    transaction_id = Column(Integer, nullable=False)
-    amount = Column(Numeric(10,2), nullable=False)
-    reason = Column(String(255))
-    status = Column(String(50), nullable=False, default=RefundStatus.PENDING.value)
-    processed_by = Column(Integer)
-    processed_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
-    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+class Currency(str, Enum):
+    IDR = "IDR"
+    # USD = "USD"
+    # EUR = "EUR"
+    # SGD = "SGD"
+
+class TransactionBase(BaseModel):
+    user_id: int
+    order_id: str = Field(default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}")
+    transaction_type: TransactionType
+    amount: float
+    currency: Currency = Currency.IDR
+    status: TransactionStatus = TransactionStatus.PENDING
+    payment_method: Optional[PaymentMethod] = None
+    payment_gateway: Optional[PaymentGateway] = None
+    gateway_transaction_id: Optional[str] = None
+    metadata: Dict[str, Any] = {}
+
+class TransactionCreate(TransactionBase):
+    pass
+
+class TransactionUpdate(BaseModel):
+    status: Optional[TransactionStatus] = None
+    payment_method: Optional[PaymentMethod] = None
+    payment_gateway: Optional[PaymentGateway] = None
+    gateway_transaction_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class TransactionInDB(TransactionBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class OrderBase(BaseModel):
+    user_id: int
+    order_number: str = Field(default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}")
+    service_type: ServiceType 
+    items: List[Dict[str, Any]]
+    subtotal: float
+    tax: float = 0.0
+    discount: float = 0.0
+    total: float
+    status: OrderStatus = OrderStatus.CREATED
+
+class OrderCreate(OrderBase):
+    pass
+
+class OrderUpdate(BaseModel):
+    status: Optional[OrderStatus] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class OrderInDB(OrderBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class PaymentBase(BaseModel):
+    transaction_id: int
+    amount: float
+    currency: Currency = Currency.IDR
+    payment_method: PaymentMethod
+    payment_gateway: PaymentGateway
+    gateway_transaction_id: Optional[str] = None
+    status: PaymentStatus = PaymentStatus.PENDING
+    metadata: Dict[str, Any] = {}
+
+class PaymentCreate(PaymentBase):
+    pass
+
+class PaymentUpdate(BaseModel):
+    status: Optional[TransactionStatus] = None
+    gateway_transaction_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class PaymentInDB(PaymentBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class RefundBase(BaseModel):
+    transaction_id: int
+    amount: float
+    reason: str
+    status: RefundStatus = RefundStatus.REQUESTED
+    processed_by: Optional[int] = None
+    processed_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+class RefundCreate(RefundBase):
+    pass
+
+class RefundUpdate(BaseModel):
+    status: Optional[RefundStatus] = None
+    processed_by: Optional[int] = None
+    notes: Optional[str] = None
+
+class RefundInDB(RefundBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
