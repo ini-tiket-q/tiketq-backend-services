@@ -2,35 +2,29 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
-from ..domain.models import (
-    PaymentInDB, PaymentStatus
+from domain.models import PaymentInDB, PaymentStatus
+from domain.services import PaymentService, TransactionService
+from infrastructure.dependencies import (
+    get_database_session,
+    create_payment_service,
+    create_transaction_service,
+    get_auth_service
 )
-from ..domain.services import PaymentService, TransactionService
-from ..adapters.db import get_db, DBPaymentRepository, DBTransactionRepository
 
 router = APIRouter(prefix="/api/v1", tags=["payments"])
 
 def get_current_user():
-    """TODO: Replace with real authentication"""
-    return {"id": 1, "role": "admin"}  # or "user"
+    """Get current authenticated user"""
+    auth_service = get_auth_service()
+    return auth_service.get_current_user()
 
-def get_payment_service(db: Session = Depends(get_db)) -> PaymentService:
-    """Dependency for PaymentService"""
-    transaction_repo = DBTransactionRepository(db)
-    payment_repo = DBPaymentRepository(db)
-    return PaymentService(
-        transaction_repo=transaction_repo,
-        payment_repo=payment_repo
-    )
+def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentService:
+    """Dependency injection for PaymentService"""
+    return create_payment_service(db)
 
-def get_transaction_service(db: Session = Depends(get_db)) -> TransactionService:
-    """Dependency for TransactionService"""
-    transaction_repo = DBTransactionRepository(db)
-    order_repo = None  # Will be implemented later
-    return TransactionService(
-        transaction_repo=transaction_repo,
-        order_repo=order_repo
-    )
+def get_transaction_service(db: Session = Depends(get_database_session)) -> TransactionService:
+    """Dependency injection for TransactionService"""
+    return create_transaction_service(db)
 
 # Payment Endpoints based on documentation
 @router.post(

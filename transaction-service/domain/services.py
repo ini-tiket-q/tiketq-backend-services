@@ -3,14 +3,14 @@ from uuid import uuid4
 from datetime import datetime, timezone
 import logging
 
-from .models import (
+from domain.models import (
     TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus, TransactionType,
     OrderInDB, OrderCreate, OrderUpdate, OrderStatus, ServiceType,
     PaymentInDB, PaymentCreate, PaymentStatus, PaymentMethod, PaymentGateway,
     RefundInDB, RefundCreate, RefundStatus, Currency
 )
 
-from ..adapters.db import (
+from adapters.db import (
     DBTransactionRepository, DBOrderRepository, 
     DBPaymentRepository, DBRefundRepository
 )

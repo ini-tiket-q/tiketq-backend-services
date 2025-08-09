@@ -77,7 +77,7 @@ class TransactionBase(BaseModel):
     payment_method: Optional[PaymentMethod] = None
     payment_gateway: Optional[PaymentGateway] = None
     gateway_transaction_id: Optional[str] = None
-    metadata: Dict[str, Any] = {}
+    meta_data: Dict[str, Any] = {}
 
 class TransactionCreate(TransactionBase):
     pass
@@ -87,7 +87,7 @@ class TransactionUpdate(BaseModel):
     payment_method: Optional[PaymentMethod] = None
     payment_gateway: Optional[PaymentGateway] = None
     gateway_transaction_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    meta_data: Optional[Dict[str, Any]] = None
 
 class TransactionInDB(TransactionBase):
     id: int
@@ -106,14 +106,14 @@ class OrderBase(BaseModel):
     tax: float = 0.0
     discount: float = 0.0
     total: float
-    status: OrderStatus = OrderStatus.CREATED
+    status: OrderStatus = OrderStatus.DRAFT
 
 class OrderCreate(OrderBase):
     pass
 
 class OrderUpdate(BaseModel):
     status: Optional[OrderStatus] = None
-    metadata: Optional[Dict[str, Any]] = None
+    meta_data: Optional[Dict[str, Any]] = None
 
 class OrderInDB(OrderBase):
     id: int
@@ -131,7 +131,7 @@ class PaymentBase(BaseModel):
     payment_gateway: PaymentGateway
     gateway_transaction_id: Optional[str] = None
     status: PaymentStatus = PaymentStatus.PENDING
-    metadata: Dict[str, Any] = {}
+    meta_data: Optional[Dict[str, Any]] = None
 
 class PaymentCreate(PaymentBase):
     pass
@@ -139,7 +139,7 @@ class PaymentCreate(PaymentBase):
 class PaymentUpdate(BaseModel):
     status: Optional[TransactionStatus] = None
     gateway_transaction_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    meta_data: Optional[Dict[str, Any]] = None
 
 class PaymentInDB(PaymentBase):
     id: int
@@ -153,7 +153,7 @@ class RefundBase(BaseModel):
     transaction_id: int
     amount: float
     reason: str
-    status: RefundStatus = RefundStatus.REQUESTED
+    status: RefundStatus = RefundStatus.PENDING
     processed_by: Optional[int] = None
     processed_at: Optional[datetime] = None
     notes: Optional[str] = None

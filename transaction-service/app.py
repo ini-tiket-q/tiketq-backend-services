@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
-from .adapters.db import Base, engine
-from .routes import payments
+from adapters.db import Base, engine
+from routes import payments
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

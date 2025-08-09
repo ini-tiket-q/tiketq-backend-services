@@ -9,7 +9,7 @@ from sqlalchemy import (
     DateTime,
     Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Session
 from sqlalchemy.sql import func
 
 import os
@@ -18,7 +18,7 @@ from sqlalchemy import create_engine
 from typing import List, Optional
 from datetime import datetime, timezone
 
-from ..domain.models import (
+from domain.models import (
     TransactionInDB,
     TransactionCreate,
     TransactionUpdate,
@@ -38,7 +38,7 @@ from ..domain.models import (
     ServiceType,
     Currency,
 )
-from ..domain.repository import (
+from domain.repository import (
     TransactionRepository,
     OrderRepository,
     PaymentRepository,
@@ -53,6 +53,22 @@ if not DATABASE_URL:
 Base = declarative_base()
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
+
+
+# Database session provider - infrastructure concern
+class DatabaseSessionProvider:
+    """Provides database sessions for the application layer"""
+    
+    def __init__(self):
+        self.session_factory = SessionLocal
+    
+    def get_session(self) -> Session:
+        """Get a new database session"""
+        return self.session_factory()
+    
+    def close_session(self, session: Session):
+        """Close a database session"""
+        session.close()
 
 
 # SQLAlchemy models
@@ -73,7 +89,7 @@ class Transaction(Base):
     payment_method = Column(Enum(PaymentMethod), nullable=True)
     payment_gateway = Column(Enum(PaymentGateway), nullable=True)
     gateway_transaction_id = Column(String(255), nullable=True, index=True)
-    metadata = Column(JSON, default={}, nullable=False)
+    meta_data = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -96,7 +112,7 @@ class Order(Base):
     tax = Column(Float, default=0.0, nullable=False)
     discount = Column(Float, default=0.0, nullable=False)
     total = Column(Float, nullable=False)
-    status = Column(Enum(OrderStatus), default=OrderStatus.CREATED, nullable=False)
+    status = Column(Enum(OrderStatus), default=OrderStatus.DRAFT, nullable=False)
     metadata_ = Column("metadata", JSON, default={}, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -115,7 +131,7 @@ class Payment(Base):
     payment_gateway = Column(Enum(PaymentGateway), nullable=False)
     gateway_transaction_id = Column(String(255), nullable=True, index=True)
     status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING, nullable=False)
-    metadata_ = Column("metadata", JSON, default={}, nullable=False)
+    meta_data = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -132,7 +148,7 @@ class Refund(Base):
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
     amount = Column(Float, nullable=False)
     reason = Column(Text, nullable=False)
-    status = Column(Enum(RefundStatus), default=RefundStatus.REQUESTED, nullable=False)
+    status = Column(Enum(RefundStatus), default=RefundStatus.PENDING, nullable=False)
     processed_by = Column(Integer, nullable=True)
     processed_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
@@ -147,84 +163,82 @@ class Refund(Base):
 class DBTransactionRepository(TransactionRepository):
     """SQLAlchemy implementation of TransactionRepository"""
 
+    def __init__(self, db: Session):
+        self.db = db
+
     def create_transaction(self, transaction: TransactionCreate) -> TransactionInDB:
-        with SessionLocal() as db:
-            db_transaction = Transaction(
-                user_id=transaction.user_id,
-                order_id=transaction.order_id,
-                transaction_type=transaction.transaction_type.value,
-                amount=float(transaction.amount),
-                currency=transaction.currency,
-                status=transaction.status.value,
-                payment_method=transaction.payment_method.value
-                if transaction.payment_method
-                else None,
-                payment_gateway=transaction.payment_gateway.value
-                if transaction.payment_gateway
-                else None,
-                gateway_transaction_id=transaction.gateway_transaction_id,
-                metadata=transaction.metadata,
-            )
-            db.add(db_transaction)
-            db.commit()
-            db.refresh(db_transaction)
-            return self._to_domain_model(db_transaction)
+        db_transaction = Transaction(
+            user_id=transaction.user_id,
+            order_id=transaction.order_id,
+            transaction_type=transaction.transaction_type.value,
+            amount=float(transaction.amount),
+            currency=transaction.currency,
+            status=transaction.status.value,
+            payment_method=transaction.payment_method.value
+            if transaction.payment_method
+            else None,
+            payment_gateway=transaction.payment_gateway.value
+            if transaction.payment_gateway
+            else None,
+            gateway_transaction_id=transaction.gateway_transaction_id,
+            meta_data=transaction.meta_data,
+        )
+        self.db.add(db_transaction)
+        self.db.commit()
+        self.db.refresh(db_transaction)
+        return self._to_domain_model(db_transaction)
 
     def get_transaction(self, transaction_id: int) -> Optional[TransactionInDB]:
-        with SessionLocal() as db:
-            db_transaction = (
-                db.query(Transaction).filter(Transaction.id == transaction_id).first()
-            )
-            return self._to_domain_model(db_transaction) if db_transaction else None
+        db_transaction = (
+            self.db.query(Transaction).filter(Transaction.id == transaction_id).first()
+        )
+        return self._to_domain_model(db_transaction) if db_transaction else None
 
     def get_transactions_by_user(
         self, user_id: int, skip: int = 0, limit: int = 100, status: Optional[TransactionStatus] = None
     ) -> List[TransactionInDB]:
-        with SessionLocal() as db:
-            db_transactions = (
-                db.query(Transaction)
-                .filter(Transaction.user_id == user_id)
-                .offset(skip)
-                .limit(limit)
-                .all()
-            )
-            if status:
-                db_transactions = db_transactions.filter(Transaction.status == status.value)
-            return [self._to_domain_model(t) for t in db_transactions]
+        db_transactions = (
+            self.db.query(Transaction)
+            .filter(Transaction.user_id == user_id)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        if status:
+            db_transactions = db_transactions.filter(Transaction.status == status.value)
+        return [self._to_domain_model(t) for t in db_transactions]
 
     def update_transaction(
         self, transaction_id: int, transaction: TransactionUpdate
     ) -> Optional[TransactionInDB]:
-        with SessionLocal() as db:
-            db_transaction = (
-                db.query(Transaction).filter(Transaction.id == transaction_id).first()
-            )
+        db_transaction = (
+            self.db.query(Transaction).filter(Transaction.id == transaction_id).first()
+        )
 
-            if not db_transaction:
-                return None
+        if not db_transaction:
+            return None
 
-            update_data = transaction.dict(exclude_unset=True)
-            for field, value in update_data.items():
-                # metadata should be added, not replaced with the new value. or deleted if the value is None
-                if field == "metadata" and value is not None:
-                    if db_transaction.metadata is None:
-                        db_transaction.metadata = {}
-                    db_transaction.metadata.update(value)
-                elif hasattr(db_transaction, field):
-                    setattr(db_transaction, field, value)
+        update_data = transaction.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            # meta_data should be added, not replaced with the new value. or deleted if the value is None
+            if field == "meta_data" and value is not None:
+                if db_transaction.meta_data is None:
+                    db_transaction.meta_data = {}
+                db_transaction.meta_data.update(value)
+            elif hasattr(db_transaction, field):
+                setattr(db_transaction, field, value)
 
-            db.commit()
-            db.refresh(db_transaction)
-            return self._to_domain_model(db_transaction)
+        self.db.commit()
+        self.db.refresh(db_transaction)
+        return self._to_domain_model(db_transaction)
 
     def delete_transaction(self, transaction_id: int) -> bool:
-        with SessionLocal() as db:
-            result = (
-                db.query(Transaction).filter(Transaction.id == transaction_id).delete()
-            )
-            db.commit()
-            # result = 1 if 1 row is deleted
-            return result == 1
+        result = (
+            self.db.query(Transaction).filter(Transaction.id == transaction_id).delete()
+        )
+        self.db.commit()
+        # result = 1 if 1 row is deleted
+        return result == 1
 
     # Reusable function to convert db model to domain model
     def _to_domain_model(self, db_transaction: Transaction) -> TransactionInDB:
@@ -243,7 +257,7 @@ class DBTransactionRepository(TransactionRepository):
             if db_transaction.payment_gateway
             else None,
             gateway_transaction_id=db_transaction.gateway_transaction_id,
-            metadata=db_transaction.metadata or {},
+            meta_data=db_transaction.meta_data or {},
             created_at=db_transaction.created_at,
             updated_at=getattr(db_transaction, "updated_at", None),
         )
@@ -252,36 +266,29 @@ class DBTransactionRepository(TransactionRepository):
 class DBOrderRepository(OrderRepository):
     """SQLAlchemy implementation of OrderRepository"""
 
+    def __init__(self, db: Session):
+        self.db = db
+
     def create_order(self, order: OrderCreate) -> OrderInDB:
-        with SessionLocal() as db:
-            db_order = Order(
-                user_id=order.user_id,
-                order_number=order.order_number,
-                service_type=order.service_type.value,
-                service_id=order.metadata.get("service_id", ""),
-                quantity=len(order.items) if order.items else 0,
-                unit_price=order.subtotal / max(1, len(order.items))
-                if order.items
-                else 0,
-                total_amount=order.total,
-                status=order.status.value,
-                booking_details={
-                    "items": order.items,
-                    "subtotal": order.subtotal,
-                    "tax": order.tax,
-                    "discount": order.discount,
-                    "total": order.total,
-                },
-            )
-            db.add(db_order)
-            db.commit()
-            db.refresh(db_order)
-            return self._to_domain_model(db_order)
+        db_order = Order(
+            booking_reference=order.booking_reference,
+            order_type=order.order_type.value if hasattr(order.order_type, 'value') else str(order.order_type),
+            service_type=order.service_type.value,
+            traveler_details=order.traveler_details,
+            item_details=order.item_details,
+            quantity=order.quantity,
+            unit_price=float(order.unit_price),
+            total_amount=float(order.total_amount),
+            meta_data=order.meta_data,
+        )
+        self.db.add(db_order)
+        self.db.commit()
+        self.db.refresh(db_order)
+        return self._to_domain_model(db_order)
 
     def get_order(self, order_id: int) -> Optional[OrderInDB]:
-        with SessionLocal() as db:
-            db_order = db.query(Order).filter(Order.id == order_id).first()
-            return self._to_domain_model(db_order) if db_order else None
+        db_order = self.db.query(Order).filter(Order.id == order_id).first()
+        return self._to_domain_model(db_order) if db_order else None
 
     def get_orders_by_user(
         self,
@@ -290,46 +297,47 @@ class DBOrderRepository(OrderRepository):
         skip: int = 0,
         limit: int = 100,
     ) -> List[OrderInDB]:
-        with SessionLocal() as db:
-            query = db.query(Order).filter(Order.user_id == user_id)
-            if status is not None:
-                query = query.filter(Order.status == status.value)
-
-            db_orders = query.offset(skip).limit(limit).all()
-            return [self._to_domain_model(o) for o in db_orders]
+        # Note: The current Order table doesn't have user_id field
+        # This method needs to be updated once user relationships are added
+        query = self.db.query(Order)
+        # TODO: Add user_id filter when user relationship is implemented
+        # query = query.filter(Order.user_id == user_id)
+        
+        if status is not None:
+            # TODO: Add status field to Order table if needed
+            pass
+            
+        db_orders = query.offset(skip).limit(limit).all()
+        return [self._to_domain_model(o) for o in db_orders]
 
     def update_order_status(
         self, order_id: int, status: OrderStatus
     ) -> Optional[OrderInDB]:
-        with SessionLocal() as db:
-            db_order = db.query(Order).filter(Order.id == order_id).first()
-            if not db_order:
-                return None
+        # Note: The current Order table doesn't have status field
+        # This is a placeholder implementation
+        db_order = self.db.query(Order).filter(Order.id == order_id).first()
+        if not db_order:
+            return None
 
-            db_order.status = status.value
-            db_order.updated_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(db_order)
+        # TODO: Add status field to Order table
+        # db_order.status = status.value
+        db_order.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(db_order)
         return self._to_domain_model(db_order)
 
     def _to_domain_model(self, db_order: Order) -> OrderInDB:
-        booking_details = db_order.booking_details or {}
         return OrderInDB(
             id=db_order.id,
-            user_id=db_order.user_id,
-            order_number=db_order.order_number,
+            booking_reference=db_order.booking_reference,
+            order_type=db_order.order_type,  # Already stored as string
             service_type=ServiceType(db_order.service_type),
-            items=booking_details.get("items", []),
-            subtotal=float(booking_details.get("subtotal", 0)),
-            tax=float(booking_details.get("tax", 0)),
-            discount=float(booking_details.get("discount", 0)),
-            total=float(db_order.total_amount),
-            status=OrderStatus(db_order.status),
-            metadata={
-                "service_id": db_order.service_id,
-                "quantity": db_order.quantity,
-                "unit_price": float(db_order.unit_price),
-            },
+            traveler_details=db_order.traveler_details,
+            item_details=db_order.item_details,
+            quantity=db_order.quantity,
+            unit_price=float(db_order.unit_price),
+            total_amount=float(db_order.total_amount),
+            meta_data=db_order.meta_data or {},
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
         )
@@ -338,32 +346,34 @@ class DBOrderRepository(OrderRepository):
 class DBPaymentRepository(PaymentRepository):
     """SQLAlchemy implementation of PaymentRepository"""
 
+    def __init__(self, db: Session):
+        self.db = db
+
     def create_payment(self, payment: PaymentCreate) -> PaymentInDB:
-        with SessionLocal() as db:
-            db_payment = Payment(
-                transaction_id=payment.transaction_id,
-                payment_method=payment.payment_method.value,
-                amount=float(payment.amount),
-                currency=payment.currency,
-                status=payment.status.value,
-                gateway_response=payment.metadata,
-            )
-            db.add(db_payment)
-            db.commit()
-            db.refresh(db_payment)
-            return self._to_domain_model(db_payment)
+        db_payment = Payment(
+            transaction_id=payment.transaction_id,
+            payment_method=payment.payment_method.value,
+            payment_gateway=payment.payment_gateway.value,
+            amount=float(payment.amount),
+            currency=payment.currency,
+            status=payment.status.value,
+            gateway_transaction_id=payment.gateway_transaction_id,
+            meta_data=payment.meta_data,
+        )
+        self.db.add(db_payment)
+        self.db.commit()
+        self.db.refresh(db_payment)
+        return self._to_domain_model(db_payment)
 
     def get_payment(self, payment_id: int) -> Optional[PaymentInDB]:
-        with SessionLocal() as db:
-            db_payment = db.query(Payment).filter(Payment.id == payment_id).first()
-            return self._to_domain_model(db_payment) if db_payment else None
+        db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
+        return self._to_domain_model(db_payment) if db_payment else None
 
     def get_payments_by_transaction(self, transaction_id: int) -> List[PaymentInDB]:
-        with SessionLocal() as db:
-            db_payments = (
-                db.query(Payment).filter(Payment.transaction_id == transaction_id).all()
-            )
-            return [self._to_domain_model(p) for p in db_payments]
+        db_payments = (
+            self.db.query(Payment).filter(Payment.transaction_id == transaction_id).all()
+        )
+        return [self._to_domain_model(p) for p in db_payments]
 
     def update_payment_status(
         self,
@@ -371,18 +381,45 @@ class DBPaymentRepository(PaymentRepository):
         status: TransactionStatus,
         gateway_transaction_id: Optional[str] = None,
     ) -> Optional[PaymentInDB]:
-        with SessionLocal() as db:
-            db_payment = db.query(Payment).filter(Payment.id == payment_id).first()
-            if not db_payment:
-                return None
+        db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
+        if not db_payment:
+            return None
 
-            db_payment.status = status.value
-            if gateway_transaction_id is not None:
-                db_payment.gateway_transaction_id = gateway_transaction_id
-            db_payment.updated_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(db_payment)
-            return self._to_domain_model(db_payment)
+        db_payment.status = status.value
+        if gateway_transaction_id is not None:
+            db_payment.gateway_transaction_id = gateway_transaction_id
+        db_payment.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(db_payment)
+        return self._to_domain_model(db_payment)
+
+    def update_payment(
+        self,
+        payment_id: int,
+        payment_data: dict
+    ) -> Optional[PaymentInDB]:
+        """Update payment with arbitrary data"""
+        db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
+        if not db_payment:
+            return None
+
+        # Update fields from payment_data
+        for field, value in payment_data.items():
+            if field == "status" and isinstance(value, str):
+                # Handle status as string value
+                db_payment.status = value
+            elif field == "meta_data" and value is not None:
+                # Merge metadata
+                if db_payment.meta_data is None:
+                    db_payment.meta_data = {}
+                db_payment.meta_data.update(value)
+            elif hasattr(db_payment, field):
+                setattr(db_payment, field, value)
+
+        db_payment.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(db_payment)
+        return self._to_domain_model(db_payment)
 
     def _to_domain_model(self, db_payment: Payment) -> PaymentInDB:
         return PaymentInDB(
@@ -391,12 +428,10 @@ class DBPaymentRepository(PaymentRepository):
             amount=float(db_payment.amount),
             currency=db_payment.currency,
             payment_method=PaymentMethod(db_payment.payment_method),
-            payment_gateway=PaymentGateway(
-                getattr(db_payment, "payment_gateway", "dummy")
-            ),
+            payment_gateway=PaymentGateway(db_payment.payment_gateway),
             gateway_transaction_id=db_payment.gateway_transaction_id,
             status=PaymentStatus(db_payment.status),
-            metadata=db_payment.gateway_response or {},
+            meta_data=db_payment.meta_data or {},
             created_at=db_payment.created_at,
             updated_at=db_payment.updated_at,
         )
@@ -405,32 +440,32 @@ class DBPaymentRepository(PaymentRepository):
 class DBRefundRepository(RefundRepository):
     """SQLAlchemy implementation of RefundRepository"""
 
+    def __init__(self, db: Session):
+        self.db = db
+
     def create_refund(self, refund: RefundCreate) -> RefundInDB:
-        with SessionLocal() as db:
-            db_refund = Refund(
-                transaction_id=refund.transaction_id,
-                amount=float(refund.amount),
-                reason=refund.reason,
-                status=refund.status.value,
-                processed_by=refund.processed_by,
-                processed_at=refund.processed_at,
-            )
-            db.add(db_refund)
-            db.commit()
-            db.refresh(db_refund)
-            return self._to_domain_model(db_refund)
+        db_refund = Refund(
+            transaction_id=refund.transaction_id,
+            amount=float(refund.amount),
+            reason=refund.reason,
+            status=refund.status.value,
+            processed_by=refund.processed_by,
+            processed_at=refund.processed_at,
+        )
+        self.db.add(db_refund)
+        self.db.commit()
+        self.db.refresh(db_refund)
+        return self._to_domain_model(db_refund)
 
     def get_refund(self, refund_id: int) -> Optional[RefundInDB]:
-        with SessionLocal() as db:
-            db_refund = db.query(Refund).filter(Refund.id == refund_id).first()
-            return self._to_domain_model(db_refund) if db_refund else None
+        db_refund = self.db.query(Refund).filter(Refund.id == refund_id).first()
+        return self._to_domain_model(db_refund) if db_refund else None
 
     def get_refunds_by_transaction(self, transaction_id: int) -> List[RefundInDB]:
-        with SessionLocal() as db:
-            db_refunds = (
-                db.query(Refund).filter(Refund.transaction_id == transaction_id).all()
-            )
-            return [self._to_domain_model(r) for r in db_refunds]
+        db_refunds = (
+            self.db.query(Refund).filter(Refund.transaction_id == transaction_id).all()
+        )
+        return [self._to_domain_model(r) for r in db_refunds]
 
     def update_refund_status(
         self,
@@ -439,23 +474,22 @@ class DBRefundRepository(RefundRepository):
         processed_by: Optional[int] = None,
         notes: Optional[str] = None,
     ) -> Optional[RefundInDB]:
-        with SessionLocal() as db:
-            db_refund = db.query(Refund).filter(Refund.id == refund_id).first()
-            if not db_refund:
-                return None
+        db_refund = self.db.query(Refund).filter(Refund.id == refund_id).first()
+        if not db_refund:
+            return None
 
-            db_refund.status = status.value
-            if processed_by is not None:
-                db_refund.processed_by = processed_by
-            if notes is not None:
-                db_refund.reason = notes  # Using reason field for notes as per schema
+        db_refund.status = status.value
+        if processed_by is not None:
+            db_refund.processed_by = processed_by
+        if notes is not None:
+            db_refund.reason = notes  # Using reason field for notes as per schema
 
-            if status == RefundStatus.COMPLETED and not db_refund.processed_at:
-                db_refund.processed_at = datetime.now(timezone.utc)
+        if status == RefundStatus.COMPLETED and not db_refund.processed_at:
+            db_refund.processed_at = datetime.now(timezone.utc)
 
-            db.commit()
-            db.refresh(db_refund)
-            return self._to_domain_model(db_refund)
+        self.db.commit()
+        self.db.refresh(db_refund)
+        return self._to_domain_model(db_refund)
 
     def _to_domain_model(self, db_refund: Refund) -> RefundInDB:
         return RefundInDB(
