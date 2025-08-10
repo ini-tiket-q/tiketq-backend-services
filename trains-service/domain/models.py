@@ -39,3 +39,30 @@ class TrainSearchRequest:
     departure_date: str
     adult_count: int = 1
     infant_count: int = 0
+
+@dataclass
+class TrainBookingRequest:
+    """Domain model for train booking request"""
+    train_number: str
+    departure_date: str
+    class_name: str
+    subclass: str
+    passengers: List[dict]
+    contact_info: dict
+
+@dataclass
+class TrainBooking:
+    """Domain model for train booking"""
+    booking_id: str
+    pnr: str
+    train_number: str
+    train_name: str
+    departure_station: TrainStation
+    arrival_station: TrainStation
+    departure_time: time
+    arrival_time: time
+    booking_date: datetime
+    status: str
+    total_price: float
+    passengers: List[dict]
+    contact_info: dict
