@@ -56,3 +56,59 @@ class TrainStationService:
             raise ValueError("Search query must be at least 2 characters")
         
         return self.station_repo.search_stations(query)
+
+class TrainBookingService:
+    """Business logic for train booking operations"""
+    
+    def __init__(self, external_api: ExternalTrainAPIRepository, booking_repo: TrainBookingRepository):
+        self.external_api = external_api
+        self.booking_repo = booking_repo
+        self.external_api = external_api
+        self.booking_repo = booking_repo
+    
+    def create_booking(self, booking_request: TrainBookingRequest, user_id: str) -> TrainBooking:
+        """Create a new train booking"""
+        # Validate booking request
+        self._validate_booking_request(booking_request)
+        
+        # Create booking via external API
+        booking = self.external_api.create_booking(booking_request)
+        
+        # Store booking locally for tracking
+        if self.booking_repo:
+            booking = self.booking_repo.create_booking(booking)
+        
+        return booking
+    
+    def get_booking(self, booking_id: str, user_id: str) -> Optional[TrainBooking]:
+        """Get booking by ID (with user authorization)"""
+        if not self.booking_repo:
+            return None
+            
+        booking = self.booking_repo.get_booking_by_id(booking_id)
+        
+        if not booking:
+            return None
+        
+        # Check if user owns this booking (implement based on your auth system)
+        return booking
+    
+    def cancel_booking(self, booking_id: str, user_id: str) -> bool:
+        """Cancel a booking"""
+        booking = self.get_booking(booking_id, user_id)
+        
+        if not booking:
+            raise ValueError("Booking not found or unauthorized")
+        
+        if booking.status != "confirmed":
+            raise ValueError("Can only cancel confirmed bookings")
+        
+        return self.external_api.cancel_booking(booking_id)
+    
+    def _validate_booking_request(self, booking_request: TrainBookingRequest):
+        """Validate booking request"""
+        if not booking_request.passengers:
+            raise ValueError("At least one passenger is required")
+        
+        if not booking_request.contact_info:
+            raise ValueError("Contact information is required")
