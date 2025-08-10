@@ -28,8 +28,3 @@ async def health_check():
         "db_url_present": bool(DB_URL),
         "api_key_present": bool(KAI_API_KEY)
     }
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)

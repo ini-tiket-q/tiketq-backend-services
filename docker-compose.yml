@@ -72,8 +72,6 @@ services:
     container_name: trains-service
     env_file:
       - .env
-    ports:
-      - "8006:8000"
     networks:
       - tiketq-net
     restart: unless-stopped
