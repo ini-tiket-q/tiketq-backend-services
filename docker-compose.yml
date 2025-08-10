@@ -86,6 +86,8 @@ services:
     build:
       context: ./transaction-service
     container_name: transaction-service
+    ports:
+      - "8004:8000" # temporary expose e.g. localhost:8004/docs
     env_file:
       - .env
     networks:

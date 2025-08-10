@@ -70,13 +70,13 @@ async def list_transactions(
     try:
         if current_user["role"] == "admin":
             # Admin can see all transactions
-            transactions = service.transaction_repo.get_transactions(
+            transactions = service.get_all_transactions(
                 skip=skip, 
                 limit=limit
             )
         else:
             # Regular users can only see their own transactions
-            transactions = service.transaction_repo.get_transactions_by_user(
+            transactions = service.get_transactions_by_user(
                 user_id=current_user["id"],
                 skip=skip,
                 limit=limit

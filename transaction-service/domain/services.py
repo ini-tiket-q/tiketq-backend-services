@@ -145,6 +145,29 @@ class TransactionService:
             logger.error(f"Error retrieving transactions for user {user_id}: {str(e)}")
             return []
     
+    def get_all_transactions(
+        self, 
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[TransactionInDB]:
+        """Get all transactions (admin function).
+        
+        Args:
+            skip: Number of transactions to skip for pagination
+            limit: Maximum number of transactions to return
+            
+        Returns:
+            List of TransactionInDB objects
+        """
+        try:
+            return self.transaction_repo.get_transactions(
+                skip=skip,
+                limit=limit
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving all transactions: {str(e)}")
+            return []
+    
     def update_transaction(
         self, 
         transaction_id: int, 
