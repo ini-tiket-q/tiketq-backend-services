@@ -22,9 +22,7 @@ ROUTE_SERVICE_MAP = {
     "/ferries": "ferries",
     "/hotels": "hotels",
     "/ppob": "ppob",
-    "/payments": "payment",
-    "/api/v1/payments": "transaction",
-    "/api/v1/transactions": "transaction",
+    "/payments": "transaction",
     "/transactions": "transaction",
 }
 

@@ -9,7 +9,7 @@ from infrastructure.dependencies import (
     create_transaction_service
 )
 
-router = APIRouter(prefix="/api/v1", tags=["transactions"])
+router = APIRouter(tags=["transactions"])
 
 def get_current_user(authorization: str = Header(None)):
     """Mock authentication - replace with real auth service integration"""
