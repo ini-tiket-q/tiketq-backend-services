@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Header
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
@@ -7,16 +7,22 @@ from domain.services import PaymentService, TransactionService
 from infrastructure.dependencies import (
     get_database_session,
     create_payment_service,
-    create_transaction_service,
-    get_auth_service
+    create_transaction_service
 )
 
 router = APIRouter(prefix="/api/v1", tags=["payments"])
 
-def get_current_user():
-    """Get current authenticated user"""
-    auth_service = get_auth_service()
-    return auth_service.get_current_user()
+def get_current_user(authorization: str = Header(None)):
+    """Mock authentication - replace with real auth service integration"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials"
+        )
+    
+    # For now, return a mock user - this should integrate with auth service
+    # The API Gateway should handle authentication and pass user info
+    return {"id": 1, "role": "user", "email": "test@example.com"}
 
 def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentService:
     """Dependency injection for PaymentService"""

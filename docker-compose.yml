@@ -1,4 +1,4 @@
-version: '3.9'
+# version: '3.9'
 
 services:
   api-gateway:
@@ -17,6 +17,7 @@ services:
       - hotels-service
       - ppob-service
       - payment-service
+      - transaction-service
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -77,6 +78,16 @@ services:
     build:
       context: ./payment-service
     container_name: payment-service
+    networks:
+      - tiketq-net
+    restart: unless-stopped
+
+  transaction-service:
+    build:
+      context: ./transaction-service
+    container_name: transaction-service
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped
