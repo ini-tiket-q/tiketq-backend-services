@@ -247,6 +247,79 @@ class OrderService:
             logger.error(f"Error retrieving orders for user {user_id}: {str(e)}")
             return []
     
+    def create_order(self, order_data: Dict[str, Any], user_id: int) -> Optional[OrderInDB]:
+        """Create a new order.
+        
+        Args:
+            order_data: Dictionary containing order information
+            user_id: ID of the user creating the order
+            
+        Returns:
+            OrderInDB if created successfully, None otherwise
+        """
+        try:
+            # Note: This is a placeholder implementation
+            # In production, this would validate with external booking services
+            
+            # Basic validation
+            required_fields = ["service_type", "items"]
+            for field in required_fields:
+                if field not in order_data:
+                    raise ValueError(f"Missing required field: {field}")
+            
+            # Calculate totals
+            items = order_data["items"]
+            subtotal = sum(item.get("price", 0) * item.get("quantity", 1) for item in items)
+            tax = order_data.get("tax", 0.0)
+            discount = order_data.get("discount", 0.0)
+            total = subtotal + tax - discount
+            
+            # Prepare order data
+            order_create_data = {
+                "user_id": user_id,
+                "service_type": order_data["service_type"],
+                "items": items,
+                "subtotal": subtotal,
+                "tax": tax,
+                "discount": discount,
+                "total": total,
+                "status": OrderStatus.DRAFT,
+                "metadata": order_data.get("metadata", {})
+            }
+            
+            order_create = OrderCreate(**order_create_data)
+            return self.order_repo.create_order(order_create)
+            
+        except Exception as e:
+            logger.error(f"Error creating order for user {user_id}: {str(e)}")
+            return None
+    
+    def get_orders(
+        self, 
+        skip: int = 0, 
+        limit: int = 100,
+        status: Optional[OrderStatus] = None
+    ) -> List[OrderInDB]:
+        """Get all orders (admin function).
+        
+        Args:
+            skip: Number of orders to skip for pagination
+            limit: Maximum number of orders to return
+            status: Optional status filter
+            
+        Returns:
+            List of OrderInDB objects
+        """
+        try:
+            return self.order_repo.get_orders(
+                status=status,
+                skip=skip,
+                limit=limit
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving all orders: {str(e)}")
+            return []
+    
     def update_order_status(
         self, 
         order_id: int, 
@@ -620,3 +693,87 @@ class PaymentService:
 #         except Exception as e:
 #             logger.error(f"Error processing refund {refund_id}: {str(e)}", exc_info=True)
 #             return None
+
+
+# =============================================================================
+# Dependency Injection and Service Factories
+# =============================================================================
+
+from functools import lru_cache
+from typing import Generator
+from sqlalchemy.orm import Session
+
+def get_database_session() -> Generator[Session, None, None]:
+    """
+    FastAPI dependency that provides database sessions.
+    This is the only place where FastAPI directly interacts with the database.
+    """
+    from adapters.db import DatabaseSessionProvider
+    
+    _session_provider = DatabaseSessionProvider()
+    session = _session_provider.get_session()
+    try:
+        yield session
+    finally:
+        _session_provider.close_session(session)
+
+# Application layer - service composition
+def create_payment_service(db_session: Session) -> PaymentService:
+    """
+    Factory function to create PaymentService with all its dependencies.
+    This is where we compose the hexagonal architecture.
+    """
+    from adapters.db import DBPaymentRepository, DBTransactionRepository
+    
+    # Infrastructure adapters (ports implementations)
+    transaction_repo = DBTransactionRepository(db_session)
+    payment_repo = DBPaymentRepository(db_session)
+    
+    # Domain service
+    return PaymentService(
+        transaction_repo=transaction_repo,
+        payment_repo=payment_repo
+    )
+
+def create_transaction_service(db_session: Session) -> TransactionService:
+    """
+    Factory function to create TransactionService with all its dependencies.
+    """
+    from adapters.db import DBTransactionRepository, DBOrderRepository
+    
+    # Infrastructure adapters
+    transaction_repo = DBTransactionRepository(db_session)
+    order_repo = DBOrderRepository(db_session)
+    
+    # Domain service
+    return TransactionService(
+        transaction_repo=transaction_repo,
+        order_repo=order_repo
+    )
+
+def create_order_service(db_session: Session) -> OrderService:
+    """
+    Factory function to create OrderService with all its dependencies.
+    """
+    from adapters.db import DBOrderRepository
+    
+    # Infrastructure adapters
+    order_repo = DBOrderRepository(db_session)
+    
+    # Domain service
+    return OrderService(
+        order_repo=order_repo
+    )
+
+# Authentication service placeholder
+@lru_cache()
+def get_auth_service():
+    """
+    TODO: Implement proper authentication service
+    This should return the actual auth service that validates tokens
+    """
+    class MockAuthService:
+        def get_current_user(self):
+            return {"id": 1, "role": "admin"}
+    
+    return MockAuthService()

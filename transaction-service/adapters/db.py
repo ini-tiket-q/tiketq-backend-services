@@ -26,6 +26,7 @@ from domain.models import (
     TransactionType,
     OrderInDB,
     OrderCreate,
+    OrderUpdate,
     OrderStatus,
     PaymentInDB,
     PaymentCreate,
@@ -207,6 +208,18 @@ class DBTransactionRepository(TransactionRepository):
         if status:
             db_transactions = db_transactions.filter(Transaction.status == status.value)
         return [self._to_domain_model(t) for t in db_transactions]
+    
+    def get_transactions(
+        self, skip: int = 0, limit: int = 100
+    ) -> List[TransactionInDB]:
+        """Get all transactions with pagination (admin function)"""
+        db_transactions = (
+            self.db.query(Transaction)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return [self._to_domain_model(t) for t in db_transactions]
 
     def update_transaction(
         self, transaction_id: int, transaction: TransactionUpdate
@@ -321,6 +334,42 @@ class DBOrderRepository(OrderRepository):
 
         # TODO: Add status field to Order table
         # db_order.status = status.value
+        db_order.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(db_order)
+        return self._to_domain_model(db_order)
+    
+    def get_orders(
+        self, 
+        status: Optional[OrderStatus] = None,
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[OrderInDB]:
+        """Get all orders with optional status filter and pagination (admin function)"""
+        query = self.db.query(Order)
+        
+        if status:
+            query = query.filter(Order.status == status.value)
+            
+        db_orders = query.offset(skip).limit(limit).all()
+        return [self._to_domain_model(order) for order in db_orders]
+    
+    def update_order(
+        self, 
+        order_id: int, 
+        order: OrderUpdate
+    ) -> Optional[OrderInDB]:
+        """Update order with full data"""
+        db_order = self.db.query(Order).filter(Order.id == order_id).first()
+        if not db_order:
+            return None
+
+        # Update fields that are not None
+        if order.status is not None:
+            db_order.status = order.status.value
+        if order.meta_data is not None:
+            db_order.metadata_ = order.meta_data
+            
         db_order.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(db_order)

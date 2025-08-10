@@ -3,8 +3,9 @@ from typing import Dict, Any
 from sqlalchemy.orm import Session
 
 from domain.models import PaymentInDB, PaymentStatus
-from domain.services import PaymentService, TransactionService
-from infrastructure.dependencies import (
+from domain.services import (
+    PaymentService, 
+    TransactionService,
     get_database_session,
     create_payment_service,
     create_transaction_service
