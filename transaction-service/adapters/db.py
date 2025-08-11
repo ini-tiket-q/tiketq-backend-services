@@ -11,6 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship, Session
 from sqlalchemy.sql import func
+from sqlalchemy.ext.hybrid import hybrid_property
 
 import os
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -98,6 +99,17 @@ class Transaction(Base):
     payments = relationship("Payment", back_populates="transaction")
     refunds = relationship("Refund", back_populates="transaction")
 
+    # Hybrid property to provide clean metadata interface
+    @hybrid_property
+    def metadata(self):
+        """Clean interface for metadata field that maps to meta_data column"""
+        return self.meta_data or {}
+    
+    @metadata.setter
+    def metadata(self, value):
+        """Setter for metadata that maps to meta_data column"""
+        self.meta_data = value
+
 
 class Order(Base):
     """SQLAlchemy model for orders table"""
@@ -117,6 +129,17 @@ class Order(Base):
     meta_data = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Hybrid property to provide clean metadata interface
+    @hybrid_property
+    def metadata(self):
+        """Clean interface for metadata field that maps to meta_data column"""
+        return self.meta_data or {}
+    
+    @metadata.setter
+    def metadata(self, value):
+        """Setter for metadata that maps to meta_data column"""
+        self.meta_data = value
 
 
 class Payment(Base):
@@ -138,6 +161,17 @@ class Payment(Base):
 
     # Relationships
     transaction = relationship("Transaction", back_populates="payments")
+
+    # Hybrid property to provide clean metadata interface
+    @hybrid_property
+    def metadata(self):
+        """Clean interface for metadata field that maps to meta_data column"""
+        return self.meta_data or {}
+    
+    @metadata.setter
+    def metadata(self, value):
+        """Setter for metadata that maps to meta_data column"""
+        self.meta_data = value
 
 
 class Refund(Base):
@@ -235,9 +269,9 @@ class DBTransactionRepository(TransactionRepository):
         for field, value in update_data.items():
             # metadata should be added, not replaced with the new value. or deleted if the value is None
             if field == "metadata" and value is not None:
-                if db_transaction.meta_data is None:
-                    db_transaction.meta_data = {}
-                db_transaction.meta_data.update(value)
+                if db_transaction.metadata is None:
+                    db_transaction.metadata = {}
+                db_transaction.metadata.update(value)
             elif hasattr(db_transaction, field):
                 setattr(db_transaction, field, value)
 
@@ -270,7 +304,7 @@ class DBTransactionRepository(TransactionRepository):
             if db_transaction.payment_gateway
             else None,
             gateway_transaction_id=db_transaction.gateway_transaction_id,
-            metadata=db_transaction.meta_data or {},
+            metadata=db_transaction.metadata,
             created_at=db_transaction.created_at,
             updated_at=getattr(db_transaction, "updated_at", None),
         )
@@ -292,7 +326,7 @@ class DBOrderRepository(OrderRepository):
             quantity=order.quantity,
             unit_price=float(order.unit_price),
             total_amount=float(order.total_amount),
-            meta_data=order.metadata,
+            metadata=order.metadata,
         )
         self.db.add(db_order)
         self.db.commit()
@@ -368,7 +402,7 @@ class DBOrderRepository(OrderRepository):
         if order.status is not None:
             db_order.status = order.status.value
         if order.metadata is not None:
-            db_order.meta_data = order.metadata
+            db_order.metadata = order.metadata
             
         db_order.updated_at = datetime.now(timezone.utc)
         self.db.commit()
@@ -386,7 +420,7 @@ class DBOrderRepository(OrderRepository):
             quantity=db_order.quantity,
             unit_price=float(db_order.unit_price),
             total_amount=float(db_order.total_amount),
-            metadata=db_order.meta_data or {},
+            metadata=db_order.metadata,
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
         )
@@ -407,7 +441,7 @@ class DBPaymentRepository(PaymentRepository):
             currency=payment.currency,
             status=payment.status.value,
             gateway_transaction_id=payment.gateway_transaction_id,
-            meta_data=payment.metadata,
+            metadata=payment.metadata,
         )
         self.db.add(db_payment)
         self.db.commit()
@@ -458,10 +492,10 @@ class DBPaymentRepository(PaymentRepository):
                 # Handle status as string value
                 db_payment.status = value
             elif field == "metadata" and value is not None:
-                # Merge metadata
-                if db_payment.meta_data is None:
-                    db_payment.meta_data = {}
-                db_payment.meta_data.update(value)
+                # Merge metadata using hybrid property
+                if db_payment.metadata is None:
+                    db_payment.metadata = {}
+                db_payment.metadata.update(value)
             elif hasattr(db_payment, field):
                 setattr(db_payment, field, value)
 
@@ -480,7 +514,7 @@ class DBPaymentRepository(PaymentRepository):
             payment_gateway=PaymentGateway(db_payment.payment_gateway),
             gateway_transaction_id=db_payment.gateway_transaction_id,
             status=PaymentStatus(db_payment.status),
-            metadata=db_payment.meta_data or {},
+            metadata=db_payment.metadata,
             created_at=db_payment.created_at,
             updated_at=db_payment.updated_at,
         )
