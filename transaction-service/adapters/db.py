@@ -90,7 +90,7 @@ class Transaction(Base):
     payment_method = Column(Enum(PaymentMethod), nullable=True)
     payment_gateway = Column(Enum(PaymentGateway), nullable=True)
     gateway_transaction_id = Column(String(255), nullable=True, index=True)
-    meta_data = Column(JSON, nullable=True)
+    meta_data = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -114,7 +114,7 @@ class Order(Base):
     discount = Column(Float, default=0.0, nullable=False)
     total = Column(Float, nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.DRAFT, nullable=False)
-    metadata_ = Column("metadata", JSON, default={}, nullable=False)
+    meta_data = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -132,7 +132,7 @@ class Payment(Base):
     payment_gateway = Column(Enum(PaymentGateway), nullable=False)
     gateway_transaction_id = Column(String(255), nullable=True, index=True)
     status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING, nullable=False)
-    meta_data = Column(JSON, nullable=True)
+    meta_data = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -182,7 +182,7 @@ class DBTransactionRepository(TransactionRepository):
             if transaction.payment_gateway
             else None,
             gateway_transaction_id=transaction.gateway_transaction_id,
-            meta_data=transaction.meta_data,
+            meta_data=transaction.metadata,
         )
         self.db.add(db_transaction)
         self.db.commit()
@@ -233,8 +233,8 @@ class DBTransactionRepository(TransactionRepository):
 
         update_data = transaction.dict(exclude_unset=True)
         for field, value in update_data.items():
-            # meta_data should be added, not replaced with the new value. or deleted if the value is None
-            if field == "meta_data" and value is not None:
+            # metadata should be added, not replaced with the new value. or deleted if the value is None
+            if field == "metadata" and value is not None:
                 if db_transaction.meta_data is None:
                     db_transaction.meta_data = {}
                 db_transaction.meta_data.update(value)
@@ -270,7 +270,7 @@ class DBTransactionRepository(TransactionRepository):
             if db_transaction.payment_gateway
             else None,
             gateway_transaction_id=db_transaction.gateway_transaction_id,
-            meta_data=db_transaction.meta_data or {},
+            metadata=db_transaction.meta_data or {},
             created_at=db_transaction.created_at,
             updated_at=getattr(db_transaction, "updated_at", None),
         )
@@ -292,7 +292,7 @@ class DBOrderRepository(OrderRepository):
             quantity=order.quantity,
             unit_price=float(order.unit_price),
             total_amount=float(order.total_amount),
-            meta_data=order.meta_data,
+            meta_data=order.metadata,
         )
         self.db.add(db_order)
         self.db.commit()
@@ -367,8 +367,8 @@ class DBOrderRepository(OrderRepository):
         # Update fields that are not None
         if order.status is not None:
             db_order.status = order.status.value
-        if order.meta_data is not None:
-            db_order.metadata_ = order.meta_data
+        if order.metadata is not None:
+            db_order.meta_data = order.metadata
             
         db_order.updated_at = datetime.now(timezone.utc)
         self.db.commit()
@@ -386,7 +386,7 @@ class DBOrderRepository(OrderRepository):
             quantity=db_order.quantity,
             unit_price=float(db_order.unit_price),
             total_amount=float(db_order.total_amount),
-            meta_data=db_order.meta_data or {},
+            metadata=db_order.meta_data or {},
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
         )
@@ -407,7 +407,7 @@ class DBPaymentRepository(PaymentRepository):
             currency=payment.currency,
             status=payment.status.value,
             gateway_transaction_id=payment.gateway_transaction_id,
-            meta_data=payment.meta_data,
+            meta_data=payment.metadata,
         )
         self.db.add(db_payment)
         self.db.commit()
@@ -457,7 +457,7 @@ class DBPaymentRepository(PaymentRepository):
             if field == "status" and isinstance(value, str):
                 # Handle status as string value
                 db_payment.status = value
-            elif field == "meta_data" and value is not None:
+            elif field == "metadata" and value is not None:
                 # Merge metadata
                 if db_payment.meta_data is None:
                     db_payment.meta_data = {}
@@ -480,7 +480,7 @@ class DBPaymentRepository(PaymentRepository):
             payment_gateway=PaymentGateway(db_payment.payment_gateway),
             gateway_transaction_id=db_payment.gateway_transaction_id,
             status=PaymentStatus(db_payment.status),
-            meta_data=db_payment.meta_data or {},
+            metadata=db_payment.meta_data or {},
             created_at=db_payment.created_at,
             updated_at=db_payment.updated_at,
         )

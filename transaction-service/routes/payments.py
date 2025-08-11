@@ -46,15 +46,9 @@ async def create_payment(
 ):
     """Create payment - USER/ADMIN access"""
     try:
-        # Validate required fields
-        if "transaction_id" not in payment_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="transaction_id is required"
-            )
-        
+        # Call service layer with all validation handling
         payment = payment_service.create_payment(
-            transaction_id=payment_data["transaction_id"],
+            transaction_id=payment_data.get("transaction_id"),
             payment_data=payment_data,
             user_id=current_user["id"]
         )
@@ -68,6 +62,7 @@ async def create_payment(
         return payment
         
     except ValueError as e:
+        # Service layer validation errors
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
@@ -178,41 +173,27 @@ async def process_payment_refund(
         )
     
     try:
-        # Get the payment first
-        payment = payment_service.payment_repo.get_payment(payment_id)
-        if not payment:
+        # Call service layer with all validation handling
+        updated_payment = payment_service.process_refund(
+            payment_id=payment_id,
+            refund_data=refund_data,
+            refunded_by=current_user["id"]
+        )
+        
+        if not updated_payment:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment not found"
+                detail="Payment not found or cannot be refunded"
             )
-        
-        # Check if payment can be refunded
-        if payment.status != PaymentStatus.COMPLETED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only completed payments can be refunded"
-            )
-        
-        # Update payment status to refunded
-        # Note: This is a simplified implementation
-        # In a real system, you'd integrate with payment gateway APIs
-        updated_payment = payment_service.payment_repo.update_payment(
-            payment_id=payment_id,
-            payment_data={
-                "status": PaymentStatus.REFUNDED.value,
-                "metadata": {
-                    **payment.metadata,
-                    "refund_reason": refund_data.get("reason", ""),
-                    "refunded_by": current_user["id"],
-                    "refund_amount": refund_data.get("amount", payment.amount)
-                }
-            }
-        )
         
         return updated_payment
         
-    except HTTPException:
-        raise
+    except ValueError as e:
+        # Service layer validation errors
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -230,26 +211,8 @@ async def payment_webhook(
     """Payment gateway webhook - Public access"""
     try:
         # TODO: Implement webhook signature validation
-        # This is a simplified implementation
-        
-        payment_id = webhook_data.get("payment_id")
-        status_update = webhook_data.get("status")
-        gateway_response = webhook_data.get("gateway_response", {})
-        
-        if not payment_id or not status_update:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="payment_id and status are required"
-            )
-        
-        # Update payment status based on webhook
-        payment = payment_service.payment_repo.update_payment(
-            payment_id=payment_id,
-            payment_data={
-                "status": status_update,
-                "gateway_response": gateway_response
-            }
-        )
+        # Call service layer with all validation handling
+        payment = payment_service.process_webhook(webhook_data)
         
         if not payment:
             raise HTTPException(
@@ -257,10 +220,14 @@ async def payment_webhook(
                 detail="Payment not found"
             )
         
-        return {"message": "Webhook processed successfully", "payment_id": payment_id}
+        return {"message": "Webhook processed successfully", "payment_id": payment.id}
         
-    except HTTPException:
-        raise
+    except ValueError as e:
+        # Service layer validation errors
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

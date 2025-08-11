@@ -7,7 +7,9 @@ from domain.models import (
     TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus, TransactionType,
     OrderInDB, OrderCreate, OrderUpdate, OrderStatus, ServiceType,
     PaymentInDB, PaymentCreate, PaymentStatus, PaymentMethod, PaymentGateway,
-    RefundInDB, RefundCreate, RefundStatus, Currency
+    RefundInDB, RefundCreate, RefundStatus, Currency,
+    # Payment request models
+    PaymentCreateRequest, PaymentConfirmRequest, PaymentRefundRequest, PaymentWebhookRequest
 )
 
 from adapters.db import (
@@ -413,7 +415,22 @@ class PaymentService:
             
         Returns:
             PaymentInDB if successful, None otherwise
+            
+        Raises:
+            ValueError: If payment data validation fails
         """
+        # Validate request data using Pydantic model
+        request_dict = {
+            "transaction_id": transaction_id,
+            **payment_data
+        }
+        
+        try:
+            validated_request = PaymentCreateRequest(**request_dict)
+        except Exception as e:
+            logger.error(f"Payment validation failed: {str(e)}")
+            raise ValueError(f"Payment validation failed: {str(e)}")
+        
         try:
             # Get and validate transaction
             transaction = self.transaction_repo.get_transaction(transaction_id)
@@ -427,16 +444,16 @@ class PaymentService:
                 payments = self.payment_repo.get_payments_by_transaction(transaction_id)
                 return payments[0] if payments else None
             
-            # Create payment record
+            # Create payment record using validated data
             payment = PaymentCreate(
-                transaction_id=transaction_id,
-                amount=float(payment_data.get('amount', transaction.amount)),
-                currency=Currency(payment_data.get('currency', transaction.currency)),
-                payment_method=PaymentMethod(payment_data['payment_method']),
-                payment_gateway=PaymentGateway(payment_data['payment_gateway']),
-                gateway_transaction_id=payment_data.get('gateway_transaction_id'),
+                transaction_id=validated_request.transaction_id,
+                amount=validated_request.amount,
+                currency=Currency(validated_request.currency) if validated_request.currency else transaction.currency,
+                payment_method=validated_request.payment_method,
+                payment_gateway=validated_request.gateway,
+                gateway_transaction_id=validated_request.gateway_transaction_id,
                 status=PaymentStatus.PENDING,
-                metadata=payment_data.get('metadata', {})
+                metadata=validated_request.metadata or {}
             )
             
             # Save payment to database
@@ -477,22 +494,38 @@ class PaymentService:
             
         Returns:
             Updated PaymentInDB if successful, None otherwise
+            
+        Raises:
+            ValueError: If payment confirmation data validation fails
         """
+        # Validate request data using Pydantic model
+        request_dict = {
+            "payment_id": payment_id,
+            "gateway_response": gateway_response,
+            "confirmed_by": confirmed_by
+        }
+        
+        try:
+            validated_request = PaymentConfirmRequest(**request_dict)
+        except Exception as e:
+            logger.error(f"Payment confirmation validation failed: {str(e)}")
+            raise ValueError(f"Payment confirmation validation failed: {str(e)}")
+        
         try:
             # Get payment with transaction
-            payment = self.payment_repo.get_payment(payment_id)
+            payment = self.payment_repo.get_payment(validated_request.payment_id)
             if not payment:
                 logger.error(f"Payment {payment_id} not found")
                 return None
                 
             # Update payment status
-            status = PaymentStatus.COMPLETED if gateway_response.get('success', False) else PaymentStatus.FAILED
+            status = PaymentStatus.COMPLETED if validated_request.gateway_response.get('success', False) else PaymentStatus.FAILED
             
             # Update payment record
             updated_payment = self.payment_repo.update_payment_status(
-                payment_id=payment_id,
+                payment_id=validated_request.payment_id,
                 status=status,
-                gateway_transaction_id=gateway_response.get('transaction_id')
+                gateway_transaction_id=validated_request.gateway_response.get('transaction_id')
             )
             
             if not updated_payment:
@@ -510,11 +543,11 @@ class PaymentService:
                 transaction_id=payment.transaction_id,
                 transaction=TransactionUpdate(
                     status=transaction_status,
-                    gateway_transaction_id=gateway_response.get('transaction_id'),
+                    gateway_transaction_id=validated_request.gateway_response.get('transaction_id'),
                     metadata={
                         **payment.transaction.metadata,
-                        'gateway_response': gateway_response,
-                        'confirmed_by': confirmed_by,
+                        'gateway_response': validated_request.gateway_response,
+                        'confirmed_by': validated_request.confirmed_by,
                         'confirmed_at': datetime.utcnow().isoformat()
                     }
                 )
@@ -524,6 +557,115 @@ class PaymentService:
             
         except Exception as e:
             logger.error(f"Error confirming payment {payment_id}: {str(e)}", exc_info=True)
+            return None
+
+    def process_refund(
+        self,
+        payment_id: int,
+        refund_data: Dict[str, Any],
+        refunded_by: int
+    ) -> Optional[PaymentInDB]:
+        """Process a payment refund with validation.
+        
+        Args:
+            payment_id: ID of the payment to refund
+            refund_data: Dictionary containing refund details
+            refunded_by: ID of the user processing the refund
+            
+        Returns:
+            Updated PaymentInDB if successful, None otherwise
+            
+        Raises:
+            ValueError: If refund data validation fails
+        """
+        # Validate request data using Pydantic model
+        request_dict = {
+            "payment_id": payment_id,
+            "refunded_by": refunded_by,
+            **refund_data
+        }
+        
+        try:
+            validated_request = PaymentRefundRequest(**request_dict)
+        except Exception as e:
+            logger.error(f"Payment refund validation failed: {str(e)}")
+            raise ValueError(f"Payment refund validation failed: {str(e)}")
+        
+        try:
+            # Get the payment first
+            payment = self.payment_repo.get_payment(validated_request.payment_id)
+            if not payment:
+                logger.error(f"Payment {payment_id} not found")
+                return None
+            
+            # Check if payment can be refunded
+            if payment.status != PaymentStatus.COMPLETED:
+                raise ValueError("Only completed payments can be refunded")
+            
+            # Update payment status to refunded
+            # Note: This is a simplified implementation
+            # In a real system, you'd integrate with payment gateway APIs
+            updated_payment = self.payment_repo.update_payment(
+                payment_id=validated_request.payment_id,
+                payment_data={
+                    "status": PaymentStatus.REFUNDED.value,
+                    "metadata": {
+                        **payment.metadata,
+                        "refund_reason": validated_request.reason,
+                        "refunded_by": validated_request.refunded_by,
+                        "refund_amount": validated_request.amount or payment.amount
+                    }
+                }
+            )
+            
+            return updated_payment
+            
+        except ValueError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            logger.error(f"Error processing refund for payment {payment_id}: {str(e)}", exc_info=True)
+            return None
+
+    def process_webhook(
+        self,
+        webhook_data: Dict[str, Any]
+    ) -> Optional[PaymentInDB]:
+        """Process a payment webhook with validation.
+        
+        Args:
+            webhook_data: Dictionary containing webhook data
+            
+        Returns:
+            Updated PaymentInDB if successful, None otherwise
+            
+        Raises:
+            ValueError: If webhook data validation fails
+        """
+        try:
+            validated_request = PaymentWebhookRequest(**webhook_data)
+        except Exception as e:
+            logger.error(f"Payment webhook validation failed: {str(e)}")
+            raise ValueError(f"Payment webhook validation failed: {str(e)}")
+        
+        try:
+            # Update payment status based on webhook
+            payment = self.payment_repo.update_payment(
+                payment_id=validated_request.payment_id,
+                payment_data={
+                    "status": validated_request.status,
+                    "gateway_response": validated_request.gateway_response
+                }
+            )
+            
+            if not payment:
+                logger.error(f"Payment {validated_request.payment_id} not found for webhook processing")
+                return None
+            
+            return payment
+            
+        except Exception as e:
+            logger.error(f"Error processing webhook for payment {validated_request.payment_id}: {str(e)}", exc_info=True)
             return None
 
 

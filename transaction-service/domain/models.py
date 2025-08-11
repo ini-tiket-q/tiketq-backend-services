@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from uuid import uuid4
 
 class TransactionType(str, Enum):
@@ -77,7 +77,8 @@ class TransactionBase(BaseModel):
     payment_method: Optional[PaymentMethod] = None
     payment_gateway: Optional[PaymentGateway] = None
     gateway_transaction_id: Optional[str] = None
-    meta_data: Dict[str, Any] = {}
+    # Additional transaction data
+    metadata: Dict[str, Any] = {}
 
 class TransactionCreate(TransactionBase):
     pass
@@ -87,7 +88,7 @@ class TransactionUpdate(BaseModel):
     payment_method: Optional[PaymentMethod] = None
     payment_gateway: Optional[PaymentGateway] = None
     gateway_transaction_id: Optional[str] = None
-    meta_data: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class TransactionInDB(TransactionBase):
     id: int
@@ -113,7 +114,7 @@ class OrderCreate(OrderBase):
 
 class OrderUpdate(BaseModel):
     status: Optional[OrderStatus] = None
-    meta_data: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class OrderInDB(OrderBase):
     id: int
@@ -131,7 +132,7 @@ class PaymentBase(BaseModel):
     payment_gateway: PaymentGateway
     gateway_transaction_id: Optional[str] = None
     status: PaymentStatus = PaymentStatus.PENDING
-    meta_data: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class PaymentCreate(PaymentBase):
     pass
@@ -139,7 +140,7 @@ class PaymentCreate(PaymentBase):
 class PaymentUpdate(BaseModel):
     status: Optional[TransactionStatus] = None
     gateway_transaction_id: Optional[str] = None
-    meta_data: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class PaymentInDB(PaymentBase):
     id: int
@@ -173,3 +174,52 @@ class RefundInDB(RefundBase):
 
     class Config:
         orm_mode = True
+
+
+# =============================================================================
+# API Request Models for Payment Validation
+# =============================================================================
+
+class PaymentCreateRequest(BaseModel):
+    """Request model for creating payments with validation"""
+    transaction_id: int = Field(..., gt=0, description="Transaction ID must be positive")
+    amount: float = Field(..., gt=0, description="Amount must be greater than 0")
+    currency: Currency = Currency.IDR
+    payment_method: PaymentMethod = Field(..., description="Payment method is required")
+    payment_gateway: PaymentGateway = Field(..., description="Payment gateway is required")
+    gateway_transaction_id: Optional[str] = Field(None, max_length=255)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v):
+        if v <= 0:
+            raise ValueError('Payment amount must be greater than 0')
+        if v > 999999999:  # 999 million max
+            raise ValueError('Payment amount exceeds maximum allowed value')
+        return v
+
+class PaymentConfirmRequest(BaseModel):
+    """Request model for confirming payments"""
+    gateway_response: Dict[str, Any] = Field(default_factory=dict)
+    notes: Optional[str] = Field(None, max_length=500)
+
+class PaymentRefundRequest(BaseModel):
+    """Request model for processing payment refunds"""
+    amount: Optional[float] = Field(None, gt=0, description="Refund amount (defaults to full payment amount)")
+    reason: str = Field(..., min_length=1, max_length=255, description="Reason for refund")
+    notes: Optional[str] = Field(None, max_length=500)
+    
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v):
+        if v is not None and v <= 0:
+            raise ValueError('Refund amount must be greater than 0')
+        return v
+
+class PaymentWebhookRequest(BaseModel):
+    """Request model for payment webhook validation"""
+    payment_id: int = Field(..., gt=0)
+    status: str = Field(..., min_length=1, max_length=50)
+    gateway_response: Dict[str, Any] = Field(default_factory=dict)
+    signature: Optional[str] = Field(None, description="Webhook signature for verification")
