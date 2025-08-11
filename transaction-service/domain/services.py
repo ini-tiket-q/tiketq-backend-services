@@ -11,7 +11,9 @@ from domain.models import (
     # Payment request models
     PaymentCreateRequest, PaymentConfirmRequest, PaymentRefundRequest, PaymentWebhookRequest,
     # Order request models
-    OrderCreateRequest, OrderStatusUpdateRequest
+    OrderCreateRequest, OrderStatusUpdateRequest,
+    # Transaction request models
+    TransactionCreateRequest, TransactionUpdateRequest, TransactionRefundRequest
 )
 
 from adapters.db import (
@@ -37,38 +39,41 @@ class TransactionService:
         self.transaction_repo = transaction_repo
         self.order_repo = order_repo
     
-    def create_transaction(self, transaction_data: Dict[str, Any], user_id: int) -> Optional[TransactionInDB]:
-        """Create a new transaction with associated order.
+    def create_transaction(self, transaction_request: TransactionCreateRequest, user_id: int) -> Optional[TransactionInDB]:
+        """Create a new transaction with validated request model.
         
         Args:
-            transaction_data: Dictionary containing transaction details
+            transaction_request: Validated TransactionCreateRequest model
             user_id: ID of the user creating the transaction
             
         Returns:
             TransactionInDB if successful, None otherwise
+            
+        Raises:
+            ValueError: If validation fails or required data is missing
         """
         try:
-            # Generate order number if not provided
-            order_number = transaction_data.get('order_number') or f"ORD-{str(uuid4())[:8].upper()}"
+            # Generate order number
+            order_number = f"ORD-{str(uuid4())[:8].upper()}"
             
-            # Calculate totals if not provided
-            subtotal = float(transaction_data.get('subtotal', transaction_data['amount']))
-            tax = float(transaction_data.get('tax', 0.0))
-            discount = float(transaction_data.get('discount', 0.0))
-            total = float(transaction_data.get('total', subtotal + tax - discount))
+            # Use validated amounts from request
+            subtotal = transaction_request.subtotal
+            tax = transaction_request.tax
+            discount = transaction_request.discount
+            total = transaction_request.total
             
             # Create order first
             order_data = {
                 'user_id': user_id,
                 'order_number': order_number,
-                'service_type': ServiceType(transaction_data['service_type']),
-                'items': transaction_data['items'],
+                'service_type': transaction_request.service_type,
+                'items': transaction_request.items,
                 'subtotal': subtotal,
                 'tax': tax,
                 'discount': discount,
                 'total': total,
                 'status': OrderStatus.DRAFT,
-                'metadata': transaction_data.get('metadata', {})
+                'metadata': transaction_request.metadata
             }
             
             order = self.order_repo.create_order(OrderCreate(**order_data))
@@ -76,18 +81,18 @@ class TransactionService:
                 logger.error("Failed to create order")
                 return None
             
-            # Create transaction
+            # Create transaction using validated request data
             transaction = TransactionCreate(
                 user_id=user_id,
                 order_id=order.order_number,
-                transaction_type=TransactionType(transaction_data.get('transaction_type', 'BOOKING')),
-                amount=total,
-                currency=Currency(transaction_data.get('currency', 'IDR')),
+                transaction_type=transaction_request.transaction_type,
+                amount=transaction_request.amount,
+                currency=transaction_request.currency,
                 status=TransactionStatus.PENDING,
-                payment_method=PaymentMethod(transaction_data['payment_method']) if 'payment_method' in transaction_data else None,
-                payment_gateway=PaymentGateway(transaction_data['payment_gateway']) if 'payment_gateway' in transaction_data else None,
-                gateway_transaction_id=transaction_data.get('gateway_transaction_id', None),
-                metadata=transaction_data.get('metadata', {})
+                payment_method=transaction_request.payment_method,
+                payment_gateway=transaction_request.payment_gateway,
+                gateway_transaction_id=None,  # Set later during payment processing
+                metadata=transaction_request.metadata
             )
             
             db_transaction = self.transaction_repo.create_transaction(transaction)
@@ -175,26 +180,42 @@ class TransactionService:
     def update_transaction(
         self, 
         transaction_id: int, 
-        transaction: Dict[str, Any],
+        update_request: TransactionUpdateRequest,
         user_id: int,  
     ) -> Optional[TransactionInDB]:
-        """Update transaction status with authorization check and additional data.
+        """Update transaction with validated request model.
         
         Args:
             transaction_id: ID of the transaction to update
-            status: New status for the transaction
-            user_id: Optional user ID for authorization
-            **update_data: Additional fields to update
+            update_request: Validated TransactionUpdateRequest model
+            user_id: User ID for authorization
             
         Returns:
             Updated TransactionInDB if successful, None otherwise
+            
+        Raises:
+            ValueError: If validation fails or unauthorized access
         """
         try:
             transaction_check = self.transaction_repo.get_transaction(transaction_id)
             if not transaction_check or transaction_check.user_id != user_id:
-                return None
+                raise ValueError("Transaction not found or access denied")
 
-            transaction_update = TransactionUpdate(**transaction)
+            # Create update data from validated request
+            update_data = {}
+            
+            if update_request.status is not None:
+                update_data["status"] = update_request.status
+            if update_request.payment_method is not None:
+                update_data["payment_method"] = update_request.payment_method
+            if update_request.payment_gateway is not None:
+                update_data["payment_gateway"] = update_request.payment_gateway
+            if update_request.gateway_transaction_id is not None:
+                update_data["gateway_transaction_id"] = update_request.gateway_transaction_id
+            if update_request.metadata is not None:
+                update_data["metadata"] = update_request.metadata
+
+            transaction_update = TransactionUpdate(**update_data)
                 
             return self.transaction_repo.update_transaction(
                 transaction_id, 

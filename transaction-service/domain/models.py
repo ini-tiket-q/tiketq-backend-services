@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import uuid4
 
 class TransactionType(str, Enum):
@@ -283,3 +283,104 @@ class OrderStatusUpdateRequest(BaseModel):
         if v not in valid_statuses:
             raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
         return v
+
+
+# Transaction Request Models
+class TransactionCreateRequest(BaseModel):
+    """Request model for transaction creation validation"""
+    transaction_type: TransactionType = Field(..., description="Type of transaction")
+    amount: float = Field(..., gt=0, description="Transaction amount")
+    currency: Currency = Field(Currency.IDR, description="Transaction currency")
+    service_type: ServiceType = Field(..., description="Type of service being transacted")
+    items: List[Dict[str, Any]] = Field(..., min_length=1, description="Transaction items")
+    subtotal: Optional[float] = Field(None, ge=0, description="Subtotal before tax and discount")
+    tax: float = Field(0.0, ge=0, description="Tax amount")
+    discount: float = Field(0.0, ge=0, description="Discount amount")
+    total: Optional[float] = Field(None, ge=0, description="Total amount")
+    payment_method: Optional[PaymentMethod] = Field(None, description="Payment method")
+    payment_gateway: Optional[PaymentGateway] = Field(None, description="Payment gateway")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional transaction metadata")
+    
+    @field_validator('items')
+    @classmethod
+    def validate_items(cls, v):
+        """Validate transaction items structure"""
+        if not v:
+            raise ValueError("Items cannot be empty")
+        
+        for item in v:
+            if not isinstance(item, dict):
+                raise ValueError("Each item must be a dictionary")
+            
+            # Check required fields
+            required_fields = ['price', 'quantity']
+            for field in required_fields:
+                if field not in item:
+                    raise ValueError(f"Item missing required field: {field}")
+            
+            # Validate price and quantity
+            if not isinstance(item['price'], (int, float)) or item['price'] <= 0:
+                raise ValueError("Item price must be a positive number")
+            
+            if not isinstance(item['quantity'], int) or item['quantity'] <= 0:
+                raise ValueError("Item quantity must be a positive integer")
+        
+        return v
+    
+    @field_validator('amount', 'subtotal', 'tax', 'discount', 'total')
+    @classmethod
+    def validate_amounts(cls, v):
+        """Validate monetary amounts"""
+        if v is not None and v < 0:
+            raise ValueError("Amounts must be non-negative")
+        return v
+    
+    @model_validator(mode='after')
+    def validate_totals(self):
+        """Validate total calculation consistency"""
+        if self.subtotal is None:
+            # Calculate subtotal from items
+            self.subtotal = sum(item.get("price", 0) * item.get("quantity", 1) for item in self.items)
+        
+        if self.total is None:
+            # Calculate total
+            self.total = self.subtotal + self.tax - self.discount
+        
+        # Validate that total matches calculation
+        expected_total = self.subtotal + self.tax - self.discount
+        if abs(self.total - expected_total) > 0.01:  # Allow for minor floating point differences
+            raise ValueError(f"Total {self.total} does not match calculated total {expected_total}")
+        
+        return self
+
+
+class TransactionUpdateRequest(BaseModel):
+    """Request model for transaction update validation"""
+    status: Optional[TransactionStatus] = Field(None, description="New transaction status")
+    payment_method: Optional[PaymentMethod] = Field(None, description="Payment method")
+    payment_gateway: Optional[PaymentGateway] = Field(None, description="Payment gateway")
+    gateway_transaction_id: Optional[str] = Field(None, max_length=255, description="Gateway transaction ID")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for update")
+    
+    @field_validator('gateway_transaction_id')
+    @classmethod
+    def validate_gateway_id(cls, v):
+        """Validate gateway transaction ID format"""
+        if v is not None and len(v.strip()) == 0:
+            raise ValueError("Gateway transaction ID cannot be empty")
+        return v
+
+
+class TransactionRefundRequest(BaseModel):
+    """Request model for transaction refund validation"""
+    amount: Optional[float] = Field(None, gt=0, description="Refund amount (defaults to full amount)")
+    reason: str = Field(..., min_length=1, max_length=500, description="Reason for refund")
+    notes: Optional[str] = Field(None, max_length=1000, description="Additional notes")
+    
+    @field_validator('reason')
+    @classmethod
+    def validate_reason(cls, v):
+        """Validate refund reason"""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Refund reason cannot be empty")
+        return v.strip()

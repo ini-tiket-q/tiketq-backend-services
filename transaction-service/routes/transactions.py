@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Header
-from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status, Header
+from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from domain.models import TransactionInDB
+from domain.models import (
+    TransactionInDB,
+    TransactionCreateRequest, TransactionUpdateRequest, TransactionRefundRequest
+)
 from domain.services import (
     TransactionService,
     get_database_session,
@@ -34,16 +37,23 @@ def get_transaction_service(db: Session = Depends(get_database_session)) -> Tran
     status_code=status.HTTP_201_CREATED
 )
 async def create_transaction(
-    transaction_data: Dict[str, Any] = Body(...),
+    transaction_request: TransactionCreateRequest,
     current_user: dict = Depends(get_current_user),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Create a new transaction - USER/ADMIN access"""
     try:
         transaction = service.create_transaction(
-            transaction_data=transaction_data,
+            transaction_request=transaction_request,
             user_id=current_user["id"]
         )
+        
+        if not transaction:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create transaction"
+            )
+            
         return transaction
     except ValueError as e:
         raise HTTPException(
@@ -132,7 +142,7 @@ async def get_transaction(
 )
 async def update_transaction(
     transaction_id: int,
-    transaction_data: Dict[str, Any] = Body(...),
+    update_request: TransactionUpdateRequest,
     current_user: dict = Depends(get_current_user),
     service: TransactionService = Depends(get_transaction_service)
 ):
@@ -157,10 +167,10 @@ async def update_transaction(
                 detail="Access denied to this transaction"
             )
         
-        # Update transaction
+        # Update transaction using validated request model
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
-            transaction=transaction_data,
+            update_request=update_request,
             user_id=current_user["id"]
         )
         
@@ -221,10 +231,12 @@ async def cancel_transaction(
                 detail=f"Cannot cancel transaction with status: {existing_transaction.status}"
             )
         
-        # Cancel transaction
+        # Cancel transaction using validated request model
+        from domain.models import TransactionStatus
+        cancel_request = TransactionUpdateRequest(status=TransactionStatus.CANCELLED)
         cancelled_transaction = service.update_transaction(
             transaction_id=transaction_id,
-            transaction={"status": "CANCELLED"},
+            update_request=cancel_request,
             user_id=current_user["id"]
         )
         
@@ -249,7 +261,7 @@ async def cancel_transaction(
 )
 async def refund_transaction(
     transaction_id: int,
-    refund_data: Dict[str, Any] = Body(...),
+    refund_request: TransactionRefundRequest,
     current_user: dict = Depends(get_current_user),
     service: TransactionService = Depends(get_transaction_service)
 ):
@@ -281,18 +293,23 @@ async def refund_transaction(
                 detail=f"Cannot refund transaction with status: {existing_transaction.status}"
             )
         
-        # Validate refund amount
-        refund_amount = refund_data.get("amount", existing_transaction.amount)
+        # Validate refund amount using the validated request
+        refund_amount = refund_request.amount or existing_transaction.amount
         if refund_amount > existing_transaction.amount:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Refund amount cannot exceed transaction amount"
             )
         
-        # Process refund (update transaction status)
+        # Process refund (update transaction status) using validated request model
+        from domain.models import TransactionStatus
+        refund_update = TransactionUpdateRequest(
+            status=TransactionStatus.REFUNDED,
+            metadata={"refund_reason": refund_request.reason, "refund_notes": refund_request.notes}
+        )
         refunded_transaction = service.update_transaction(
             transaction_id=transaction_id,
-            transaction={"status": "REFUNDED"},
+            update_request=refund_update,
             user_id=current_user["id"]
         )
         
