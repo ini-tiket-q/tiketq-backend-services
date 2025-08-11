@@ -9,7 +9,9 @@ from domain.models import (
     PaymentInDB, PaymentCreate, PaymentStatus, PaymentMethod, PaymentGateway,
     RefundInDB, RefundCreate, RefundStatus, Currency,
     # Payment request models
-    PaymentCreateRequest, PaymentConfirmRequest, PaymentRefundRequest, PaymentWebhookRequest
+    PaymentCreateRequest, PaymentConfirmRequest, PaymentRefundRequest, PaymentWebhookRequest,
+    # Order request models
+    OrderCreateRequest, OrderStatusUpdateRequest
 )
 
 from adapters.db import (
@@ -272,44 +274,36 @@ class OrderService:
             logger.error(f"Error retrieving orders for user {user_id}: {str(e)}")
             return []
     
-    def create_order(self, order_data: Dict[str, Any], user_id: int) -> Optional[OrderInDB]:
-        """Create a new order.
+    def create_order(self, order_request: "OrderCreateRequest", user_id: int) -> Optional[OrderInDB]:
+        """Create a new order with Pydantic validation.
         
         Args:
-            order_data: Dictionary containing order information
+            order_request: Validated OrderCreateRequest model
             user_id: ID of the user creating the order
             
         Returns:
             OrderInDB if created successfully, None otherwise
+            
+        Raises:
+            ValueError: If validation fails or required data is missing
         """
         try:
-            # Note: This is a placeholder implementation
-            # In production, this would validate with external booking services
-            
-            # Basic validation
-            required_fields = ["service_type", "items"]
-            for field in required_fields:
-                if field not in order_data:
-                    raise ValueError(f"Missing required field: {field}")
-            
-            # Calculate totals
-            items = order_data["items"]
+            # Calculate totals from validated items
+            items = order_request.items
             subtotal = sum(item.get("price", 0) * item.get("quantity", 1) for item in items)
-            tax = order_data.get("tax", 0.0)
-            discount = order_data.get("discount", 0.0)
-            total = subtotal + tax - discount
+            total = subtotal + order_request.tax - order_request.discount
             
             # Prepare order data
             order_create_data = {
                 "user_id": user_id,
-                "service_type": order_data["service_type"],
-                "items": items,
+                "service_type": order_request.service_type,
+                "items": order_request.items,
                 "subtotal": subtotal,
-                "tax": tax,
-                "discount": discount,
+                "tax": order_request.tax,
+                "discount": order_request.discount,
                 "total": total,
                 "status": OrderStatus.DRAFT,
-                "metadata": order_data.get("metadata", {})
+                "metadata": order_request.metadata
             }
             
             order_create = OrderCreate(**order_create_data)
@@ -348,27 +342,37 @@ class OrderService:
     def update_order_status(
         self, 
         order_id: int, 
-        order: Dict[str, Any],
+        status_request: "OrderStatusUpdateRequest",
         user_id: int
     ) -> Optional[OrderInDB]:
-        """Update order status with optional authorization check.
+        """Update order status with Pydantic validation.
         
         Args:
             order_id: ID of the order to update
-            status: New status for the order
-            user_id: Optional user ID for authorization
-            **update_data: Additional fields to update
+            status_request: Validated OrderStatusUpdateRequest model
+            user_id: User ID for authorization
             
         Returns:
             Updated OrderInDB if successful, None otherwise
+            
+        Raises:
+            ValueError: If validation fails or unauthorized access
         """
         try:
             order_check = self.order_repo.get_order(order_id)
             if not order_check or order_check.user_id != user_id:
-                return None
+                raise ValueError("Order not found or access denied")
                 
-            # Create update data
-            update_order = OrderUpdate(**order)
+            # Create update data from validated request
+            update_data = {
+                "status": status_request.status
+            }
+            
+            # Add metadata if provided
+            if status_request.metadata is not None:
+                update_data["metadata"] = status_request.metadata
+            
+            update_order = OrderUpdate(**update_data)
             
             # If order is completed, set completed_at
             if update_order.status == OrderStatus.COMPLETED and 'completed_at' not in update_order:

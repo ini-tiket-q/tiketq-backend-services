@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Header
-from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status, Header
+from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from domain.models import OrderInDB, OrderStatus
+from domain.models import (
+    OrderInDB, OrderStatus,
+    OrderCreateRequest, OrderStatusUpdateRequest
+)
 from domain.services import (
     OrderService,
     get_database_session,
@@ -34,31 +37,14 @@ def get_order_service(db: Session = Depends(get_database_session)) -> OrderServi
     status_code=status.HTTP_201_CREATED
 )
 async def create_order(
-    order_data: Dict[str, Any] = Body(...),
+    order_request: OrderCreateRequest,
     current_user: dict = Depends(get_current_user),
     service: OrderService = Depends(get_order_service)
 ):
     """Create a new order - USER/ADMIN access"""
     try:
-        # Note: For now this is a placeholder implementation
-        # The actual order creation logic will depend on external services
-        # (flights, hotels, ferries, PPOB) which are still under development
-        
-        # Basic validation
-        required_fields = ["service_type", "items"]
-        for field in required_fields:
-            if field not in order_data:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Missing required field: {field}"
-                )
-        
-        # Add user_id to order data
-        order_data["user_id"] = current_user["id"]
-        
-        # Placeholder: Create order with basic validation
-        # In production, this would integrate with booking services
-        order = service.create_order(order_data, current_user["id"])
+        # Create order using validated request model
+        order = service.create_order(order_request, current_user["id"])
         
         if not order:
             raise HTTPException(
@@ -67,8 +53,6 @@ async def create_order(
             )
             
         return order
-    except HTTPException:
-        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -159,7 +143,7 @@ async def get_order(
 )
 async def update_order_status(
     order_id: int,
-    status_data: Dict[str, Any] = Body(...),
+    status_request: OrderStatusUpdateRequest,
     current_user: dict = Depends(get_current_user),
     service: OrderService = Depends(get_order_service)
 ):
@@ -170,13 +154,6 @@ async def update_order_status(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin access required for order status updates"
-            )
-        
-        # Validate status field
-        if "status" not in status_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Status field is required"
             )
         
         # Check if order exists
@@ -191,10 +168,10 @@ async def update_order_status(
                 detail="Order not found"
             )
         
-        # Update order status
+        # Update order status using validated request model
         updated_order = service.update_order_status(
             order_id=order_id,
-            order=status_data,
+            status_request=status_request,
             user_id=current_user["id"]
         )
         

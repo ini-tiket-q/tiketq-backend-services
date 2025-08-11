@@ -223,3 +223,63 @@ class PaymentWebhookRequest(BaseModel):
     status: str = Field(..., min_length=1, max_length=50)
     gateway_response: Dict[str, Any] = Field(default_factory=dict)
     signature: Optional[str] = Field(None, description="Webhook signature for verification")
+
+
+# Order Request Models
+class OrderCreateRequest(BaseModel):
+    """Request model for order creation validation"""
+    service_type: ServiceType = Field(..., description="Type of service being ordered")
+    items: List[Dict[str, Any]] = Field(..., min_length=1, description="Order items")
+    tax: float = Field(0.0, ge=0, description="Tax amount")
+    discount: float = Field(0.0, ge=0, description="Discount amount")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional order metadata")
+    
+    @field_validator('items')
+    @classmethod
+    def validate_items(cls, v):
+        """Validate order items structure"""
+        if not v:
+            raise ValueError("Items cannot be empty")
+        
+        for item in v:
+            if not isinstance(item, dict):
+                raise ValueError("Each item must be a dictionary")
+            
+            # Check required fields
+            required_fields = ['price', 'quantity']
+            for field in required_fields:
+                if field not in item:
+                    raise ValueError(f"Item missing required field: {field}")
+            
+            # Validate price and quantity
+            if not isinstance(item['price'], (int, float)) or item['price'] <= 0:
+                raise ValueError("Item price must be a positive number")
+            
+            if not isinstance(item['quantity'], int) or item['quantity'] <= 0:
+                raise ValueError("Item quantity must be a positive integer")
+        
+        return v
+    
+    @field_validator('tax', 'discount')
+    @classmethod
+    def validate_amounts(cls, v):
+        """Validate tax and discount amounts"""
+        if v < 0:
+            raise ValueError("Tax and discount must be non-negative")
+        return v
+
+
+class OrderStatusUpdateRequest(BaseModel):
+    """Request model for order status update validation"""
+    status: OrderStatus = Field(..., description="New order status")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for status update")
+    
+    @field_validator('status')
+    @classmethod
+    def validate_status_transition(cls, v):
+        """Validate status transition logic"""
+        # Add business logic for valid status transitions if needed
+        valid_statuses = [status.value for status in OrderStatus]
+        if v not in valid_statuses:
+            raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
+        return v
