@@ -12,7 +12,6 @@ SERVICES = {
     "hotels": os.getenv("HOTELS_SERVICE_URL", "http://hotels-service:8000"),
     "ppob": os.getenv("PPOB_SERVICE_URL", "http://ppob-service:8000"),
     "payment": os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8000"),
-    "transaction": os.getenv("TRANSACTION_SERVICE_URL", "http://transaction-service:8000"),
 }
 
 ROUTE_SERVICE_MAP = {
@@ -22,8 +21,7 @@ ROUTE_SERVICE_MAP = {
     "/ferries": "ferries",
     "/hotels": "hotels",
     "/ppob": "ppob",
-    "/payments": "transaction",
-    "/transactions": "transaction",
+    "/payments": "payment",
 }
 
 
@@ -43,35 +41,32 @@ async def forward_request(request: Request, full_path: str) -> Response:
     """
     target_url = resolve_target_url(full_path)
     if not target_url:
-        return Response("Service not found", status_code=404)
+        return Response(content="Service not found", status_code=404)
     
-    # Prepare the request
-    method = request.method
+    # Get request body
+    body = await request.body()
+    
+    # Get headers (excluding host and content-length)
     headers = dict(request.headers)
-    
-    # Remove host header to avoid conflicts
     headers.pop("host", None)
+    headers.pop("content-length", None)
     
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # Get request body if present
-            body = await request.body()
-            
-            # Forward the request
+    async with httpx.AsyncClient() as client:
+        try:
             response = await client.request(
-                method=method,
+                method=request.method,
                 url=target_url,
                 headers=headers,
                 content=body,
-                params=request.query_params
+                timeout=30
             )
-            
-            # Return the response
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 headers=dict(response.headers)
             )
-            
-    except Exception as e:
-        return Response(f"Service unavailable: {str(e)}", status_code=503)
+        except httpx.RequestError as e:
+            return Response(
+                content=f"Service unavailable: {str(e)}", 
+                status_code=503
+            )
