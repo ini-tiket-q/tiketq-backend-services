@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from .models import (
     TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus,
-    OrderInDB, OrderCreate, OrderStatus,
+    OrderInDB, OrderCreate, OrderUpdate, OrderStatus,
     PaymentInDB, PaymentCreate,
     RefundInDB, RefundCreate, RefundStatus
 )
@@ -29,6 +29,15 @@ class TransactionRepository(ABC):
         limit: int = 100
     ) -> List[TransactionInDB]:
         """Get transactions for a specific user with pagination"""
+        pass
+    
+    @abstractmethod
+    def get_transactions(
+        self, 
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[TransactionInDB]:
+        """Get all transactions with pagination (admin function)"""
         pass
     
     @abstractmethod
@@ -76,6 +85,25 @@ class OrderRepository(ABC):
         status: OrderStatus
     ) -> Optional[OrderInDB]:
         """Update order status"""
+        pass
+    
+    @abstractmethod
+    def get_orders(
+        self, 
+        status: Optional[OrderStatus] = None,
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[OrderInDB]:
+        """Get all orders with optional status filter and pagination (admin function)"""
+        pass
+    
+    @abstractmethod
+    def update_order(
+        self, 
+        order_id: int, 
+        order: OrderUpdate
+    ) -> Optional[OrderInDB]:
+        """Update order with full data"""
         pass
 
 class PaymentRepository(ABC):
