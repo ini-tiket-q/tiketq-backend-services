@@ -1,0 +1,9 @@
+# domain/repository.py
+from typing import Protocol, Iterable, Optional
+from datetime import date
+from .models import Flight
+
+class FlightRepository(Protocol):
+    def list(self, *, frm: Optional[str] = None, to: Optional[str] = None, day: Optional[date] = None) -> Iterable[Flight]: ...
+    def get(self, flight_id: str) -> Flight: ...
+    def create(self, flight: Flight) -> Flight: ...
