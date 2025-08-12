@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
@@ -13,9 +14,12 @@ from domain.services import (
 
 router = APIRouter(tags=["payments"])
 
-def get_current_user(authorization: str = Header(None)):
+# Security scheme for JWT Bearer token
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Mock authentication - replace with real auth service integration"""
-    if not authorization or not authorization.startswith("Bearer "):
+    if not credentials or not credentials.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials"

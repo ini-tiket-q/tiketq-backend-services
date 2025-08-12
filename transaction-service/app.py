@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer
 from contextlib import asynccontextmanager
 import logging
 
@@ -10,6 +11,9 @@ from routes import payments, transactions, orders, reports
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Security scheme for JWT Bearer token
+security = HTTPBearer()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
