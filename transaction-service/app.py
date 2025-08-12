@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from adapters.db import Base, engine
-from routes import payments, transactions, orders
+from routes import payments, transactions, orders, reports
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -53,6 +53,7 @@ app.add_middleware(
 app.include_router(payments.router)
 app.include_router(transactions.router)
 app.include_router(orders.router)
+app.include_router(reports.router, prefix="/reports")
 
 # Health check endpoint
 @app.get("/health")

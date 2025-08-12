@@ -1,7 +1,12 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Generator
 from uuid import uuid4
 from datetime import datetime, timezone
 import logging
+from functools import lru_cache
+from fastapi import Depends
+from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from domain.models import (
     TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus, TransactionType,
@@ -13,7 +18,12 @@ from domain.models import (
     # Order request models
     OrderCreateRequest, OrderStatusUpdateRequest,
     # Transaction request models
-    TransactionCreateRequest, TransactionUpdateRequest, TransactionRefundRequest
+    TransactionCreateRequest, TransactionUpdateRequest, TransactionRefundRequest,
+    # Report request and response models
+    TransactionReportRequest, TransactionReportResponse, TransactionReportData,
+    RevenueReportRequest, RevenueReportResponse, RevenueDataPoint,
+    RefundReportRequest, RefundReportResponse, RefundReportData,
+    ReportDateRange
 )
 
 from adapters.db import (
@@ -954,6 +964,212 @@ def create_order_service(db_session: Session) -> OrderService:
     return OrderService(
         order_repo=order_repo
     )
+
+
+# =============================================================================
+# REPORTS SERVICE
+# =============================================================================
+
+class ReportsService:
+    """Service for handling reports and analytics operations"""
+    
+    def __init__(self, transaction_repo, refund_repo=None):
+        self.transaction_repo = transaction_repo
+        self.refund_repo = refund_repo
+    
+    def generate_transaction_report(self, report_request: "TransactionReportRequest") -> "TransactionReportResponse":
+        """Generate transaction report with filters"""
+        try:
+            # Get transactions based on filters
+            transactions = self.transaction_repo.get_transactions_for_report(
+                start_date=report_request.date_range.start_date,
+                end_date=report_request.date_range.end_date,
+                status_filter=report_request.status_filter,
+                transaction_type_filter=report_request.transaction_type,
+                min_amount=report_request.min_amount,
+                max_amount=report_request.max_amount,
+                user_id=report_request.user_id,
+                currency=report_request.currency
+            )
+            
+            # Calculate summary statistics
+            total_count = len(transactions)
+            total_amount = sum(t.amount for t in transactions)
+            status_breakdown = {}
+            type_breakdown = {}
+            
+            for transaction in transactions:
+                # Status breakdown
+                status = transaction.status.value if hasattr(transaction.status, 'value') else str(transaction.status)
+                status_breakdown[status] = status_breakdown.get(status, 0) + 1
+                
+                # Type breakdown
+                trans_type = transaction.transaction_type.value if hasattr(transaction.transaction_type, 'value') else str(transaction.transaction_type)
+                type_breakdown[trans_type] = type_breakdown.get(trans_type, 0) + 1
+            
+            summary = {
+                "total_transactions": total_count,
+                "total_amount": total_amount,
+                "average_amount": total_amount / total_count if total_count > 0 else 0,
+                "status_breakdown": status_breakdown,
+                "type_breakdown": type_breakdown,
+                "currency": report_request.currency
+            }
+            
+            # Convert to response format
+            transaction_data = [
+                TransactionReportData(
+                    transaction_id=t.id,
+                    user_id=t.user_id,
+                    order_id=t.order_id,
+                    transaction_type=t.transaction_type,
+                    amount=t.amount,
+                    currency=t.currency,
+                    status=t.status,
+                    payment_method=t.payment_method,
+                    payment_gateway=t.payment_gateway,
+                    created_at=t.created_at,
+                    updated_at=t.updated_at
+                ) for t in transactions
+            ]
+            
+            return TransactionReportResponse(
+                summary=summary,
+                transactions=transaction_data,
+                total_count=total_count,
+                total_amount=total_amount,
+                date_range=report_request.date_range
+            )
+            
+        except Exception as e:
+            raise ValueError(f"Failed to generate transaction report: {str(e)}")
+    
+    def generate_revenue_report(self, report_request: "RevenueReportRequest") -> "RevenueReportResponse":
+        """Generate revenue analytics report"""
+        try:
+            # Get revenue data grouped by period
+            revenue_data = self.transaction_repo.get_revenue_data(
+                start_date=report_request.date_range.start_date,
+                end_date=report_request.date_range.end_date,
+                group_by=report_request.group_by,
+                currency=report_request.currency,
+                service_type_filter=report_request.service_type_filter,
+                include_refunds=report_request.include_refunds
+            )
+            
+            # Calculate summary
+            total_revenue = sum(point['revenue'] for point in revenue_data)
+            total_transactions = sum(point['transaction_count'] for point in revenue_data)
+            total_refunds = sum(point['refund_amount'] for point in revenue_data)
+            
+            summary = {
+                "total_revenue": total_revenue,
+                "total_transactions": total_transactions,
+                "total_refunds": total_refunds,
+                "net_revenue": total_revenue - total_refunds,
+                "average_transaction_value": total_revenue / total_transactions if total_transactions > 0 else 0,
+                "refund_rate": (total_refunds / total_revenue * 100) if total_revenue > 0 else 0,
+                "currency": report_request.currency,
+                "group_by": report_request.group_by
+            }
+            
+            # Convert to response format
+            data_points = [
+                RevenueDataPoint(
+                    period=point['period'],
+                    revenue=point['revenue'],
+                    transaction_count=point['transaction_count'],
+                    refund_amount=point['refund_amount']
+                ) for point in revenue_data
+            ]
+            
+            return RevenueReportResponse(
+                summary=summary,
+                revenue_data=data_points,
+                total_revenue=total_revenue,
+                total_transactions=total_transactions,
+                total_refunds=total_refunds,
+                date_range=report_request.date_range
+            )
+            
+        except Exception as e:
+            raise ValueError(f"Failed to generate revenue report: {str(e)}")
+    
+    def generate_refund_report(self, report_request: "RefundReportRequest") -> "RefundReportResponse":
+        """Generate refund report with filters"""
+        try:
+            # Get refunds based on filters
+            refunds = self.refund_repo.get_refunds_for_report(
+                start_date=report_request.date_range.start_date,
+                end_date=report_request.date_range.end_date,
+                status_filter=report_request.status_filter,
+                min_amount=report_request.min_amount,
+                max_amount=report_request.max_amount,
+                reason_filter=report_request.reason_filter,
+                processed_by=report_request.processed_by
+            )
+            
+            # Calculate summary statistics
+            total_count = len(refunds)
+            total_amount = sum(r.amount for r in refunds)
+            status_breakdown = {}
+            reason_breakdown = {}
+            
+            for refund in refunds:
+                # Status breakdown
+                status = refund.status.value if hasattr(refund.status, 'value') else str(refund.status)
+                status_breakdown[status] = status_breakdown.get(status, 0) + 1
+                
+                # Reason breakdown (extract main keyword)
+                reason_key = refund.reason.split()[0].lower() if refund.reason else "unknown"
+                reason_breakdown[reason_key] = reason_breakdown.get(reason_key, 0) + 1
+            
+            summary = {
+                "total_refunds": total_count,
+                "total_amount": total_amount,
+                "average_amount": total_amount / total_count if total_count > 0 else 0,
+                "status_breakdown": status_breakdown,
+                "reason_breakdown": reason_breakdown
+            }
+            
+            # Convert to response format
+            refund_data = [
+                RefundReportData(
+                    refund_id=r.id,
+                    transaction_id=r.transaction_id,
+                    user_id=r.user_id if hasattr(r, 'user_id') else 0,  # Get from transaction if needed
+                    amount=r.amount,
+                    reason=r.reason,
+                    status=r.status,
+                    processed_by=r.processed_by,
+                    processed_at=r.processed_at,
+                    created_at=r.created_at
+                ) for r in refunds
+            ]
+            
+            return RefundReportResponse(
+                summary=summary,
+                refunds=refund_data,
+                total_count=total_count,
+                total_amount=total_amount,
+                date_range=report_request.date_range
+            )
+            
+        except Exception as e:
+            raise ValueError(f"Failed to generate refund report: {str(e)}")
+
+
+# Service factory for reports
+def get_reports_service(db: Session = Depends(get_database_session)) -> ReportsService:
+    """Factory function to create ReportsService with proper dependencies"""
+    # Infrastructure adapters
+    from adapters.db import DBTransactionRepository, DBRefundRepository
+    transaction_repo = DBTransactionRepository(db)
+    refund_repo = DBRefundRepository(db)
+    
+    # Domain service
+    return ReportsService(transaction_repo, refund_repo)
+
 
 # Authentication service placeholder
 @lru_cache()

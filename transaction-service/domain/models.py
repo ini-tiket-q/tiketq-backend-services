@@ -384,3 +384,153 @@ class TransactionRefundRequest(BaseModel):
         if not v or len(v.strip()) == 0:
             raise ValueError("Refund reason cannot be empty")
         return v.strip()
+
+
+# =============================================================================
+# REPORT MODELS
+# =============================================================================
+
+class ReportDateRange(BaseModel):
+    """Date range for report filtering"""
+    start_date: datetime = Field(..., description="Start date for the report")
+    end_date: datetime = Field(..., description="End date for the report")
+    
+    @model_validator(mode='after')
+    def validate_date_range(self):
+        """Validate that end_date is after start_date"""
+        if self.end_date <= self.start_date:
+            raise ValueError("End date must be after start date")
+        
+        # Limit to maximum 1 year range
+        days_diff = (self.end_date - self.start_date).days
+        if days_diff > 365:
+            raise ValueError("Date range cannot exceed 365 days")
+        
+        return self
+
+
+class TransactionReportRequest(BaseModel):
+    """Request model for transaction reports validation"""
+    date_range: ReportDateRange = Field(..., description="Date range for the report")
+    status_filter: Optional[str] = Field(None, description="Filter by transaction status")
+    transaction_type: Optional[str] = Field(None, description="Filter by transaction type")
+    min_amount: Optional[float] = Field(None, ge=0, description="Minimum transaction amount")
+    max_amount: Optional[float] = Field(None, ge=0, description="Maximum transaction amount")
+    user_id: Optional[int] = Field(None, gt=0, description="Filter by specific user ID")
+    currency: Optional[str] = Field("IDR", max_length=3, description="Currency filter")
+    
+    @field_validator('currency')
+    @classmethod
+    def validate_currency(cls, v):
+        """Validate currency code"""
+        if v and len(v) != 3:
+            raise ValueError("Currency must be a 3-character code")
+        return v.upper() if v else "IDR"
+    
+    @model_validator(mode='after')
+    def validate_amount_range(self):
+        """Validate amount range"""
+        if (self.min_amount is not None and self.max_amount is not None 
+            and self.min_amount > self.max_amount):
+            raise ValueError("Minimum amount cannot be greater than maximum amount")
+        return self
+
+
+class RevenueReportRequest(BaseModel):
+    """Request model for revenue analytics validation"""
+    date_range: ReportDateRange = Field(..., description="Date range for the report")
+    group_by: str = Field("day", pattern="^(day|week|month)$", description="Grouping period")
+    currency: Optional[str] = Field("IDR", max_length=3, description="Currency filter")
+    service_type_filter: Optional[List[str]] = Field(None, description="Filter by service types")
+    include_refunds: bool = Field(True, description="Include refunds in revenue calculation")
+    
+    @field_validator('currency')
+    @classmethod
+    def validate_currency(cls, v):
+        """Validate currency code"""
+        if v and len(v) != 3:
+            raise ValueError("Currency must be a 3-character code")
+        return v.upper() if v else "IDR"
+
+
+class RefundReportRequest(BaseModel):
+    """Request model for refund reports validation"""
+    date_range: ReportDateRange = Field(..., description="Date range for the report")
+    status_filter: Optional[str] = Field(None, description="Filter by refund status")
+    min_amount: Optional[float] = Field(None, ge=0, description="Minimum refund amount")
+    max_amount: Optional[float] = Field(None, ge=0, description="Maximum refund amount")
+    reason_filter: Optional[str] = Field(None, max_length=100, description="Filter by refund reason keyword")
+    processed_by: Optional[int] = Field(None, gt=0, description="Filter by admin who processed refund")
+    
+    @model_validator(mode='after')
+    def validate_amount_range(self):
+        """Validate amount range"""
+        if (self.min_amount is not None and self.max_amount is not None 
+            and self.min_amount > self.max_amount):
+            raise ValueError("Minimum amount cannot be greater than maximum amount")
+        return self
+
+
+# Report Response Models
+class TransactionReportData(BaseModel):
+    """Transaction report data model"""
+    transaction_id: int
+    user_id: int
+    order_id: str
+    transaction_type: TransactionType
+    amount: float
+    currency: str
+    status: TransactionStatus
+    payment_method: Optional[PaymentMethod]
+    payment_gateway: Optional[PaymentGateway]
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+
+class TransactionReportResponse(BaseModel):
+    """Response model for transaction reports"""
+    summary: Dict[str, Any] = Field(..., description="Report summary statistics")
+    transactions: List[TransactionReportData] = Field(..., description="Transaction data")
+    total_count: int = Field(..., description="Total number of transactions")
+    total_amount: float = Field(..., description="Total transaction amount")
+    date_range: ReportDateRange = Field(..., description="Report date range")
+
+
+class RevenueDataPoint(BaseModel):
+    """Revenue data point for time-series data"""
+    period: str = Field(..., description="Time period (date/week/month)")
+    revenue: float = Field(..., description="Revenue amount for the period")
+    transaction_count: int = Field(..., description="Number of transactions in period")
+    refund_amount: float = Field(0.0, description="Total refunds in period")
+
+
+class RevenueReportResponse(BaseModel):
+    """Response model for revenue analytics"""
+    summary: Dict[str, Any] = Field(..., description="Revenue summary statistics")
+    revenue_data: List[RevenueDataPoint] = Field(..., description="Time-series revenue data")
+    total_revenue: float = Field(..., description="Total revenue in period")
+    total_transactions: int = Field(..., description="Total number of transactions")
+    total_refunds: float = Field(..., description="Total refund amount")
+    date_range: ReportDateRange = Field(..., description="Report date range")
+
+
+class RefundReportData(BaseModel):
+    """Refund report data model"""
+    refund_id: int
+    transaction_id: int
+    user_id: int
+    amount: float
+    reason: str
+    status: RefundStatus
+    processed_by: Optional[int]
+    processed_at: Optional[datetime]
+    created_at: datetime
+
+
+class RefundReportResponse(BaseModel):
+    """Response model for refund reports"""
+    summary: Dict[str, Any] = Field(..., description="Refund summary statistics")
+    refunds: List[RefundReportData] = Field(..., description="Refund data")
+    total_count: int = Field(..., description="Total number of refunds")
+    total_amount: float = Field(..., description="Total refund amount")
+    date_range: ReportDateRange = Field(..., description="Report date range")

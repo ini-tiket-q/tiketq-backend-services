@@ -99,17 +99,6 @@ class Transaction(Base):
     payments = relationship("Payment", back_populates="transaction")
     refunds = relationship("Refund", back_populates="transaction")
 
-    # Hybrid property to provide clean metadata interface
-    @hybrid_property
-    def metadata(self):
-        """Clean interface for metadata field that maps to meta_data column"""
-        return self.meta_data or {}
-    
-    @metadata.setter
-    def metadata(self, value):
-        """Setter for metadata that maps to meta_data column"""
-        self.meta_data = value
-
 
 class Order(Base):
     """SQLAlchemy model for orders table"""
@@ -129,17 +118,6 @@ class Order(Base):
     meta_data = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    # Hybrid property to provide clean metadata interface
-    @hybrid_property
-    def metadata(self):
-        """Clean interface for metadata field that maps to meta_data column"""
-        return self.meta_data or {}
-    
-    @metadata.setter
-    def metadata(self, value):
-        """Setter for metadata that maps to meta_data column"""
-        self.meta_data = value
 
 
 class Payment(Base):
@@ -161,17 +139,6 @@ class Payment(Base):
 
     # Relationships
     transaction = relationship("Transaction", back_populates="payments")
-
-    # Hybrid property to provide clean metadata interface
-    @hybrid_property
-    def metadata(self):
-        """Clean interface for metadata field that maps to meta_data column"""
-        return self.meta_data or {}
-    
-    @metadata.setter
-    def metadata(self, value):
-        """Setter for metadata that maps to meta_data column"""
-        self.meta_data = value
 
 
 class Refund(Base):
@@ -269,9 +236,9 @@ class DBTransactionRepository(TransactionRepository):
         for field, value in update_data.items():
             # metadata should be added, not replaced with the new value. or deleted if the value is None
             if field == "metadata" and value is not None:
-                if db_transaction.metadata is None:
-                    db_transaction.metadata = {}
-                db_transaction.metadata.update(value)
+                if db_transaction.meta_data is None:
+                    db_transaction.meta_data = {}
+                db_transaction.meta_data.update(value)
             elif hasattr(db_transaction, field):
                 setattr(db_transaction, field, value)
 
@@ -304,10 +271,94 @@ class DBTransactionRepository(TransactionRepository):
             if db_transaction.payment_gateway
             else None,
             gateway_transaction_id=db_transaction.gateway_transaction_id,
-            metadata=db_transaction.metadata,
+            metadata=db_transaction.meta_data,
             created_at=db_transaction.created_at,
             updated_at=getattr(db_transaction, "updated_at", None),
         )
+
+    def get_transactions_for_report(self, start_date, end_date, status_filter=None, 
+                                   transaction_type_filter=None, min_amount=None, 
+                                   max_amount=None, user_id=None, currency=None):
+        """Get transactions for reporting with filters"""
+        query = self.db.query(Transaction).filter(
+            Transaction.created_at >= start_date,
+            Transaction.created_at <= end_date
+        )
+        
+        if status_filter:
+            try:
+                # Convert string to enum and filter
+                status_enum = TransactionStatus(status_filter)
+                query = query.filter(Transaction.status == status_enum.value)
+            except ValueError:
+                # Invalid status, return empty result
+                return []
+        
+        if transaction_type_filter:
+            try:
+                # Convert string to enum and filter
+                type_enum = TransactionType(transaction_type_filter)
+                query = query.filter(Transaction.transaction_type == type_enum.value)
+            except ValueError:
+                # Invalid type, return empty result
+                return []
+        
+        if min_amount is not None:
+            query = query.filter(Transaction.amount >= min_amount)
+        
+        if max_amount is not None:
+            query = query.filter(Transaction.amount <= max_amount)
+        
+        if user_id is not None:
+            query = query.filter(Transaction.user_id == user_id)
+        
+        if currency:
+            query = query.filter(Transaction.currency == currency)
+        
+        transactions = query.order_by(Transaction.created_at.desc()).all()
+        return [self._to_domain_model(t) for t in transactions]
+
+    def get_revenue_data(self, start_date, end_date, group_by="day", 
+                        currency=None, service_type_filter=None, include_refunds=True):
+        """Get revenue data grouped by time period"""
+        # This is a simplified implementation - in production you'd use SQL aggregation
+        transactions = self.get_transactions_for_report(
+            start_date=start_date, 
+            end_date=end_date, 
+            currency=currency
+        )
+        
+        # Group transactions by period
+        revenue_data = {}
+        for transaction in transactions:
+            # Determine period key based on group_by
+            if group_by == "day":
+                period_key = transaction.created_at.strftime("%Y-%m-%d")
+            elif group_by == "week":
+                period_key = transaction.created_at.strftime("%Y-W%U")
+            elif group_by == "month":
+                period_key = transaction.created_at.strftime("%Y-%m")
+            else:
+                period_key = transaction.created_at.strftime("%Y-%m-%d")
+            
+            if period_key not in revenue_data:
+                revenue_data[period_key] = {
+                    "period": period_key,
+                    "revenue": 0.0,
+                    "transaction_count": 0,
+                    "refund_amount": 0.0
+                }
+            
+            # Only count completed transactions for revenue
+            if transaction.status == TransactionStatus.COMPLETED:
+                revenue_data[period_key]["revenue"] += transaction.amount
+                revenue_data[period_key]["transaction_count"] += 1
+            
+            # Count refunds if enabled
+            if include_refunds and transaction.status == TransactionStatus.REFUNDED:
+                revenue_data[period_key]["refund_amount"] += transaction.amount
+        
+        return list(revenue_data.values())
 
 
 class DBOrderRepository(OrderRepository):
@@ -326,7 +377,7 @@ class DBOrderRepository(OrderRepository):
             quantity=order.quantity,
             unit_price=float(order.unit_price),
             total_amount=float(order.total_amount),
-            metadata=order.metadata,
+            meta_data=order.metadata,
         )
         self.db.add(db_order)
         self.db.commit()
@@ -402,7 +453,7 @@ class DBOrderRepository(OrderRepository):
         if order.status is not None:
             db_order.status = order.status.value
         if order.metadata is not None:
-            db_order.metadata = order.metadata
+            db_order.meta_data = order.metadata
             
         db_order.updated_at = datetime.now(timezone.utc)
         self.db.commit()
@@ -420,7 +471,7 @@ class DBOrderRepository(OrderRepository):
             quantity=db_order.quantity,
             unit_price=float(db_order.unit_price),
             total_amount=float(db_order.total_amount),
-            metadata=db_order.metadata,
+            metadata=db_order.meta_data,
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
         )
@@ -441,7 +492,7 @@ class DBPaymentRepository(PaymentRepository):
             currency=payment.currency,
             status=payment.status.value,
             gateway_transaction_id=payment.gateway_transaction_id,
-            metadata=payment.metadata,
+            meta_data=payment.metadata,
         )
         self.db.add(db_payment)
         self.db.commit()
@@ -492,10 +543,10 @@ class DBPaymentRepository(PaymentRepository):
                 # Handle status as string value
                 db_payment.status = value
             elif field == "metadata" and value is not None:
-                # Merge metadata using hybrid property
-                if db_payment.metadata is None:
-                    db_payment.metadata = {}
-                db_payment.metadata.update(value)
+                # Merge metadata using meta_data column
+                if db_payment.meta_data is None:
+                    db_payment.meta_data = {}
+                db_payment.meta_data.update(value)
             elif hasattr(db_payment, field):
                 setattr(db_payment, field, value)
 
@@ -573,6 +624,45 @@ class DBRefundRepository(RefundRepository):
         self.db.commit()
         self.db.refresh(db_refund)
         return self._to_domain_model(db_refund)
+
+    def get_refunds_for_report(self, start_date, end_date, status_filter=None, 
+                               min_amount=None, max_amount=None, reason_filter=None, 
+                               processed_by=None):
+        """Get refunds for reporting with filtering options"""
+        query = self.db.query(Refund)
+        
+        # Date range filter
+        if start_date:
+            query = query.filter(Refund.created_at >= start_date)
+        if end_date:
+            query = query.filter(Refund.created_at <= end_date)
+        
+        # Status filter
+        if status_filter:
+            try:
+                status_enum = RefundStatus(status_filter)
+                query = query.filter(Refund.status == status_enum.value)
+            except ValueError:
+                # Invalid status, return empty result
+                return []
+        
+        # Amount range filter
+        if min_amount is not None:
+            query = query.filter(Refund.amount >= min_amount)
+        if max_amount is not None:
+            query = query.filter(Refund.amount <= max_amount)
+        
+        # Reason filter (keyword search)
+        if reason_filter:
+            query = query.filter(Refund.reason.ilike(f"%{reason_filter}%"))
+        
+        # Processed by filter
+        if processed_by is not None:
+            query = query.filter(Refund.processed_by == processed_by)
+        
+        # Execute query and convert to domain models
+        db_refunds = query.all()
+        return [self._to_domain_model(refund) for refund in db_refunds]
 
     def _to_domain_model(self, db_refund: Refund) -> RefundInDB:
         return RefundInDB(
