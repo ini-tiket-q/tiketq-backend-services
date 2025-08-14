@@ -7,8 +7,8 @@ from pydantic.config import ConfigDict
 from typing import List, Optional
 from math import ceil
 from domain.models import Flight
-from domain.services import list_flights_paginated, list_flights, get_flight, create_flight
-from adapters.persistence import SqlAlchemyFlightRepo, get_session
+from domain.services import list_flights_paginated, list_flights, get_flight, create_flight, search_flights_external
+from adapters.repository_sqlachemy import SqlAlchemyFlightRepo, get_session
 
 
 class FlightOut(BaseModel):
@@ -167,6 +167,17 @@ def list_flights_endpoint(
             },
         }
 
+@router.get("/flights/search")
+def search_flights(
+    frm: str = Query(..., min_length=3, max_length=3, description="IATA of origin"),
+    to: str  = Query(..., min_length=3, max_length=3, description="IATA of destination"),
+    date_: str = Query(..., description="YYYY-MM-DD"),
+    pax: int = Query(1, ge=1, le=9),
+    cabin: str | None = Query(None, description="ECONOMY | BUSINESS | FIRST")
+):
+    data = search_flights_external(frm.upper(), to.upper(), date_, pax, cabin)
+    return {"data": data, "error": None, "meta": {"provider": "MMBC"}}    
+
 @router.get(
     "/flights/{flight_id}",
     response_model=EnvelopeOne,
@@ -267,3 +278,5 @@ def delete_flight_endpoint(flight_id: str, repo: SqlAlchemyFlightRepo = Depends(
         return
     except KeyError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flight not found")
+    
+

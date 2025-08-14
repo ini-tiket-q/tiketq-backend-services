@@ -45,65 +45,6 @@ EXTERNAL_FLIGHT_API_KEY=your_flight_api_key_here
 
 ## 🚀 Running Locally (Docker)
 
-### 1. Build the container:
-```bash
-docker build -t flights-service ./flights-service
-```
-
-### 2. Run the container:
-```bash
-docker run -p 5001:8000 --env-file ./flights-service/.env.example flights-service
-```
-
-The service will be accessible at:  
-`http://localhost:5001/health`
-
-<br>
-
-
-## API Endpoints
-
-### Health Check
-**GET** `/health`  
-Returns service status and configuration presence.
-
-### List Flights
-**GET** `/api/v1/flight-service/flights`  
-Query Parameters:
-- `frm` (optional): Origin IATA code
-- `to` (optional): Destination IATA code
-- `date_` (optional): Departure date in `YYYY-MM-DD`
-- `page` (optional, default: 1): Page number
-- `per_page` (optional, default: 10): Items per page
-
-### Get Flight by ID
-**GET** `/api/v1/flight-service/flights/{flight_id}`
-
-### Create Flight
-**POST** `/api/v1/flight-service/flights`  
-Body:
-```json
-{
-    "flight_number": "TQ 102",
-    "from_airport": "CGK",
-    "to_airport": "SIN",
-    "departure_time": "2025-08-15T09:30:00",
-    "arrival_time": "2025-08-15T12:25:00",
-    "aircraft_type": "A320"
-}
-```
-
-### Update Flight
-**PATCH** `/api/v1/flight-service/flights/{flight_id}`  
-Partial update of fields.
-
-### Soft Delete Flight
-**DELETE** `/api/v1/flight-service/flights/{flight_id}`
-
-<br>
-
-## Building and Running with Docker
-
 ### 1. Build the Docker image
 ```bash
 docker build -t flights-service ./flights-service
@@ -118,7 +59,282 @@ docker run --rm   --network "$NET"   --env-file ./flights-service/.env.example  
 
 <br>
 
-## Development Process Summary
+
+## Architecture: User Flow, ERD & Business Rules
+
+### 1. User Flow (Happy Path + Edge Cases)
+
+**Search → Book → Pay → Webhook → Confirm**
+
+1. **Search Flights**  
+   `GET /flights/search?frm=CGK&to=SIN&date_=2025-09-01&pax=1&cabin=ECONOMY`  
+   - Validates IATA codes, cabin class, date  
+   - Returns normalized offers from provider stub
+
+2. **Create Booking**  
+   `POST /bookings` with contact info, pax counts, and flight snapshot  
+   - Persists booking with `status=INCOMPLETE`  
+   - Returns `booking_id`
+
+3. **Create/Reuse Payment (Snap)**  
+   `POST /payments/{booking_id}/snap`  
+   - One payment per booking (unique constraint)  
+   - Returns `{payment_id, snap_token, redirect_url}`
+
+4. **Customer Pays (Provider)**  
+   - Redirect to Snap (mocked URL)  
+   - Payment provider later triggers webhook
+
+5. **Webhook (Midtrans)**  
+   `POST /payments/midtrans/webhook` with `{payment_id, raw}`  
+   - Marks payment `PAID` or `FAILED`  
+   - If paid, marks booking `CONFIRMED`
+
+6. **View Booking**  
+   `GET /bookings/{booking_id}` → shows updated status
+
+**Edge Cases**
+- Idempotent payment creation  
+- Replayed webhooks are safe  
+- Booking stays `INCOMPLETE` on payment failure  
+
+---
+
+### 2. ERD
+
+```mermaid
+erDiagram
+    FLIGHTS {
+      string  id PK
+      string  flight_number
+      string  from_airport  "IATA(3)"
+      string  to_airport    "IATA(3)"
+      timestamptz departure_time
+      timestamptz arrival_time
+      string  aircraft_type
+      string  gate  nullable
+      string  terminal nullable
+      string  status  "SCHEDULED/DELAYED/etc"
+      text    notes   nullable
+      timestamptz deleted_at nullable
+    }
+
+    BOOKINGS {
+      string  id PK
+      string  user_id nullable
+      string  contact_name
+      string  contact_phone
+      string  contact_email
+      string  status  "INCOMPLETE/CONFIRMED"
+      string  route_from "IATA(3)"
+      string  route_to   "IATA(3)"
+      timestamptz departure_time
+      timestamptz arrival_time
+      string  flight_number
+      string  airline
+      string  cabin
+      int     pax_adult
+      int     pax_child
+      int     pax_infant
+      numeric fare_amount
+      string  fare_currency
+      string  offer_id
+      timestamptz created_at
+      timestamptz updated_at
+    }
+
+    PAYMENTS {
+      string  id PK
+      string  booking_id FK,UK
+      string  provider
+      string  status
+      numeric amount
+      string  currency
+      string  snap_token nullable
+      string  redirect_url nullable
+      json/text raw_provider_payload nullable
+      timestamptz created_at
+      timestamptz updated_at
+    }
+
+    BOOKINGS ||--o| PAYMENTS : "1 — 0..1"
+```
+
+---
+
+### 3. Business Logic
+
+### Search
+- Validate input (IATA codes, cabin, pax count, date format)
+- Query provider, return normalized offers
+
+### Create Booking
+- Require valid contact info & pax counts
+- Store full offer snapshot in booking
+- Initial status: `INCOMPLETE`
+
+### Payment Creation
+- Only if booking exists
+- Enforce one payment per booking
+- Return existing payment if already pending/paid
+
+### Webhook Handling
+- Parse `transaction_status` from provider payload
+- `capture/settlement` → Payment = `PAID`, Booking = `CONFIRMED`
+- `deny/cancel/expire` → Payment = `FAILED`, Booking unchanged
+- Idempotent updates
+
+### Booking Retrieval
+- Always returns latest booking state
+
+---
+
+### 4. API Documentation
+
+Once the service is running, you can explore and test all endpoints directly from your browser using the FastAPI docs:
+
+- **Swagger UI**: [http://localhost:5001/docs](http://localhost:5001/docs)  
+- **ReDoc**: [http://localhost:5001/redoc](http://localhost:5001/redoc)
+
+Both pages allow you to view available endpoints, their parameters, and send test requests without any external tools.
+
+## 5. API Map
+
+| Action                      | Method | Endpoint                                          |
+|-----------------------------|--------|---------------------------------------------------|
+| Search flights              | GET    | `/flights/search`                                 |
+| Create booking              | POST   | `/bookings`                                       |
+| Get booking                 | GET    | `/bookings/{booking_id}`                          |
+| Create/Reuse payment (Snap) | POST   | `/payments/{booking_id}/snap`                     |
+| Webhook (Midtrans)          | POST   | `/payments/midtrans/webhook`                      |
+| List flights (Admin)        | GET    | `/flights`                                        |
+| Get flight by ID (Admin)    | GET    | `/flights/{id}`                                   |
+| Create flight (Admin)       | POST   | `/flights`                                        |
+| Patch flight (Admin)        | PATCH  | `/flights/{id}`                                   |
+| Soft delete flight (Admin)  | DELETE | `/flights/{id}`                                   |
+
+## 6. API Contract
+
+Below is the explicit API contract for core endpoints.
+
+### POST `/bookings`
+**Request**
+```json
+{
+  "contact_name": "Jane Doe",
+  "contact_email": "jane@mail.com",
+  "contact_phone": "+62812...",
+  "pax_adult": 1,
+  "pax_child": 0,
+  "pax_infant": 0,
+  "offer": {
+    "offer_id": "xt-7680-2025-09-01-0645",
+    "route_from": "CGK",
+    "route_to": "SUB",
+    "departure_time": "2025-09-01T06:45:00Z",
+    "arrival_time": "2025-09-01T08:20:00Z",
+    "airline": "AirAsia",
+    "flight_number": "XT7680",
+    "cabin": "ECONOMY",
+    "fare_amount": 537500,
+    "fare_currency": "IDR"
+  }
+}
+```
+
+**Responses**
+- `201 Created`
+```json
+{ "booking_id": "cdd6d7bd3a92443dab469b0669", "status": "INCOMPLETE" }
+```
+- `400 Bad Request` (validation)
+```json
+{ "error": "VALIDATION_ERROR", "details": {"contact_email": "invalid"} }
+```
+- `409 Conflict` (duplicate booking for same offer + contact)
+- `500 Internal Server Error`
+
+
+
+### POST `/payments/{booking_id}/snap`
+**Behavior**
+- One payment per booking (idempotent). If PENDING/PAID exists, return it.
+
+**Responses**
+- `201 Created`
+```json
+{
+  "payment_id": "pay_123",
+  "snap_token": "abc",
+  "redirect_url": "https://app.midtrans.com/snap/v2/abc"
+}
+```
+- `404 Not Found` (booking)
+- `409 Conflict` (already PAID)
+
+
+
+### POST `/payments/midtrans/webhook`
+**Behavior**
+- Verify signature (gateway in later sprint); update `payments.status`.
+- On `capture/settlement`: set `PAID`, then set `bookings.status=CONFIRMED`.
+- Idempotent on repeat notifications.
+
+**Responses**
+- `200 OK` (always; side-effects idempotent)
+
+
+
+## 6. Error Envelope & Status Code Policy
+
+**Error Envelope**
+```json
+{ "error": "CODE", "message": "human readable", "details": { "field": "reason" } }
+```
+**Codes**: `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `UNAUTHORIZED`, `INTERNAL_ERROR`.
+
+**Status Codes**
+- 200/201 success
+- 400 validation
+- 401/403 reserved for gateway-enforced auth (future)
+- 404 resource not found
+- 409 conflict (duplicates/idempotency)
+- 500 unexpected
+
+---
+
+## 7. Sequence Diagram
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant F as Flights Service
+  participant M as Midtrans (Snap)
+  participant DB as Database
+
+  C->>F: POST /bookings (offer snapshot, contact)
+  F->>DB: insert booking(status=INCOMPLETE)
+  F-->>C: 201 {booking_id}
+
+  C->>F: POST /payments/{booking_id}/snap
+  F->>DB: upsert payment (PENDING)
+  F->>M: create Snap transaction
+  F-->>C: 201 {payment_id, redirect_url}
+
+  M-->>C: User pays in Snap UI
+
+  M->>F: POST /payments/midtrans/webhook (settlement)
+  F->>DB: set payment=PAID; set booking=CONFIRMED
+  F-->>M: 200 OK (idempotent)
+
+  C->>F: GET /bookings/{booking_id}
+  F-->>C: 200 {status=CONFIRMED}
+```
+
+
+<br>
+
+# Development Process Summary
 
 1. **Environment Setup**
    - Created `.env.example` with `FLIGHTS_DB_URL`, `PORT`, etc.
@@ -146,64 +362,7 @@ docker run --rm   --network "$NET"   --env-file ./flights-service/.env.example  
 
 <br>
 
-## 📌 API Endpoints
 
-### Health Check
-**GET** `/health`  
-Returns service health status and key config checks.
-
-### Flights
-- **GET** `/api/v1/flight-service/flights`  
-  Query flights with optional filters:  
-  - `frm`: IATA code of departure airport  
-  - `to`: IATA code of arrival airport  
-  - `date_`: YYYY-MM-DD format  
-  - `page`: Page number (default: 1)  
-  - `per_page`: Items per page (default: 10)
-
-- **GET** `/api/v1/flight-service/flights/{flight_id}`  
-  Retrieve a specific flight by ID.
-
-- **POST** `/api/v1/flight-service/flights`  
-  Create a new flight record.
-
-- **PATCH** `/api/v1/flight-service/flights/{flight_id}`  
-  Update fields for an existing flight.
-
-- **DELETE** `/api/v1/flight-service/flights/{flight_id}`  
-  Soft delete a flight (marks as deleted).
-
-<br>
-
-## API Documentation
-
-Once the service is running, you can explore and test all endpoints directly from your browser using the FastAPI docs:
-
-- **Swagger UI**: [http://localhost:5001/docs](http://localhost:5001/docs)  
-- **ReDoc**: [http://localhost:5001/redoc](http://localhost:5001/redoc)
-
-Both pages allow you to view available endpoints, their parameters, and send test requests without any external tools.
-
-<br>
-
-## 🐳 Build & Run with Docker
-
-1. **Build the image:**
-```bash
-docker build -t flights-service ./flights-service
-```
-
-2. **Find the Docker network name of the Postgres container:**
-```bash
-docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{println $k}}{{end}}' postgres
-```
-
-3. **Run the container on the same network as Postgres:**
-```bash
-docker run --rm   --network tiketq-backend-services_tiketq-net   --env-file ./flights-service/.env.example   -p 5001:8000   flights-service
-```
-
-<br>
 
 ## 🛠 Steps We Did in Development
 
