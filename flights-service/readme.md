@@ -104,60 +104,61 @@ docker run --rm   --network "$NET"   --env-file ./flights-service/.env.example  
 
 ```mermaid
 erDiagram
-    FLIGHTS {
-      string  id PK
-      string  flight_number
-      string  from_airport  IATA_3
-      string  to_airport    IATA_3
-      timestamptz departure_time
-      timestamptz arrival_time
-      string  aircraft_type
-      string  gate  nullable
-      string  terminal nullable
-      string  status  SCHEDULED_DELAYED
-      text    notes   nullable
-      timestamptz deleted_at nullable
-    }
+  FLIGHTS {
+    string id PK
+    string flight_number
+    string from_airport
+    string to_airport
+    timestamp departure_time
+    timestamp arrival_time
+    string aircraft_type
+    string gate
+    string terminal
+    string status
+    text notes
+    timestamp deleted_at
+  }
 
-    BOOKINGS {
-      string  id PK
-      string  user_id nullable
-      string  contact_name
-      string  contact_phone
-      string  contact_email
-      string  status  INCOMPLETE_CONFIRMED
-      string  route_from IATA_3
-      string  route_to   IATA_3
-      timestamptz departure_time
-      timestamptz arrival_time
-      string  flight_number
-      string  airline
-      string  cabin
-      int     pax_adult
-      int     pax_child
-      int     pax_infant
-      numeric fare_amount
-      string  fare_currency
-      string  offer_id
-      timestamptz created_at
-      timestamptz updated_at
-    }
+  BOOKINGS {
+    string id PK
+    string user_id
+    string contact_name
+    string contact_phone
+    string contact_email
+    string status
+    string route_from
+    string route_to
+    timestamp departure_time
+    timestamp arrival_time
+    string flight_number
+    string airline
+    string cabin
+    int pax_adult
+    int pax_child
+    int pax_infant
+    float fare_amount
+    string fare_currency
+    string offer_id
+    timestamp created_at
+    timestamp updated_at
+  }
 
-    PAYMENTS {
-      string  id PK
-      string  booking_id FK,UK
-      string  provider
-      string  status
-      numeric amount
-      string  currency
-      string  snap_token nullable
-      string  redirect_url nullable
-      json_or_text raw_provider_payload nullable
-      timestamptz created_at
-      timestamptz updated_at
-    }
+  PAYMENTS {
+    string id PK
+    string booking_id FK
+    string provider
+    string status
+    float amount
+    string currency
+    string snap_token
+    string redirect_url
+    text raw_provider_payload
+    timestamp created_at
+    timestamp updated_at
+  }
 
-    BOOKINGS ||--o| PAYMENTS : "1 to 0..1"
+  BOOKINGS ||--o| PAYMENTS : has
+
 ```
 
 ---
