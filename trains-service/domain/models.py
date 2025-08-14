@@ -21,6 +21,7 @@ class TrainClass:
 @dataclass
 class TrainSchedule:
     """Domain model for train schedule"""
+    id: Optional[int]
     train_number: str
     train_name: str
     departure_station: TrainStation

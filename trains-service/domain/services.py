@@ -63,8 +63,6 @@ class TrainBookingService:
     def __init__(self, external_api: ExternalTrainAPIRepository, booking_repo: TrainBookingRepository):
         self.external_api = external_api
         self.booking_repo = booking_repo
-        self.external_api = external_api
-        self.booking_repo = booking_repo
     
     def create_booking(self, booking_request: TrainBookingRequest, user_id: str) -> TrainBooking:
         """Create a new train booking"""
