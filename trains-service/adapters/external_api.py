@@ -9,7 +9,6 @@ class StaticTrainStationAdapter(TrainStationRepository):
     """Static adapter for train stations (could be replaced with API or DB)"""
     
     def __init__(self):
-        # Static data for Indonesian train stations
         self.stations = [
             TrainStation("GMR", "Gambir", "Jakarta", "DKI Jakarta"),
             TrainStation("PSE", "Pasar Senen", "Jakarta", "DKI Jakarta"),
@@ -47,16 +46,13 @@ class StaticTrainStationAdapter(TrainStationRepository):
         
         return results
 
-# TODO: KAI API Adapter will be implemented in next phase
 class MockKAIAccessAPIAdapter(ExternalTrainAPIRepository):
     """Mock adapter for development purposes"""
     
     def search_trains(self, search_request: TrainSearchRequest) -> List[TrainSchedule]:
-        # Return mock data for now
         return []
     
     def create_booking(self, booking_request: TrainBookingRequest) -> TrainBooking:
-        # Return mock booking for now
         from datetime import datetime, time
         return TrainBooking(
             booking_id="MOCK123",

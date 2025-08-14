@@ -6,7 +6,6 @@ from domain.models import TrainSchedule, TrainStation, TrainClass
 import json
 from sqlalchemy import Time
 
-# 1. Koneksi DB
 DATABASE_URL = os.getenv("TRAINS_DB_URL", "sqlite:///trains.db")
 
 Base = declarative_base()
@@ -29,7 +28,6 @@ class TrainScheduleTable(Base):
 
 class DBTrainRepository:
     def _to_domain(self, db_schedule: TrainScheduleTable) -> TrainSchedule:
-        # decode JSON string ke object
         departure_station = TrainStation(**json.loads(db_schedule.departure_station))
         arrival_station = TrainStation(**json.loads(db_schedule.arrival_station))
         classes = [TrainClass(**c) for c in json.loads(db_schedule.classes)]
