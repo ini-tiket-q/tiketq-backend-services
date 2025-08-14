@@ -28,16 +28,21 @@ cp .env.example .env
 
 This service is already integrated into the root docker-compose.yml.
 To start only the ferries service:
-```bash
 
-docker-compose build ferries-service
-docker-compose up ferries-service
+```bash
+docker build -t ferries-service ./ferries-service
 ```
 
-Or if you want to run the entire stack:
+run the ferries-service container:
 ```bash
-docker compose up --build
+docker run -p 5001:8000 --env-file ./ferries-service/.env.example ferries-service
 ```
+
+run postgres container:
+```bash
+docker-compose up -d postgres
+```
+
 
 ### 2️⃣ Run Locally (Without Docker)
 If you want to run directly on the host:
