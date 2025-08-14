@@ -107,14 +107,14 @@ erDiagram
     FLIGHTS {
       string  id PK
       string  flight_number
-      string  from_airport  "IATA(3)"
-      string  to_airport    "IATA(3)"
+      string  from_airport  IATA_3
+      string  to_airport    IATA_3
       timestamptz departure_time
       timestamptz arrival_time
       string  aircraft_type
       string  gate  nullable
       string  terminal nullable
-      string  status  "SCHEDULED/DELAYED/etc"
+      string  status  SCHEDULED_DELAYED
       text    notes   nullable
       timestamptz deleted_at nullable
     }
@@ -125,9 +125,9 @@ erDiagram
       string  contact_name
       string  contact_phone
       string  contact_email
-      string  status  "INCOMPLETE/CONFIRMED"
-      string  route_from "IATA(3)"
-      string  route_to   "IATA(3)"
+      string  status  INCOMPLETE_CONFIRMED
+      string  route_from IATA_3
+      string  route_to   IATA_3
       timestamptz departure_time
       timestamptz arrival_time
       string  flight_number
@@ -152,12 +152,12 @@ erDiagram
       string  currency
       string  snap_token nullable
       string  redirect_url nullable
-      json/text raw_provider_payload nullable
+      json_or_text raw_provider_payload nullable
       timestamptz created_at
       timestamptz updated_at
     }
 
-    BOOKINGS ||--o| PAYMENTS : "1 — 0..1"
+    BOOKINGS ||--o| PAYMENTS : "1 to 0..1"
 ```
 
 ---
@@ -309,23 +309,24 @@ Below is the explicit API contract for core endpoints.
 sequenceDiagram
   participant C as Client
   participant F as Flights Service
-  participant M as Midtrans (Snap)
+  participant M as Midtrans
   participant DB as Database
 
-  C->>F: POST /bookings (offer snapshot, contact)
-  F->>DB: insert booking(status=INCOMPLETE)
+  C->>F: POST /bookings
+  F->>DB: Insert booking (status=INCOMPLETE)
   F-->>C: 201 {booking_id}
 
   C->>F: POST /payments/{booking_id}/snap
-  F->>DB: upsert payment (PENDING)
-  F->>M: create Snap transaction
+  F->>DB: Upsert payment (PENDING)
+  F->>M: Create Snap transaction
   F-->>C: 201 {payment_id, redirect_url}
 
   M-->>C: User pays in Snap UI
 
   M->>F: POST /payments/midtrans/webhook (settlement)
-  F->>DB: set payment=PAID; set booking=CONFIRMED
-  F-->>M: 200 OK (idempotent)
+  F->>DB: Update payment to PAID
+  F->>DB: Update booking to CONFIRMED
+  F-->>M: 200 OK
 
   C->>F: GET /bookings/{booking_id}
   F-->>C: 200 {status=CONFIRMED}
