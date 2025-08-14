@@ -77,10 +77,10 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ## 🔍 Checking Service Health
 
-Once the service is running, you can check the health check endpoint:
+Once the ferries-service is running, you can check the health check endpoint:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:5001/health
 ```
 Sample response:
 
@@ -92,6 +92,67 @@ Sample response:
 "api_key_present": true
 }
 ```
+## 🔍 Basic Endpoints
+
+Since the project doesn't have a real API yet, we'll use a mock API to simulate API calls.
+
+The mock data is located in the ferries-service\adapters\external_api.py file:
+
+```bash
+def _mock_routes(self) -> List[FerryRoute]:
+        return [
+            FerryRoute(id="R1", origin="Tanjung Priok", destination="Pontianak", operator="Pelni"),
+            FerryRoute(id="R2", origin="Surabaya", destination="Makassar", operator="Pelni"),
+            FerryRoute(id="R3", origin="Batam", destination="Belawan", operator="ASDP"),
+        ]
+```
+
+### 1. Get all routes
+```bash
+Get http://localhost:5001/ferries/routes
+```
+
+### 2. Get route by origin
+```bash
+Get http://localhost:5001/ferries/routes?origin={origin}
+```
+example:
+```bash
+Get http://localhost:5001/ferries/routes?origin=Surabaya
+```
+
+### 3. Get ferry schedules by route_id and 
+```bash
+Get http://localhost:5001/ferries/schedules?route_id={route_id}
+```
+example:
+```bash
+Get http://localhost:5001/ferries/schedules?route_id=R1
+```
+
+### 4. Get ferries booking
+```bash
+Get http://localhost:5001/ferries/bookings
+```
+
+### 5. Post booking
+```bash
+curl --location 'http://localhost:5001/ferries/bookings' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "schedule_id": "SR11",
+    "passengers": [
+        { "full_name": "Budi", "id_number": "12345" }
+    ],
+    "contact_email": "budi@example.com"
+}'
+```
+
+### 6. Get booking by id
+```bash
+Get http://localhost:5001/ferries/bookings/{booking_id}
+```
+
 
 ## 🗂 Folder Structure
 ```graphql
