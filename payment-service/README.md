@@ -1,160 +1,234 @@
-# TiketQ Payment Service
+# Payment Service
 
-This service handles payment processing for the TiketQ platform using Midtrans as the payment gateway. It follows the hexagonal architecture (ports and adapters) pattern to ensure clean separation of concerns and maintainability.
+TiketQ Payment Service menggunakan Clean Architecture dengan Midtrans sebagai payment gateway.
 
-## Architecture Overview
+## Struktur Proyek
 
-The payment service is structured according to the hexagonal architecture pattern:
+```
+payment-service/
+├── app.py                      # FastAPI application entry point
+├── Dockerfile                  # Container configuration
+├── requirements.txt            # Python dependencies
+├── domain/                     # Business logic layer
+│   ├── models.py              # Domain models & enums
+│   ├── services.py            # Business logic services
+│   └── repository.py          # Repository interfaces (ports)
+├── adapters/                  # External integrations layer
+│   ├── midtrans_adapter.py    # Midtrans API adapter
+│   ├── db.py                  # Database adapter
+│   └── webhook_handler.py     # Webhook processing adapter
+└── routes/                    # API endpoints layer
+    └── payment.py             # Payment REST API routes
+```
 
-### Domain Layer (Core)
-- **Models**: Domain entities and value objects
-- **Services**: Business logic and use cases
-- **Repository Interfaces (Ports)**: Contracts for external dependencies
+## Fitur
 
-### Adapters Layer
-- **Inbound Adapters**: REST API endpoints that accept requests from clients
-- **Outbound Adapters**: 
-  - Midtrans adapter for payment gateway integration
-  - Database adapter for persistent storage
+### Payment Operations
+- ✅ Create payment dengan Midtrans
+- ✅ Check payment status
+- ✅ Cancel payment
+- ✅ Refund payment
+- ✅ Get payments by order ID
 
-## Features
-
-- Payment creation with multiple payment methods
-- Payment status checking
-- Payment cancellation
-- Payment refunding
-- Webhook handling for payment notifications
-- Order-based payment tracking
-
-## Payment Methods Supported
-
+### Payment Methods Support
 - Credit Card
-- Bank Transfer
-- E-Wallet (GoPay, etc.)
+- Bank Transfer (BCA, Mandiri, BNI, BRI)
+- E-Wallet (GoPay, OVO, DANA)
 - QRIS
-- Retail (Indomaret, etc.)
+- Retail (Indomaret, Alfamart)
 
-## Setup and Configuration
+### Webhook Integration
+- ✅ Signature verification
+- ✅ Status mapping
+- ✅ Real-time payment updates
 
-### Prerequisites
-
-- Python 3.11+
-- PostgreSQL database
-- Midtrans account and API keys
-
-### Environment Variables
-
-Copy the `.env.example` file to `.env` and update the values:
+## Environment Variables
 
 ```bash
-cp .env.example .env
-```
-
-Required environment variables:
-
-```
 # Midtrans Configuration
-MIDTRANS_SERVER_KEY=your_midtrans_server_key
-MIDTRANS_CLIENT_KEY=your_midtrans_client_key
-MIDTRANS_PRODUCTION=false  # Set to true for production environment
+MIDTRANS_SERVER_KEY=SB-Mid-server-YOUR_SERVER_KEY
+MIDTRANS_CLIENT_KEY=SB-Mid-client-YOUR_CLIENT_KEY
+MIDTRANS_IS_PRODUCTION=false
 
 # Database Configuration
-DB_HOST=postgres
-DB_PORT=5432
-DB_NAME=tiketq_db
-DB_USER=postgres
-DB_PASSWORD=postgres
+DATABASE_URL=postgresql://user:password@postgres:5432/tiketq_db
 
-# Application Configuration
+# Service Configuration
 PORT=8000
-```
-
-### Running the Service
-
-#### Using Docker
-
-The service is configured to run with Docker Compose:
-
-```bash
-docker-compose up payment-service
-```
-
-#### Running Locally
-
-```bash
-cd payment-service
-pip install -r requirements.txt
-python app.py
 ```
 
 ## API Endpoints
 
-### Payment Operations
+### Payment Management
 
-- `POST /payments/`: Create a new payment
-- `GET /payments/{payment_id}`: Get payment details
-- `GET /payments/{payment_id}/status`: Check payment status
-- `POST /payments/{payment_id}/cancel`: Cancel a payment
-- `POST /payments/{payment_id}/refund`: Refund a payment
-- `GET /payments/order/{order_id}`: Get all payments for an order
+#### Create Payment
+```http
+POST /payments/
+Content-Type: application/json
 
-### Webhook
-
-- `POST /payments/webhook`: Handle payment notifications from Midtrans
-
-## API Documentation
-
-API documentation is available at:
-- Swagger UI: `/docs`
-- ReDoc: `/redoc`
-
-## Hexagonal Architecture Implementation
-
-### Domain Layer
-
-The domain layer contains the core business logic and is independent of external concerns:
-
-- `models.py`: Domain entities like PaymentRequest, PaymentResponse
-- `services.py`: Business logic for payment operations
-- `repository.py`: Interface definitions for external dependencies
-
-### Adapters
-
-#### Inbound Adapters
-
-- `routes/payment.py`: REST API endpoints that accept client requests
-
-#### Outbound Adapters
-
-- `adapters/midtrans_adapter.py`: Implementation of the PaymentRepository interface for Midtrans
-- `adapters/db.py`: Implementation of the PaymentStorageRepository interface for database operations
-
-## Testing
-
-To test the payment service:
-
-```bash
-# Run unit tests
-pytest
-
-# Test webhook handling
-curl -X POST "http://localhost:8000/payments/webhook" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "transaction_id": "test-transaction-123",
-    "order_id": "test-order-123",
-    "transaction_status": "settlement",
-    "gross_amount": "100000.00",
-    "payment_type": "credit_card"
-  }'
+{
+  "order_id": "ORDER-12345",
+  "amount": 100000.0,
+  "payment_method": "credit_card",
+  "customer_details": {
+    "first_name": "John",
+    "last_name": "Doe",
+    "email": "john.doe@example.com",
+    "phone": "+6281234567890"
+  },
+  "item_details": [
+    {
+      "id": "item1",
+      "price": 100000,
+      "quantity": 1,
+      "name": "Flight Ticket Jakarta-Bali"
+    }
+  ],
+  "description": "Flight booking payment"
+}
 ```
 
-## Midtrans Integration
+#### Get Payment Details
+```http
+GET /payments/{payment_id}
+```
 
-This service integrates with Midtrans using their official Python client library. The integration supports:
+#### Check Payment Status
+```http
+GET /payments/{payment_id}/status
+```
 
-1. **Snap API**: For creating payment pages and tokens
-2. **Core API**: For direct payment operations like status checks, cancellations, and refunds
-3. **Notification Handling**: For processing webhooks from Midtrans
+#### Cancel Payment
+```http
+POST /payments/{payment_id}/cancel
+Content-Type: application/json
 
-For more information about Midtrans, visit their [official documentation](https://docs.midtrans.com/).
+{
+  "reason": "Customer requested cancellation"
+}
+```
+
+#### Refund Payment
+```http
+POST /payments/{payment_id}/refund
+Content-Type: application/json
+
+{
+  "amount": 50000.0,
+  "reason": "Partial refund requested"
+}
+```
+
+#### Get Payments by Order
+```http
+GET /payments/order/{order_id}
+```
+
+### Webhook
+```http
+POST /payments/webhook
+Content-Type: application/json
+
+{
+  "transaction_id": "...",
+  "order_id": "...",
+  "transaction_status": "settlement",
+  "gross_amount": "100000.00",
+  "payment_type": "credit_card",
+  "signature_key": "..."
+}
+```
+
+## Running with Docker Compose
+
+Payment service dijalankan sebagai bagian dari microservices architecture:
+
+```bash
+# Build and start all services
+docker-compose up -d --build
+
+# View payment service logs
+docker-compose logs -f payment-service
+
+# Access payment service documentation
+# http://localhost:8003/docs
+```
+
+## Payment Status Flow
+
+```
+PENDING → PROCESSING → SUCCESS
+                   ↘
+                    FAILED
+                   ↗
+PENDING → EXPIRED
+       ↘
+        CANCELED
+       ↗
+SUCCESS → REFUNDED
+```
+
+## Development
+
+### Local Testing
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run service locally
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Testing Payment Integration
+
+#### Test Credit Card (Sandbox)
+```
+Card Number: 4811 1111 1111 1114
+CVV: 123
+Exp Month: 01
+Exp Year: 2025
+```
+
+#### Test Bank Transfer
+- BCA Virtual Account akan generate nomor VA otomatis
+- Simulasi pembayaran melalui Midtrans simulator
+
+## Security Features
+
+- ✅ Webhook signature verification
+- ✅ HTTPS enforcement in production
+- ✅ Input validation & sanitization
+- ✅ API key protection
+- ✅ CORS configuration
+
+## Monitoring & Logging
+
+- Structured logging untuk semua payment operations
+- Error tracking untuk failed transactions
+- Payment status tracking
+- Webhook processing logs
+
+## Integration dengan Services Lain
+
+### Transaction Service
+```python
+# Setelah payment success, notify transaction service
+POST /transactions/payments/notify
+{
+  "order_id": "ORDER-123",
+  "payment_id": "payment-123",
+  "status": "success",
+  "amount": 100000.0
+}
+```
+
+### User Service
+```python
+# Update user payment history
+POST /users/{user_id}/payments
+{
+  "payment_id": "payment-123",
+  "amount": 100000.0,
+  "status": "success"
+}
+```

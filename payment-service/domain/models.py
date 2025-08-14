@@ -1,18 +1,7 @@
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 from enum import Enum
 from datetime import datetime
-from typing import Optional, List
-from pydantic import BaseModel, Field
-
-
-class PaymentStatus(str, Enum):
-    """Payment status enum for tracking payment lifecycle"""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    SUCCESS = "success"
-    FAILED = "failed"
-    EXPIRED = "expired"
-    REFUNDED = "refunded"
-    CANCELED = "canceled"
 
 
 class PaymentMethod(str, Enum):
@@ -24,49 +13,75 @@ class PaymentMethod(str, Enum):
     RETAIL = "retail"
 
 
+class PaymentStatus(str, Enum):
+    """Payment status enum for tracking payment lifecycle"""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SUCCESS = "success"
+    FAILED = "failed"
+    CANCELED = "canceled"
+    REFUNDED = "refunded"
+    EXPIRED = "expired"
+
+
 class PaymentRequest(BaseModel):
     """Payment request model for initiating a payment"""
     order_id: str
     amount: float
     payment_method: PaymentMethod
-    customer_name: str
-    customer_email: str
-    customer_phone: Optional[str] = None
+    customer_details: Dict[str, Any]
+    item_details: List[Dict[str, Any]]
     description: Optional[str] = None
-    items: Optional[List[dict]] = None
-    callback_url: Optional[str] = None
-    expiry_duration: Optional[int] = 24  # Hours
+    expiry_duration: int = 24  # hours
 
 
 class PaymentResponse(BaseModel):
     """Payment response model after payment initiation"""
-    payment_id: str
+    id: str
     order_id: str
-    status: PaymentStatus
+    transaction_id: str
     amount: float
+    status: PaymentStatus
     payment_method: PaymentMethod
-    transaction_time: datetime
-    expiry_time: Optional[datetime] = None
     payment_url: Optional[str] = None
-    token: Optional[str] = None
-    redirect_url: Optional[str] = None
-    qr_code_url: Optional[str] = None
-    virtual_account_number: Optional[str] = None
-    bank_code: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    metadata: Optional[Dict[str, Any]] = None
 
 
-class PaymentNotification(BaseModel):
+class PaymentStatusRequest(BaseModel):
+    """Request model for checking payment status"""
+    transaction_id: str
+
+
+class PaymentCancellationRequest(BaseModel):
+    """Request model for canceling a payment"""
+    reason: Optional[str] = None
+
+
+class PaymentRefundRequest(BaseModel):
+    """Request model for refunding a payment"""
+    amount: Optional[float] = None
+    reason: str
+
+
+class WebhookNotification(BaseModel):
     """Payment notification model for webhook handling"""
     transaction_id: str
     order_id: str
-    status_code: str
-    status_message: str
-    gross_amount: float
+    transaction_status: str
+    gross_amount: str
     payment_type: str
-    transaction_time: datetime
-    signature_key: str
     fraud_status: Optional[str] = None
-    settlement_time: Optional[datetime] = None
-    bank: Optional[str] = None
-    va_number: Optional[str] = None
-    masked_card: Optional[str] = None
+    signature_key: Optional[str] = None
+    transaction_time: Optional[str] = None
+
+
+class PaymentNotification(BaseModel):
+    """Processed payment notification"""
+    transaction_id: str
+    order_id: str
+    status: PaymentStatus
+    amount: float
+    payment_type: str
+    processed_at: datetime
