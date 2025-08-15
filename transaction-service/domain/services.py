@@ -2,33 +2,35 @@ from typing import Optional, List, Dict, Any, Generator
 from uuid import uuid4
 from datetime import datetime, timezone
 import logging
-from functools import lru_cache
-from fastapi import Depends
 from sqlalchemy.orm import Session
-
-logger = logging.getLogger(__name__)
+import os
+from fastapi import HTTPException, status, Depends, Header
+from jose import jwt, JWTError
 
 from domain.models import (
-    TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus, TransactionType,
-    OrderInDB, OrderCreate, OrderUpdate, OrderStatus, ServiceType,
-    PaymentInDB, PaymentCreate, PaymentStatus, PaymentMethod, PaymentGateway,
-    RefundInDB, RefundCreate, RefundStatus, Currency,
+    TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus,
+    OrderInDB, OrderCreate, OrderUpdate, OrderStatus,
+    PaymentInDB, PaymentCreate, PaymentStatus, Currency,
     # Payment request models
     PaymentCreateRequest, PaymentConfirmRequest, PaymentRefundRequest, PaymentWebhookRequest,
     # Order request models
     OrderCreateRequest, OrderStatusUpdateRequest,
     # Transaction request models
-    TransactionCreateRequest, TransactionUpdateRequest, TransactionRefundRequest,
+    TransactionCreateRequest, TransactionUpdateRequest,
     # Report request and response models
     TransactionReportRequest, TransactionReportResponse, TransactionReportData,
     RevenueReportRequest, RevenueReportResponse, RevenueDataPoint,
     RefundReportRequest, RefundReportResponse, RefundReportData,
-    ReportDateRange
+    # Auth models
+    TokenData, UserRole
 )
 
 from adapters.db import (
-    DBTransactionRepository, DBOrderRepository, 
-    DBPaymentRepository, DBRefundRepository
+    DBTransactionRepository,
+    DBOrderRepository,
+    DBPaymentRepository,
+    DBRefundRepository,
+    DatabaseSessionProvider,
 )
 
 # Configure logging
@@ -899,16 +901,12 @@ class PaymentService:
 # Dependency Injection and Service Factories
 # =============================================================================
 
-from functools import lru_cache
-from typing import Generator
-from sqlalchemy.orm import Session
 
 def get_database_session() -> Generator[Session, None, None]:
     """
     FastAPI dependency that provides database sessions.
     This is the only place where FastAPI directly interacts with the database.
     """
-    from adapters.db import DatabaseSessionProvider
     
     _session_provider = DatabaseSessionProvider()
     session = _session_provider.get_session()
@@ -923,7 +921,6 @@ def create_payment_service(db_session: Session) -> PaymentService:
     Factory function to create PaymentService with all its dependencies.
     This is where we compose the hexagonal architecture.
     """
-    from adapters.db import DBPaymentRepository, DBTransactionRepository
     
     # Infrastructure adapters (ports implementations)
     transaction_repo = DBTransactionRepository(db_session)
@@ -939,7 +936,6 @@ def create_transaction_service(db_session: Session) -> TransactionService:
     """
     Factory function to create TransactionService with all its dependencies.
     """
-    from adapters.db import DBTransactionRepository, DBOrderRepository
     
     # Infrastructure adapters
     transaction_repo = DBTransactionRepository(db_session)
@@ -955,7 +951,6 @@ def create_order_service(db_session: Session) -> OrderService:
     """
     Factory function to create OrderService with all its dependencies.
     """
-    from adapters.db import DBOrderRepository
     
     # Infrastructure adapters
     order_repo = DBOrderRepository(db_session)
@@ -1163,7 +1158,6 @@ class ReportsService:
 def get_reports_service(db: Session = Depends(get_database_session)) -> ReportsService:
     """Factory function to create ReportsService with proper dependencies"""
     # Infrastructure adapters
-    from adapters.db import DBTransactionRepository, DBRefundRepository
     transaction_repo = DBTransactionRepository(db)
     refund_repo = DBRefundRepository(db)
     
@@ -1171,15 +1165,57 @@ def get_reports_service(db: Session = Depends(get_database_session)) -> ReportsS
     return ReportsService(transaction_repo, refund_repo)
 
 
-# Authentication service placeholder
-@lru_cache()
-def get_auth_service():
-    """
-    TODO: Implement proper authentication service
-    This should return the actual auth service that validates tokens
-    """
-    class MockAuthService:
-        def get_current_user(self):
-            return {"id": 1, "role": "admin"}
-    
-    return MockAuthService()
+
+# AUTH SERVICE
+SECRET_KEY = os.getenv("JWT_SECRET", "secret")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+
+def get_current_user(authorization: Optional[str] = Header(None)) -> TokenData:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = authorization.replace("Bearer ", "")
+    token_data = decode_token(token)
+    if not token_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token_data
+
+
+def require_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        )
+    return current_user
+
+
+def require_user_or_admin(
+    current_user: TokenData = Depends(get_current_user),
+) -> TokenData:
+    if current_user.role not in [UserRole.USER, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User or admin access required",
+        )
+    return current_user
+
+
+def decode_token(token: str) -> Optional[TokenData]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        role: str = payload.get("role", "user")
+        if email is None:
+            return None
+        return TokenData(email=email, role=UserRole(role))
+    except JWTError:
+        return None

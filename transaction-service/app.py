@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
+from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 import logging
 
@@ -41,8 +42,39 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan
+    lifespan=lifespan,
+    swagger_ui_parameters={"syntaxHighlight.theme": "obsidian"}
 )
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="Transaction Service",
+        version="1.0.0",
+        description="Transaction management service for TiketQ platform",
+        routes=app.routes,
+    )
+    
+    # Add security definitions
+    openapi_schema["components"]["securitySchemes"] = {
+        "Bearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter JWT token in the format: Bearer <token>"
+        }
+    }
+    
+    # Apply security globally to all endpoints
+    openapi_schema["security"] = [{"Bearer": []}]
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+# Set the custom OpenAPI schema
+app.openapi = custom_openapi
 
 # Configure CORS
 app.add_middleware(

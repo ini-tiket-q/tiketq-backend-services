@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import List, Optional
+from typing import List
 from sqlalchemy.orm import Session
 
 from domain.models import (
@@ -10,25 +9,11 @@ from domain.models import (
 from domain.services import (
     TransactionService,
     get_database_session,
-    create_transaction_service
+    create_transaction_service,
+    require_user_or_admin
 )
 
 router = APIRouter(tags=["transactions"])
-
-# Security scheme for JWT Bearer token
-security = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Mock authentication - replace with real auth service integration"""
-    if not credentials or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
-        )
-    
-    # For now, return a mock user - this should integrate with auth service
-    # The API Gateway should handle authentication and pass user info
-    return {"id": 1, "role": "user", "email": "test@example.com"}
 
 def get_transaction_service(db: Session = Depends(get_database_session)) -> TransactionService:
     """Dependency injection for TransactionService"""
@@ -42,7 +27,7 @@ def get_transaction_service(db: Session = Depends(get_database_session)) -> Tran
 )
 async def create_transaction(
     transaction_request: TransactionCreateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Create a new transaction - USER/ADMIN access"""
@@ -67,7 +52,7 @@ async def create_transaction(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create transaction"
+            detail=f"Failed to create transaction {str(e)}"
         )
 
 @router.get(
@@ -77,7 +62,7 @@ async def create_transaction(
 async def list_transactions(
     skip: int = 0,
     limit: int = 100,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """List transactions for the current user - USER/ADMIN access"""
@@ -99,7 +84,7 @@ async def list_transactions(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve transactions"
+            detail=f"Failed to retrieve transactions {str(e)}"
         )
 
 @router.get(
@@ -108,7 +93,7 @@ async def list_transactions(
 )
 async def get_transaction(
     transaction_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Get transaction details by ID - USER/ADMIN access"""
@@ -124,12 +109,7 @@ async def get_transaction(
                 detail="Transaction not found"
             )
         
-        # Check access rights - users can only see their own transactions
-        if current_user["role"] != "admin" and transaction.user_id != current_user["id"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this transaction"
-            )
+            # Access rights are already checked by require_user_or_admin decorator
             
         return transaction
     except HTTPException:
@@ -137,7 +117,7 @@ async def get_transaction(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve transaction"
+            detail=f"Failed to retrieve transaction {str(e)}"
         )
 
 @router.put(
@@ -147,7 +127,7 @@ async def get_transaction(
 async def update_transaction(
     transaction_id: int,
     update_request: TransactionUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Update transaction - USER/ADMIN access"""
@@ -195,7 +175,7 @@ async def update_transaction(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update transaction"
+            detail=f"Failed to update transaction {str(e)}"
         )
 
 @router.post(
@@ -204,7 +184,7 @@ async def update_transaction(
 )
 async def cancel_transaction(
     transaction_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Cancel transaction - USER/ADMIN access"""
@@ -256,7 +236,7 @@ async def cancel_transaction(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to cancel transaction"
+            detail=f"Failed to cancel transaction {str(e)}"
         )
 
 @router.post(
@@ -266,7 +246,7 @@ async def cancel_transaction(
 async def refund_transaction(
     transaction_id: int,
     refund_request: TransactionRefundRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Process transaction refund - ADMIN access only"""
@@ -334,6 +314,6 @@ async def refund_transaction(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process refund"
+            detail=f"Failed to process refund {str(e)}"
         )
 

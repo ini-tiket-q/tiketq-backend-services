@@ -11,7 +11,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship, Session
 from sqlalchemy.sql import func
-from sqlalchemy.ext.hybrid import hybrid_property
 
 import os
 from sqlalchemy.orm import sessionmaker, declarative_base

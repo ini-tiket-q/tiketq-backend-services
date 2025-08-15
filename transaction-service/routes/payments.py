@@ -1,33 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
-from domain.models import PaymentInDB, PaymentStatus
+from domain.models import PaymentInDB
 from domain.services import (
     PaymentService, 
     TransactionService,
     get_database_session,
     create_payment_service,
-    create_transaction_service
+    create_transaction_service,
+    require_user_or_admin
 )
 
 router = APIRouter(tags=["payments"])
-
-# Security scheme for JWT Bearer token
-security = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Mock authentication - replace with real auth service integration"""
-    if not credentials or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
-        )
-    
-    # For now, return a mock user - this should integrate with auth service
-    # The API Gateway should handle authentication and pass user info
-    return {"id": 1, "role": "user", "email": "test@example.com"}
 
 def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentService:
     """Dependency injection for PaymentService"""
@@ -45,7 +30,7 @@ def get_transaction_service(db: Session = Depends(get_database_session)) -> Tran
 )
 async def create_payment(
     payment_data: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Create payment - USER/ADMIN access"""
@@ -74,7 +59,7 @@ async def create_payment(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create payment"
+            detail=f"Failed to create payment {str(e)}"
         )
 
 @router.get(
@@ -83,7 +68,7 @@ async def create_payment(
 )
 async def get_payment_details(
     payment_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Get payment details - USER/ADMIN access"""
@@ -113,7 +98,7 @@ async def get_payment_details(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve payment details"
+            detail=f"Failed to retrieve payment details {str(e)}"
         )
 
 @router.post(
@@ -123,7 +108,7 @@ async def get_payment_details(
 async def confirm_payment(
     payment_id: int,
     gateway_response: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Confirm payment - ADMIN access only"""
@@ -156,7 +141,7 @@ async def confirm_payment(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to confirm payment"
+            detail=f"Failed to confirm payment {str(e)}"
         )
 
 @router.post(
@@ -166,7 +151,7 @@ async def confirm_payment(
 async def process_payment_refund(
     payment_id: int,
     refund_data: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Process payment refund - ADMIN access only"""
@@ -201,7 +186,7 @@ async def process_payment_refund(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process payment refund"
+            detail=f"Failed to process payment refund {str(e)}"
         )
 
 @router.post(
@@ -235,5 +220,5 @@ async def payment_webhook(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process payment webhook"
+            detail=f"Failed to process payment webhook {str(e)}"
         )

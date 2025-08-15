@@ -534,3 +534,14 @@ class RefundReportResponse(BaseModel):
     total_count: int = Field(..., description="Total number of refunds")
     total_amount: float = Field(..., description="Total refund amount")
     date_range: ReportDateRange = Field(..., description="Report date range")
+
+
+
+# AUTH 
+class UserRole(str, Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+    role: Optional[UserRole] = None

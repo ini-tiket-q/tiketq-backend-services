@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
-from typing import List, Optional
+from typing import Optional
 import logging
 
 from domain.models import (
@@ -8,22 +8,13 @@ from domain.models import (
     RefundReportRequest, RefundReportResponse,
     ReportDateRange
 )
-from domain.services import get_reports_service, ReportsService
+from domain.services import get_reports_service, ReportsService, require_admin
 
 # Create router
-router = APIRouter()
+router = APIRouter(tags=["reports"])
 
 # Set up logging
 logger = logging.getLogger(__name__)
-
-# Dependency to require admin access (placeholder)
-async def require_admin():
-    """
-    TODO: Implement proper admin authorization
-    This should check JWT token and verify admin role
-    """
-    # For now, just return True - replace with actual auth logic
-    return True
 
 @router.get("/transactions", 
     response_model=TransactionReportResponse,
