@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
@@ -10,25 +9,11 @@ from domain.models import (
 from domain.services import (
     OrderService,
     get_database_session,
-    create_order_service
+    create_order_service,
+    require_user_or_admin
 )
 
 router = APIRouter(tags=["orders"])
-
-# Security scheme for JWT Bearer token
-security = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Mock authentication - replace with real auth service integration"""
-    if not credentials or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
-        )
-    
-    # For now, return a mock user - this should integrate with auth service
-    # The API Gateway should handle authentication and pass user info
-    return {"id": 1, "role": "user", "email": "test@example.com"}
 
 def get_order_service(db: Session = Depends(get_database_session)) -> OrderService:
     """Dependency injection for OrderService"""
@@ -42,7 +27,7 @@ def get_order_service(db: Session = Depends(get_database_session)) -> OrderServi
 )
 async def create_order(
     order_request: OrderCreateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Create a new order - USER/ADMIN access"""
@@ -65,7 +50,7 @@ async def create_order(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create order"
+            detail=f"Failed to create order {str(e)}"
         )
 
 @router.get(
@@ -76,7 +61,7 @@ async def list_orders(
     skip: int = 0,
     limit: int = 100,
     status_filter: Optional[OrderStatus] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """List orders for the current user - USER/ADMIN access"""
@@ -100,7 +85,7 @@ async def list_orders(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve orders"
+            detail=f"Failed to retrieve orders {str(e)}"
         )
 
 @router.get(
@@ -109,7 +94,7 @@ async def list_orders(
 )
 async def get_order(
     order_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Get order details by ID - USER/ADMIN access"""
@@ -138,7 +123,7 @@ async def get_order(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve order"
+            detail=f"Failed to retrieve order {str(e)}"
         )
 
 @router.put(
@@ -148,17 +133,12 @@ async def get_order(
 async def update_order_status(
     order_id: int,
     status_request: OrderStatusUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Update order status - ADMIN access only"""
     try:
-        # Check admin access
-        if current_user["role"] != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin access required for order status updates"
-            )
+        # Admin access already checked by require_admin decorator
         
         # Check if order exists
         existing_order = service.get_order(
@@ -196,5 +176,5 @@ async def update_order_status(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update order status"
+            detail=f"Failed to update order status {str(e)}"
         )
