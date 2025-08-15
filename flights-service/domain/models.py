@@ -23,7 +23,7 @@ class City:
 
 
 @dataclass(slots=True)
-class Airport:
+class Airline:
     flight_code: str  # e.g., "GA"
     flight_name: str  # e.g., "Garuda Indonesia"
     flight_image: Optional[str] = None  # e.g., "https://example.com/flight_image.png"
