@@ -1,19 +1,5 @@
 -- Initialize database for TiketQ services
-
--- Create the database user first
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'tiketq_user') THEN
-        CREATE USER tiketq_user WITH PASSWORD 'tiketq_password123';
-    END IF;
-END
-$$;
-
--- Grant privileges to the user
-GRANT ALL PRIVILEGES ON DATABASE tiketq_db TO tiketq_user;
-GRANT ALL PRIVILEGES ON SCHEMA public TO tiketq_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO tiketq_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO tiketq_user;
+-- Using default postgres superuser (no additional user creation needed)
 
 -- Create user_profiles table for user-service
 CREATE TABLE IF NOT EXISTS user_profiles (

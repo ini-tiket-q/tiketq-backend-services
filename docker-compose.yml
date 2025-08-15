@@ -30,7 +30,7 @@ services:
     ports:
       - "8001:8000" # temporary expose for testing
     environment:
-      - AUTH_DB_URL=postgresql://tiketq_user:tiketq_password123@postgres:5432/tiketq_db
+      - AUTH_DB_URL=postgresql://postgres:postgres@postgres:5432/tiketq_db
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -40,7 +40,7 @@ services:
       context: ./user-service
     container_name: user-service
     environment:
-      - USER_DB_URL=postgresql://tiketq_user:tiketq_password123@postgres:5432/tiketq_db
+      - USER_DB_URL=postgresql://postgres:postgres@postgres:5432/tiketq_db
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -92,7 +92,7 @@ services:
     ports:
       - "8004:8000" # temporary expose e.g. localhost:8004/docs
     environment:
-      - TRANSACTION_DB_URL=postgresql://tiketq_user:tiketq_password123@postgres:5432/tiketq_db
+      - TRANSACTION_DB_URL=postgresql://postgres:postgres@postgres:5432/tiketq_db
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -110,8 +110,8 @@ services:
     container_name: postgres
     environment:
       POSTGRES_DB: tiketq_db
-      POSTGRES_USER: tiketq_user
-      POSTGRES_PASSWORD: tiketq_password123
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
