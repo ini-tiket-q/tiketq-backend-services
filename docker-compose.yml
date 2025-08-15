@@ -8,7 +8,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env               # Your app configs (no secrets here)
+      - .env # Your app configs (no secrets here)
     depends_on:
       - auth-service
       - user-service
@@ -28,8 +28,8 @@ services:
     container_name: auth-service
     ports:
       - "8001:8000" # temporary expose for testing
-    env_file:
-      - .env
+    environment:
+      - AUTH_DB_URL=postgresql://tiketq_user:tiketq_password123@postgres:5432/tiketq_db
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -38,8 +38,8 @@ services:
     build:
       context: ./user-service
     container_name: user-service
-    env_file:
-      - .env
+    environment:
+      - USER_DB_URL=postgresql://tiketq_user:tiketq_password123@postgres:5432/tiketq_db
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -90,8 +90,8 @@ services:
     container_name: transaction-service
     ports:
       - "8004:8000" # temporary expose e.g. localhost:8004/docs
-    env_file:
-      - .env
+    environment:
+      - TRANSACTION_DB_URL=postgresql://tiketq_user:tiketq_password123@postgres:5432/tiketq_db
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -101,18 +101,15 @@ services:
     container_name: postgres
     environment:
       POSTGRES_DB: tiketq_db
-      POSTGRES_USER_FILE: /run/secrets/db_user
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_USER: tiketq_user
+      POSTGRES_PASSWORD: tiketq_password123
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - tiketq-net
-    secrets:
-      - db_user
-      - db_password
     restart: unless-stopped
 
   nginx:
@@ -125,12 +122,6 @@ services:
     networks:
       - tiketq-net
     restart: unless-stopped
-
-secrets:
-  db_user:
-    file: ./secrets/db_user.txt
-  db_password:
-    file: ./secrets/db_password.txt
 
 networks:
   tiketq-net:
