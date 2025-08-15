@@ -18,6 +18,7 @@ services:
       - ppob-service
       - payment-service
       - transaction-service
+      - trains-service
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -92,6 +93,14 @@ services:
       - "8004:8000" # temporary expose e.g. localhost:8004/docs
     environment:
       - TRANSACTION_DB_URL=postgresql://tiketq_user:tiketq_password123@postgres:5432/tiketq_db
+    networks:
+      - tiketq-net
+    restart: unless-stopped
+
+  trains-service:
+    build:
+      context: ./trains-service
+    container_name: trains-service
     networks:
       - tiketq-net
     restart: unless-stopped

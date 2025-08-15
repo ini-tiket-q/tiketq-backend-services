@@ -12,6 +12,8 @@ SERVICES = {
     "hotels": os.getenv("HOTELS_SERVICE_URL", "http://hotels-service:8000"),
     "ppob": os.getenv("PPOB_SERVICE_URL", "http://ppob-service:8000"),
     "payment": os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8000"),
+    "transaction": os.getenv("TRANSACTION_SERVICE_URL", "http://transaction-service:8000"),
+    "trains": os.getenv("TRAINS_SERVICE_URL", "http://trains-service:8000"),
 }
 
 ROUTE_SERVICE_MAP = {
@@ -22,6 +24,8 @@ ROUTE_SERVICE_MAP = {
     "/hotels": "hotels",
     "/ppob": "ppob",
     "/payments": "payment",
+    "/transactions": "transaction",
+    "/trains": "trains",
 }
 
 
