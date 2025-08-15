@@ -11,7 +11,7 @@ from domain.models import (
 from domain.services import get_reports_service, ReportsService, require_admin
 
 # Create router
-router = APIRouter(tags=["reports"])
+router = APIRouter()
 
 # Set up logging
 logger = logging.getLogger(__name__)

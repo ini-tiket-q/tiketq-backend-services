@@ -168,6 +168,9 @@ class DBTransactionRepository(TransactionRepository):
         self.db = db
 
     def create_transaction(self, transaction: TransactionCreate) -> TransactionInDB:
+        # Set current timestamp for created_at and updated_at
+        now = datetime.now(timezone.utc)
+        
         db_transaction = Transaction(
             user_id=transaction.user_id,
             order_id=transaction.order_id,
@@ -183,11 +186,18 @@ class DBTransactionRepository(TransactionRepository):
             else None,
             gateway_transaction_id=transaction.gateway_transaction_id,
             meta_data=transaction.metadata,
+            created_at=now,
+            updated_at=now,
         )
-        self.db.add(db_transaction)
-        self.db.commit()
-        self.db.refresh(db_transaction)
-        return self._to_domain_model(db_transaction)
+        
+        try:
+            self.db.add(db_transaction)
+            self.db.commit()
+            self.db.refresh(db_transaction)
+            return self._to_domain_model(db_transaction)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_transaction(self, transaction_id: int) -> Optional[TransactionInDB]:
         db_transaction = (
@@ -213,12 +223,14 @@ class DBTransactionRepository(TransactionRepository):
         self, skip: int = 0, limit: int = 100
     ) -> List[TransactionInDB]:
         """Get all transactions with pagination (admin function)"""
+        from domain.services import logger
         db_transactions = (
             self.db.query(Transaction)
             .offset(skip)
             .limit(limit)
             .all()
         )
+        logger.debug(f"Retrieved {len(db_transactions)} transactions")
         return [self._to_domain_model(t) for t in db_transactions]
 
     def update_transaction(
@@ -255,24 +267,47 @@ class DBTransactionRepository(TransactionRepository):
 
     # Reusable function to convert db model to domain model
     def _to_domain_model(self, db_transaction: Transaction) -> TransactionInDB:
+        # Get current time in UTC
+        now = datetime.now(timezone.utc)
+        
+        # Handle created_at
+        if db_transaction.created_at is None:
+            created_at = now
+        else:
+            created_at = db_transaction.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+        
+        # Handle updated_at - default to created_at if None
+        if db_transaction.updated_at is None:
+            updated_at = created_at  # Use created_at as fallback
+        else:
+            updated_at = db_transaction.updated_at
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            
         return TransactionInDB(
             id=db_transaction.id,
             user_id=db_transaction.user_id,
             order_id=db_transaction.order_id,
             transaction_type=TransactionType(db_transaction.transaction_type),
-            amount=float(db_transaction.amount),
+            amount=db_transaction.amount,
             currency=db_transaction.currency,
             status=TransactionStatus(db_transaction.status),
-            payment_method=PaymentMethod(db_transaction.payment_method)
-            if db_transaction.payment_method
-            else None,
-            payment_gateway=PaymentGateway(db_transaction.payment_gateway)
-            if db_transaction.payment_gateway
-            else None,
+            payment_method=(
+                PaymentMethod(db_transaction.payment_method)
+                if db_transaction.payment_method
+                else None
+            ),
+            payment_gateway=(
+                PaymentGateway(db_transaction.payment_gateway)
+                if db_transaction.payment_gateway
+                else None
+            ),
             gateway_transaction_id=db_transaction.gateway_transaction_id,
             metadata=db_transaction.meta_data,
-            created_at=db_transaction.created_at,
-            updated_at=getattr(db_transaction, "updated_at", None),
+            created_at=created_at,
+            updated_at=updated_at,
         )
 
     def get_transactions_for_report(self, start_date, end_date, status_filter=None, 
@@ -367,21 +402,37 @@ class DBOrderRepository(OrderRepository):
         self.db = db
 
     def create_order(self, order: OrderCreate) -> OrderInDB:
+        # Convert TransactionItem objects to dictionaries for JSON serialization
+        items_as_dicts = [
+            item.model_dump() if hasattr(item, 'model_dump') else dict(item)
+            for item in order.items
+        ]
+        
+        # Create the order with current timestamps
+        now = datetime.now(timezone.utc)
         db_order = Order(
-            booking_reference=order.booking_reference,
-            order_type=order.order_type.value if hasattr(order.order_type, 'value') else str(order.order_type),
-            service_type=order.service_type.value,
-            traveler_details=order.traveler_details,
-            item_details=order.item_details,
-            quantity=order.quantity,
-            unit_price=float(order.unit_price),
-            total_amount=float(order.total_amount),
+            user_id=order.user_id,
+            order_number=order.order_number,
+            service_type=order.service_type,
+            items=items_as_dicts,
+            subtotal=order.subtotal,
+            tax=order.tax,
+            discount=order.discount,
+            total=order.total,
+            status=order.status,
             meta_data=order.metadata,
+            created_at=now,
+            updated_at=now,
         )
-        self.db.add(db_order)
-        self.db.commit()
-        self.db.refresh(db_order)
-        return self._to_domain_model(db_order)
+        
+        try:
+            self.db.add(db_order)
+            self.db.commit()
+            self.db.refresh(db_order)
+            return self._to_domain_model(db_order)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_order(self, order_id: int) -> Optional[OrderInDB]:
         db_order = self.db.query(Order).filter(Order.id == order_id).first()
@@ -394,15 +445,10 @@ class DBOrderRepository(OrderRepository):
         skip: int = 0,
         limit: int = 100,
     ) -> List[OrderInDB]:
-        # Note: The current Order table doesn't have user_id field
-        # This method needs to be updated once user relationships are added
-        query = self.db.query(Order)
-        # TODO: Add user_id filter when user relationship is implemented
-        # query = query.filter(Order.user_id == user_id)
+        query = self.db.query(Order).filter(Order.user_id == user_id)
         
         if status is not None:
-            # TODO: Add status field to Order table if needed
-            pass
+            query = query.filter(Order.status == status)
             
         db_orders = query.offset(skip).limit(limit).all()
         return [self._to_domain_model(o) for o in db_orders]
@@ -410,14 +456,11 @@ class DBOrderRepository(OrderRepository):
     def update_order_status(
         self, order_id: int, status: OrderStatus
     ) -> Optional[OrderInDB]:
-        # Note: The current Order table doesn't have status field
-        # This is a placeholder implementation
         db_order = self.db.query(Order).filter(Order.id == order_id).first()
         if not db_order:
             return None
 
-        # TODO: Add status field to Order table
-        # db_order.status = status.value
+        db_order.status = status
         db_order.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(db_order)
@@ -462,14 +505,15 @@ class DBOrderRepository(OrderRepository):
     def _to_domain_model(self, db_order: Order) -> OrderInDB:
         return OrderInDB(
             id=db_order.id,
-            booking_reference=db_order.booking_reference,
-            order_type=db_order.order_type,  # Already stored as string
-            service_type=ServiceType(db_order.service_type),
-            traveler_details=db_order.traveler_details,
-            item_details=db_order.item_details,
-            quantity=db_order.quantity,
-            unit_price=float(db_order.unit_price),
-            total_amount=float(db_order.total_amount),
+            user_id=db_order.user_id,
+            order_number=db_order.order_number,
+            service_type=db_order.service_type,
+            items=db_order.items,
+            subtotal=db_order.subtotal,
+            tax=db_order.tax,
+            discount=db_order.discount,
+            total=db_order.total,
+            status=db_order.status,
             metadata=db_order.meta_data,
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
