@@ -1,33 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Dict, Any
 from sqlalchemy.orm import Session
 
-from domain.models import PaymentInDB, PaymentStatus
+from domain.models import (
+    PaymentCreateRequest, PaymentInDB, PaymentConfirmRequest,
+    PaymentRefundRequest, PaymentWebhookRequest
+)
 from domain.services import (
     PaymentService, 
     TransactionService,
     get_database_session,
     create_payment_service,
-    create_transaction_service
+    create_transaction_service,
+    require_user_or_admin,
+    require_admin
 )
 
 router = APIRouter(tags=["payments"])
-
-# Security scheme for JWT Bearer token
-security = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Mock authentication - replace with real auth service integration"""
-    if not credentials or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
-        )
-    
-    # For now, return a mock user - this should integrate with auth service
-    # The API Gateway should handle authentication and pass user info
-    return {"id": 1, "role": "user", "email": "test@example.com"}
 
 def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentService:
     """Dependency injection for PaymentService"""
@@ -44,17 +32,19 @@ def get_transaction_service(db: Session = Depends(get_database_session)) -> Tran
     status_code=status.HTTP_201_CREATED
 )
 async def create_payment(
-    payment_data: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
-    payment_service: PaymentService = Depends(get_payment_service)
+    payment_data: PaymentCreateRequest = Body(...),
+    current_user = Depends(require_user_or_admin),
+    payment_service: PaymentService = Depends(get_payment_service),
+    db: Session = Depends(get_database_session)
 ):
     """Create payment - USER/ADMIN access"""
     try:
-        # Call service layer with all validation handling
+        # Convert Pydantic model to dict and pass to service layer
+        payment_dict = payment_data.model_dump()
         payment = payment_service.create_payment(
-            transaction_id=payment_data.get("transaction_id"),
-            payment_data=payment_data,
-            user_id=current_user["id"]
+            transaction_id=payment_dict.pop("transaction_id"),
+            payment_data=payment_dict,
+            user_id=current_user.id
         )
         
         if not payment:
@@ -74,7 +64,7 @@ async def create_payment(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create payment"
+            detail=f"Failed to create payment {str(e)}"
         )
 
 @router.get(
@@ -83,7 +73,7 @@ async def create_payment(
 )
 async def get_payment_details(
     payment_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(require_user_or_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Get payment details - USER/ADMIN access"""
@@ -113,7 +103,7 @@ async def get_payment_details(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve payment details"
+            detail=f"Failed to retrieve payment details {str(e)}"
         )
 
 @router.post(
@@ -122,22 +112,17 @@ async def get_payment_details(
 )
 async def confirm_payment(
     payment_id: int,
-    gateway_response: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
+    confirm_data: PaymentConfirmRequest = Body(...),
+    current_user = Depends(require_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
-    """Confirm payment - ADMIN access only"""
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can confirm payments"
-        )
-    
     try:
+        # Convert Pydantic model to dict for the service layer
+        confirm_dict = confirm_data.model_dump()
         payment = payment_service.confirm_payment(
             payment_id=payment_id,
-            gateway_response=gateway_response,
-            confirmed_by=current_user["id"]
+            gateway_response=confirm_dict.get("gateway_response", {}),
+            confirmed_by=current_user.id
         )
         
         if not payment:
@@ -156,7 +141,7 @@ async def confirm_payment(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to confirm payment"
+            detail=f"Failed to confirm payment {str(e)}"
         )
 
 @router.post(
@@ -165,22 +150,16 @@ async def confirm_payment(
 )
 async def process_payment_refund(
     payment_id: int,
-    refund_data: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
+    refund_data: PaymentRefundRequest = Body(...),
+    current_user = Depends(require_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
-    """Process payment refund - ADMIN access only"""
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can process payment refunds"
-        )
-    
     try:
-        # Call service layer with all validation handling
+        # Convert Pydantic model to dict for the service layer
+        refund_dict = refund_data.model_dump()
         updated_payment = payment_service.process_refund(
             payment_id=payment_id,
-            refund_data=refund_data,
+            refund_data=refund_dict,
             refunded_by=current_user["id"]
         )
         
@@ -201,7 +180,7 @@ async def process_payment_refund(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process payment refund"
+            detail=f"Failed to process payment refund {str(e)}"
         )
 
 @router.post(
@@ -209,14 +188,15 @@ async def process_payment_refund(
     status_code=status.HTTP_200_OK
 )
 async def payment_webhook(
-    webhook_data: Dict[str, Any] = Body(...),
+    webhook_request: PaymentWebhookRequest = Body(...),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Payment gateway webhook - Public access"""
     try:
         # TODO: Implement webhook signature validation
-        # Call service layer with all validation handling
-        payment = payment_service.process_webhook(webhook_data)
+        # Convert Pydantic model to dict for the service layer
+        webhook_dict = webhook_request.model_dump()
+        payment = payment_service.process_webhook(webhook_dict)
         
         if not payment:
             raise HTTPException(
@@ -235,5 +215,5 @@ async def payment_webhook(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process payment webhook"
+            detail=f"Failed to process payment webhook {str(e)}"
         )
