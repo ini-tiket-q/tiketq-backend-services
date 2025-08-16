@@ -4,7 +4,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field, field_validator
 from pydantic.config import ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from math import ceil
 from domain.models import Flight
 from domain.services import list_flights_paginated, list_flights, get_flight, create_flight, search_flights_external
@@ -167,7 +167,76 @@ def list_flights_endpoint(
             },
         }
 
-@router.get("/flights/search")
+class FlightSearchItemOut(BaseModel):
+    flight_id: str
+    flight_name: str
+    flight_code: str
+    flight_from: str
+    flight_to: str
+    flight_departure: str            # "HH:mm" or ISO string; PDF shows string time
+    flight_arrival: str              # same format as above
+    flight_duration: int | None = None  # minutes if you have it
+    flight_price: int
+    flight_currency: str = "IDR"
+    flight_availableseat: int | None = None
+    flight_transit: int | None = None      # number of stops
+    flight_baggage: int | None = None      # kg
+    flight_hand_baggage: int | None = None # kg
+    flight_facilities: list[str] | None = None
+    flight_logo: str | None = None
+    flight_image: str | None = None
+
+# --- Helper: pull value with multiple possible keys & default ---
+def _first(d: Dict[str, Any], *keys, default=None):
+    for k in keys:
+        if k in d and d[k] not in (None, "", "null"):
+            return d[k]
+    return default
+
+# --- Helper: normalize one raw provider item into our spec ---
+def _normalize_provider_item(raw: Dict[str, Any]) -> FlightSearchItemOut:
+    # IDs & codes
+    code = _first(raw,
+        "flight_code", "code", "flight_iata", "flightnumber", "flight_number",
+        default="UNKNOWN"
+    )
+    frm = str(_first(raw, "flight_from", "from", "origin", "from_airport", default=""))
+    to  = str(_first(raw, "flight_to",   "to",   "destination", "to_airport", default=""))
+
+    # Departure/arrival strings — accept multiple possible keys
+    dep = _first(raw, "flight_departure", "etd", "flight_etd", "departure_time", default="")
+    arr = _first(raw, "flight_arrival",   "eta", "flight_eta", "arrival_time",   default="")
+
+    # Price & currency — MMBC commonly returns totalfare / flight_currency
+    price = _first(raw, "flight_price", "totalfare", "price", default=0)
+    try:
+        price = int(float(str(price)))
+    except Exception:
+        price = 0
+    currency = _first(raw, "flight_currency", "currency", default="IDR")
+
+    return FlightSearchItemOut(
+        flight_id=str(_first(raw, "flight_id", "id", default=f"{code}:{frm}-{to}")),
+        flight_name=str(_first(raw, "flight_name", "airline", "flight", "carrier", default="")),
+        flight_code=str(code),
+        flight_from=frm,
+        flight_to=to,
+        flight_departure=str(dep),
+        flight_arrival=str(arr),
+        flight_duration=_first(raw, "flight_duration", "duration", default=None),
+        flight_price=price,
+        flight_currency=str(currency or "IDR"),
+        flight_availableseat=_first(raw, "flight_availableseat", "available_seat", "seat", default=None),
+        flight_transit=_first(raw, "flight_transit", "transit", "stops", default=None),
+        flight_baggage=_first(raw, "flight_baggage", "baggage", "checked_baggage", default=None),
+        flight_hand_baggage=_first(raw, "flight_hand_baggage", "hand_baggage", "cabin_baggage", default=None),
+        flight_facilities=_first(raw, "flight_facilities", "facilities", default=None),
+        flight_logo=_first(raw, "flight_logo", "logo", default=None),
+        flight_image=_first(raw, "flight_image", "image", default=None),
+    )
+
+@router.get("/flights/search", summary="Search Flights",
+            response_model=dict)  # envelope with data/meta
 def search_flights(
     frm: str = Query(..., min_length=3, max_length=3, description="IATA of origin"),
     to: str  = Query(..., min_length=3, max_length=3, description="IATA of destination"),
@@ -175,8 +244,21 @@ def search_flights(
     pax: int = Query(1, ge=1, le=9),
     cabin: str | None = Query(None, description="ECONOMY | BUSINESS | FIRST")
 ):
-    data = search_flights_external(frm.upper(), to.upper(), date_, pax, cabin)
-    return {"data": data, "error": None, "meta": {"provider": "MMBC"}}    
+    raw_list = search_flights_external(frm.upper(), to.upper(), date_, pax, cabin)
+
+    # Normalize each item to the PDF’s schema
+    normalized = [_normalize_provider_item(item) for item in (raw_list or [])]
+
+    # FastAPI auto-serializes Pydantic models
+    return {
+        "data": normalized,
+        "error": None,
+        "meta": {
+            "provider": "MMBC",
+            "count": len(normalized),
+            "params": {"frm": frm.upper(), "to": to.upper(), "date_": date_, "pax": pax, "cabin": cabin}
+        }
+    }
 
 @router.get(
     "/flights/{flight_id}",

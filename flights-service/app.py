@@ -6,9 +6,11 @@ import os
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 from routes.flights import router as flights_router
+from routes.bookings import bookings_router, bookings_ext_router
+from routes.meta import router as meta_router
+from routes.pricing import router as pricing_router
 
-from adapters.repository_sqlachemy import init_db  
-from routes.bookings import router as bookings_router
+from adapters.repository_sqlachemy import init_db
 
 PORT = int(os.getenv("PORT", 5001))
 DB_URL = os.getenv("FLIGHTS_DB_URL")
@@ -22,7 +24,7 @@ app = FastAPI(
 
 @app.on_event("startup")
 def _startup():
-    init_db()  # <-- call the imported function
+    init_db()
 
 @app.get("/health")
 def health_check():
@@ -34,4 +36,7 @@ def health_check():
     }
 
 app.include_router(flights_router)
-app.include_router(bookings_router)
+app.include_router(bookings_router)       # core
+app.include_router(bookings_ext_router)   # provider extras
+app.include_router(meta_router)
+app.include_router(pricing_router)

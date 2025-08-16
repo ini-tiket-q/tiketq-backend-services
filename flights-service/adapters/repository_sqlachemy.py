@@ -381,15 +381,22 @@ class SqlAlchemyBookingRepo(BookingRepository):
         if not m:
             raise KeyError("Payment not found")
 
+        # Update payment status
         m.status = "PAID"
         if raw_payload is not None:
-            # 👇 serialize dict to JSON string
             m.raw_provider_payload = json.dumps(raw_payload)
-
         m.updated_at = datetime.utcnow()
+
+        # Confirm booking status
+        booking = self.session.get(BookingModel, m.booking_id)
+        if booking:
+            booking.status = "CONFIRMED"
+            booking.updated_at = datetime.utcnow()
+
         self.session.commit()
         self.session.refresh(m)
         return _to_payment_domain(m)
+
 
     def confirm_booking(self, booking_id: str):
         obj = self.session.get(BookingModel, booking_id)
@@ -399,3 +406,14 @@ class SqlAlchemyBookingRepo(BookingRepository):
         obj.updated_at = datetime.utcnow()
         self.session.commit()
         return obj
+    
+    def update_booking_pricing(self, booking_id: str, *, fare_amount: int, fare_currency: str):
+        m = self.session.get(BookingModel, booking_id)
+        if not m:
+            raise KeyError("Booking not found")
+        m.fare_amount = int(fare_amount)
+        m.fare_currency = fare_currency
+        m.updated_at = datetime.utcnow()
+        self.session.commit()
+        self.session.refresh(m)
+        return _to_booking_domain(m)
