@@ -120,3 +120,85 @@ class ETicketSchema(BaseModel):
     ticket_number: str
     issued_at: Optional[datetime] = None
     document_url: Optional[HttpUrl] = None
+
+
+class GetPriceRequest(BaseModel):
+    flight: str
+    from_: str
+    to: str
+    date: str
+    adult: int
+    child: int
+    infant: int
+
+    class Config:
+        fields = {"from_": "from"}
+
+
+class GetPriceResponse(BaseModel):
+    result: Literal["ok"]
+    flight: str
+    publish: int
+    tax: int
+    totalfare: int
+    flight_shownta: int
+    flight_realnta: int
+    flight_availableseat: int
+
+
+class PostBookingRequest(GetPriceRequest):
+    email: str
+    phone: str
+    passengername: str
+    dateofbirth: str
+    baggagevolume: Optional[str] = None
+
+
+class PostBookingResponse(BaseModel):
+    result: Literal["ok"]
+    kodebooking: str
+    reason: Optional[str] = None
+
+
+class BookingResponseError(BaseModel):
+    result: Literal["no"]
+    reason: str
+
+
+class KodeBookingRequest(BaseModel):
+    kodebooking: str
+
+
+class IssuedResponseSuccess(BaseModel):
+    result: Literal["ok"]
+    kodebooking: str
+    ticket_number: str
+    issued_at: str
+
+
+class IssuedResponseError(BaseModel):
+    result: Literal["no"]
+    reason: str
+
+
+class GetStatusBookingResponse(BaseModel):
+    result: Literal["ok"]
+    status: str
+
+
+class GetStatusResponseError(BaseModel):
+    result: Literal["no"]
+    reason: str
+
+
+class ResetPasswordRequest(BaseModel):
+    username: str
+    email: str
+    phone: str
+    agencode: str
+    newpassword: str
+
+
+class ResetPasswordResponse(BaseModel):
+    result: Literal["ok"]
+    message: str
