@@ -131,13 +131,14 @@ class MMBCErrorResponse(BaseModel):
 
 # ===  Get Price ===
 class GetPriceRequest(BaseModel):
-    flight: str
-    from_: str = Field(..., alias="from")
-    to: str
-    date: str
-    adult: int
-    child: int
-    infant: int
+    flight: str = Field(..., example="JT-792")
+    from_: str = Field(..., alias="from", example="CGK")
+    to: str = Field(..., example="DPS")
+    date: str = Field(..., example="2025-09-01")
+    adult: int = Field(..., example=1)
+    child: int = Field(..., example=0)
+    infant: int = Field(..., example=0)
+
 
 class GetPriceResponse(BaseModel):
     result: str
@@ -152,18 +153,19 @@ class GetPriceResponse(BaseModel):
 
 # ===  Post Booking ===
 class PostBookingRequest(BaseModel):
-    flight: str
-    from_: str = Field(..., alias="from")
-    to: str
-    date: str
-    adult: int
-    child: int
-    infant: int
-    email: EmailStr
-    phone: str
-    passengername: str
-    dateofbirth: str
-    baggagevolume: Optional[str]
+    flight: str = Field(..., example="JT-792")
+    from_: str = Field(..., alias="from", example="CGK")
+    to: str = Field(..., example="DPS")
+    date: str = Field(..., example="2025-09-01")
+    adult: int = Field(..., example=1)
+    child: int = Field(..., example=0)
+    infant: int = Field(..., example=0)
+    email: EmailStr = Field(..., example="johndoe@example.com")
+    phone: str = Field(..., example="+628123456789")
+    passengername: str = Field(..., example="John Doe")
+    dateofbirth: str = Field(..., example="1990-01-01")
+    baggagevolume: Optional[str] = Field(None, example="20kg")
+
 
 class PostBookingResponse(BaseModel):
     result: str
@@ -191,20 +193,22 @@ class GetStatusBookingResponse(BaseModel):
 
 # ===  Reset Password ===
 class ResetPasswordRequest(BaseModel):
-    username: str
-    email: EmailStr
-    phone: str
-    agencode: str
-    newpassword: str
+    username: str = Field(..., example="johnuser123")
+    email: EmailStr = Field(..., example="john@example.com")
+    phone: str = Field(..., example="081234567890")
+    agencode: str = Field(..., example="AGT001")
+    newpassword: str = Field(..., example="NewSecureP@ss1")
+
 
 class ResetPasswordResponse(BaseModel):
     result: str
     message: Optional[str]
 
-class HttpBinEchoResponse(BaseModel):
-    args: Dict[str, Any]
-    data: str
-    json: Optional[Dict[str, Any]]
-    headers: Dict[str, Any]
-    origin: str
-    url: str
+# Request body to MMBC for getting e-ticket
+class GetETicketRequest(BaseModel):
+    kodebooking: str
+
+# Direct response from MMBC API
+class GetETicketResponse(BaseModel):
+    result: str
+    reason: str  # This contains either the error message or the PDF URL

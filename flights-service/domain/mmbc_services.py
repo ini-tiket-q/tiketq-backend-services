@@ -51,10 +51,24 @@ class MMBCService:
         except Exception as e:
             return {"result": "no", "reason": str(e)}
 
+    async def get_eticket(self, kodebooking: str):
+        url = f"{MMBC_BASE_URL}/getetiket-json"
+        payload = {
+            "username": MMBC_USER_ID,
+            "password": MMBC_PASSWORD,
+            "kodebooking": kodebooking
+        }
+        return await self._post(url, payload)
+    
+
 
 # export
-mmbc = MMBCService()
-__all__ = ["mmbc", "MOCK_REMOTE"]
+if MOCK_REMOTE:
+    from adapters.fake_mmbc import FakeMMBCClient
+    mmbc = FakeMMBCClient()
+else:
+    mmbc = MMBCService()
+
 
 
 print("MMBC_BASE_URL =", MMBC_BASE_URL)
