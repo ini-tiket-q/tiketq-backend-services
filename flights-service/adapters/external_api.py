@@ -16,7 +16,7 @@ class MMBCClient:
         # MMBC expects form-encoded; include auth in body if required by their spec.
         body = {"username": self.user, "password": self.password, **payload}
         async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as c:
-            r = await c.post(f"{self.base}{path}", data=body)
+            r = await c.post(f"{self.base}{path}", json=body)
             text = r.text.strip()
             try:
                 return r.json()

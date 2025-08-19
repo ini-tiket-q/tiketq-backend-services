@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, HttpUrl, StringConstraints
-from typing import Optional, Literal, Annotated
+from pydantic import BaseModel, Field, HttpUrl, StringConstraints, EmailStr
+from typing import Optional, Literal, Annotated, Any, Dict
 from datetime import datetime, date
 
 # -------------------------------
@@ -121,84 +121,90 @@ class ETicketSchema(BaseModel):
     issued_at: Optional[datetime] = None
     document_url: Optional[HttpUrl] = None
 
+# === Shared ===
+class KodeBookingRequest(BaseModel):
+    kodebooking: str
 
+class MMBCErrorResponse(BaseModel):
+    result: str = "no"
+    reason: str
+
+# ===  Get Price ===
 class GetPriceRequest(BaseModel):
     flight: str
-    from_: str
+    from_: str = Field(..., alias="from")
     to: str
     date: str
     adult: int
     child: int
     infant: int
 
-    class Config:
-        fields = {"from_": "from"}
-
-
 class GetPriceResponse(BaseModel):
-    result: Literal["ok"]
+    result: str
+    flight: Optional[str]
+    publish: Optional[int]
+    tax: Optional[int]
+    totalfare: Optional[int]
+    flight_shownta: Optional[int]
+    flight_realnta: Optional[int]
+    flight_availableseat: Optional[int]
+
+
+# ===  Post Booking ===
+class PostBookingRequest(BaseModel):
     flight: str
-    publish: int
-    tax: int
-    totalfare: int
-    flight_shownta: int
-    flight_realnta: int
-    flight_availableseat: int
-
-
-class PostBookingRequest(GetPriceRequest):
-    email: str
+    from_: str = Field(..., alias="from")
+    to: str
+    date: str
+    adult: int
+    child: int
+    infant: int
+    email: EmailStr
     phone: str
     passengername: str
     dateofbirth: str
-    baggagevolume: Optional[str] = None
-
+    baggagevolume: Optional[str]
 
 class PostBookingResponse(BaseModel):
-    result: Literal["ok"]
+    result: str
+    kodebooking: Optional[str]
+    reason: Optional[str]
+
+
+# ===  Get Issued ===
+class GetIssuedResponseSuccess(BaseModel):
+    result: str
     kodebooking: str
-    reason: Optional[str] = None
+    flight_statusbooking: str
 
-
-class BookingResponseError(BaseModel):
-    result: Literal["no"]
+class GetIssuedResponseError(BaseModel):
+    result: str = "no"
     reason: str
 
 
-class KodeBookingRequest(BaseModel):
-    kodebooking: str
-
-
-class IssuedResponseSuccess(BaseModel):
-    result: Literal["ok"]
-    kodebooking: str
-    ticket_number: str
-    issued_at: str
-
-
-class IssuedResponseError(BaseModel):
-    result: Literal["no"]
-    reason: str
-
-
+# ===  Get Status Booking ===
 class GetStatusBookingResponse(BaseModel):
-    result: Literal["ok"]
-    status: str
+    result: str
+    flight_statusbooking: Optional[str]
+    reason: Optional[str]
 
 
-class GetStatusResponseError(BaseModel):
-    result: Literal["no"]
-    reason: str
-
-
+# ===  Reset Password ===
 class ResetPasswordRequest(BaseModel):
     username: str
-    email: str
+    email: EmailStr
     phone: str
     agencode: str
     newpassword: str
 
-
 class ResetPasswordResponse(BaseModel):
-    result: Literal["ok"]
-    message: str
+    result: str
+    message: Optional[str]
+
+class HttpBinEchoResponse(BaseModel):
+    args: Dict[str, Any]
+    data: str
+    json: Optional[Dict[str, Any]]
+    headers: Dict[str, Any]
+    origin: str
+    url: str
