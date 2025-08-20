@@ -187,7 +187,7 @@ class GetIssuedResponseError(BaseModel):
 # ===  Get Status Booking ===
 class GetStatusBookingResponse(BaseModel):
     result: str
-    flight_statusbooking: Optional[str]
+    flight_statusbooking: Literal["issued", "waiting"]
     reason: Optional[str]
 
 

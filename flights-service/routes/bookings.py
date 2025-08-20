@@ -12,9 +12,13 @@ from domain.mmbc_services import mmbc, MOCK_REMOTE
 from domain.schemas import GetETicketRequest, GetETicketResponse
 from pydantic import BaseModel, Field
 from typing import Optional
+from adapters.store import BOOKING_STATUS
+
 
 
 router = APIRouter(prefix="/json", tags=["MMBC Flight-Service"])
+
+
 
 class GetETicketResponse(BaseModel):
     result: str
@@ -54,7 +58,10 @@ async def post_booking(req: PostBookingRequest):
     if result.get("result") == "no":
         raise HTTPException(400, detail=result.get("reason", "Booking failed"))
 
- 
+    kodebooking = result["kodebooking"]
+
+    # Save mock booking status
+    BOOKING_STATUS[kodebooking] = "incomplete"
 
     return result
 
@@ -75,16 +82,15 @@ async def post_booking(req: PostBookingRequest):
 )
 
 async def get_issued(req: KodeBookingRequest):
-    result = await mmbc.get_issued(req.kodebooking)
+    # Simulate payment check
+    if BOOKING_STATUS.get(req.kodebooking) != "PAID":
+        raise HTTPException(status_code=403, detail={"result": "no", "reason": "Payment not completed"})
+
+    result = await mmbc.get_issued(kodebooking=req.kodebooking)
+
 
     if result.get("result") == "no":
-        reason = result.get("reason", "").lower()
-        if "not completed" in reason:
-            raise HTTPException(status_code=403, detail={"result": "no", "reason": reason})
-        else:
-            raise HTTPException(status_code=404, detail={"result": "no", "reason": reason})
-
-   
+        raise HTTPException(status_code=404, detail={"result": "no", "reason": result.get("reason", "Unknown error")})
 
     return result
 
@@ -99,7 +105,8 @@ Based on booking code from MMBC.
 )
 
 async def get_status(req: KodeBookingRequest):
-    result = await mmbc.get_status_booking(req.kodebooking)
+    result = await mmbc.get_status_booking(kodebooking=req.kodebooking)
+
 
     if result.get("result") == "no":
         raise HTTPException(404, detail=result.get("reason", "Booking not found"))
@@ -136,13 +143,30 @@ Can be used after booking is marked as 'issued'.
 """
 )
 async def get_eticket(req: GetETicketRequest):
-    result = await mmbc.get_eticket(req.kodebooking)
+    result = await mmbc.get_eticket(kodebooking=req.kodebooking)
 
     if result.get("result") == "no":
         raise HTTPException(404, detail=result.get("reason", "Failed to retrieve e-ticket"))
 
-    # Extract PDF link from reason
-    match = re.search(r"https?://\S+etiket-\w+\.pdf", result.get("reason", ""))
+    # 🔧 Updated regex
+    match = re.search(r"https?://[^\s]+etiket-[\w\d]+\.pdf", result.get("reason", ""))
     url = match.group(0) if match else None
 
     return {"result": "ok", "eticket_url": url}
+
+
+class MidtransWebhook(BaseModel):
+    order_id: str
+
+@router.post("/simulate-payment", summary="Simulate payment callback (Midtrans mock)")
+async def simulate_payment(req: MidtransWebhook):
+    kodebooking = req.order_id
+
+    if kodebooking not in BOOKING_STATUS:
+        raise HTTPException(404, detail="Booking not found")
+
+    # Update to paid
+    BOOKING_STATUS[kodebooking] = "PAID"
+
+    return {"message": f"Booking {kodebooking} updated to 'paid'"}
+
