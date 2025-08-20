@@ -130,7 +130,7 @@ class TransactionInDB(TransactionBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class OrderBase(BaseModel):
@@ -186,8 +186,7 @@ class OrderInDB(OrderBase):
     updated_at: datetime = Field(..., description="When the order was last updated")
 
     class Config:
-        orm_mode = True  # Enable ORM mode for SQLAlchemy (Pydantic v2)
-        orm_mode = True  # Backward compatibility with Pydantic v1
+        from_attributes = True  # Enable ORM mode for SQLAlchemy (Pydantic v2)
 
 
 class PaymentBase(BaseModel):
@@ -217,7 +216,7 @@ class PaymentInDB(PaymentBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class RefundBase(BaseModel):
@@ -246,7 +245,7 @@ class RefundInDB(RefundBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # =============================================================================

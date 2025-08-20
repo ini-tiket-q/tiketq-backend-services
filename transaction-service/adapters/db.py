@@ -402,35 +402,41 @@ class DBOrderRepository(OrderRepository):
         self.db = db
 
     def create_order(self, order: OrderCreate) -> OrderInDB:
-        # Convert TransactionItem objects to dictionaries for JSON serialization
-        items_as_dicts = [
-            item.model_dump() if hasattr(item, 'model_dump') else dict(item)
-            for item in order.items
-        ]
-        
-        # Create the order with current timestamps
-        now = datetime.now(timezone.utc)
-        db_order = Order(
-            user_id=order.user_id,
-            order_number=order.order_number,
-            service_type=order.service_type,
-            items=items_as_dicts,
-            subtotal=order.subtotal,
-            tax=order.tax,
-            discount=order.discount,
-            total=order.total,
-            status=order.status,
-            meta_data=order.metadata,
-            created_at=now,
-            updated_at=now,
-        )
-        
         try:
+            print(f"DEBUG: Creating order with type: {type(order)}")
+            print(f"DEBUG: Order attributes: {dir(order)}")
+            
+            # Convert TransactionItem objects to dictionaries for JSON serialization
+            items_as_dicts = [
+                item.model_dump() if hasattr(item, 'model_dump') else dict(item)
+                for item in order.items
+            ]
+            
+            # Create the order with current timestamps
+            now = datetime.now(timezone.utc)
+            db_order = Order(
+                user_id=order.user_id,
+                order_number=order.order_number,
+                service_type=order.service_type,
+                items=items_as_dicts,
+                subtotal=order.subtotal,
+                tax=order.tax,
+                discount=order.discount,
+                total=order.total,
+                status=order.status,
+                meta_data=order.metadata,
+                created_at=now,
+                updated_at=now,
+            )
+            
             self.db.add(db_order)
             self.db.commit()
             self.db.refresh(db_order)
             return self._to_domain_model(db_order)
         except Exception as e:
+            import traceback
+            print(f"ERROR in create_order: {e}")
+            print(f"TRACEBACK: {traceback.format_exc()}")
             self.db.rollback()
             raise e
 
