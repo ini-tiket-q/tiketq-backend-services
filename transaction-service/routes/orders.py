@@ -27,13 +27,17 @@ def get_order_service(db: Session = Depends(get_database_session)) -> OrderServi
 )
 async def create_order(
     order_request: OrderCreateRequest,
-    current_user: dict = Depends(require_user_or_admin),
+    current_user = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Create a new order - USER/ADMIN access"""
     try:
+        print(f"ROUTE DEBUG: Received order_request type: {type(order_request)}")
+        print(f"ROUTE DEBUG: Order request data: {order_request}")
+        print(f"ROUTE DEBUG: Current user: {current_user}")
+        
         # Create order using validated request model
-        order = service.create_order(order_request, current_user["id"])
+        order = service.create_order(order_request, current_user.id)
         
         if not order:
             raise HTTPException(
@@ -43,11 +47,17 @@ async def create_order(
             
         return order
     except ValueError as e:
+        import traceback
+        print(f"ROUTE DEBUG: ValueError: {e}")
+        print(f"ROUTE DEBUG: Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
+        import traceback
+        print(f"ROUTE DEBUG: Exception: {e}")
+        print(f"ROUTE DEBUG: Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create order {str(e)}"
@@ -61,12 +71,12 @@ async def list_orders(
     skip: int = 0,
     limit: int = 100,
     status_filter: Optional[OrderStatus] = None,
-    current_user: dict = Depends(require_user_or_admin),
+    current_user = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """List orders for the current user - USER/ADMIN access"""
     try:
-        if current_user["role"] == "admin":
+        if current_user.role == "admin":
             # Admin can see all orders
             orders = service.get_orders(
                 skip=skip, 
@@ -76,7 +86,7 @@ async def list_orders(
         else:
             # Regular users can only see their own orders
             orders = service.get_orders_by_user(
-                user_id=current_user["id"],
+                user_id=current_user.id,
                 status=status_filter,
                 skip=skip,
                 limit=limit
@@ -94,14 +104,14 @@ async def list_orders(
 )
 async def get_order(
     order_id: int,
-    current_user: dict = Depends(require_user_or_admin),
+    current_user = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Get order details by ID - USER/ADMIN access"""
     try:
         order = service.get_order(
             order_id=order_id,
-            user_id=current_user["id"]
+            user_id=current_user.id
         )
         
         if not order:
@@ -111,7 +121,7 @@ async def get_order(
             )
         
         # Check access rights - users can only see their own orders
-        if current_user["role"] != "admin" and order.user_id != current_user["id"]:
+        if current_user.role != "admin" and order.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this order"
@@ -133,7 +143,7 @@ async def get_order(
 async def update_order_status(
     order_id: int,
     status_request: OrderStatusUpdateRequest,
-    current_user: dict = Depends(require_user_or_admin),
+    current_user = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Update order status - ADMIN access only"""
@@ -143,7 +153,7 @@ async def update_order_status(
         # Check if order exists
         existing_order = service.get_order(
             order_id=order_id,
-            user_id=current_user["id"]  # Admin can access any order
+            user_id=current_user.id  # Admin can access any order
         )
         
         if not existing_order:
@@ -156,7 +166,7 @@ async def update_order_status(
         updated_order = service.update_order_status(
             order_id=order_id,
             status_request=status_request,
-            user_id=current_user["id"]
+            user_id=current_user.id
         )
         
         if not updated_order:
