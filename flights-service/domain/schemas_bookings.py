@@ -131,6 +131,8 @@ class MMBCErrorResponse(BaseModel):
 
 # ===  Get Price ===
 class GetPriceRequest(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
     flight: str = Field(..., example="JT-792")
     from_: str = Field(..., alias="from", example="CGK")
     to: str = Field(..., example="DPS")
@@ -153,6 +155,8 @@ class GetPriceResponse(BaseModel):
 
 # ===  Post Booking ===
 class PostBookingRequest(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
     flight: str = Field(..., example="JT-792")
     from_: str = Field(..., alias="from", example="CGK")
     to: str = Field(..., example="DPS")

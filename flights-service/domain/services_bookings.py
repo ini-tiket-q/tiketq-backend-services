@@ -1,5 +1,5 @@
 from adapters.mmbc_factory import mmbc
-from domain.schemas import (
+from domain.schemas_bookings import (
     GetPriceRequest, GetPriceResponse,
     PostBookingRequest, PostBookingResponse,
     ResetPasswordRequest, ResetPasswordResponse,

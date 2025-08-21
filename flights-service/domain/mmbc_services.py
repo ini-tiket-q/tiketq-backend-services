@@ -6,6 +6,7 @@ import os
 load_dotenv(dotenv_path=Path('.') / ".env")
 MOCK_REMOTE = os.getenv("MOCK_REMOTE", "false").lower() == "true"
 MMBC_BASE_URL = os.getenv("MMBC_BASE_URL")
+print(f"MMBC_BASE_URL = {MMBC_BASE_URL}")
 MMBC_USER_ID = os.getenv("MMBC_USER_ID")
 MMBC_PASSWORD = os.getenv("MMBC_PASSWORD")
 MMBC_AGENT_CODE = os.getenv("MMBC_AGENT_CODE")

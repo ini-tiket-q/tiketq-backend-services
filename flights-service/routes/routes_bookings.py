@@ -1,7 +1,7 @@
 import re
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from domain.schemas import (
+from domain.schemas_bookings import (
     GetPriceRequest, GetPriceResponse,
     PostBookingRequest, PostBookingResponse,
     KodeBookingRequest, GetIssuedResponseSuccess, GetIssuedResponseError,
@@ -9,14 +9,14 @@ from domain.schemas import (
     ResetPasswordRequest, ResetPasswordResponse
 )
 from domain.mmbc_services import mmbc, MOCK_REMOTE
-from domain.schemas import GetETicketRequest, GetETicketResponse
+from domain.schemas_bookings import GetETicketRequest, GetETicketResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 from adapters.store import BOOKING_STATUS
 
 
 
-router = APIRouter(prefix="/json", tags=["MMBC Flight-Service"])
+router = APIRouter(prefix="/json", tags=["MMBC Flight-Service (Bookings)"])
 
 
 
@@ -25,13 +25,22 @@ class GetETicketResponse(BaseModel):
     eticket_url: Optional[str] = None
 
 # 1. Get Price
-@router.post("/getprice-json", response_model=GetPriceResponse, summary="Check flight price",
+@router.post(
+    "/getprice-json",
+    response_model=GetPriceResponse,
+    summary="Check flight price",
     description="""
 Hit MMBC to retrieve price for a given route, number of pax, and travel date.
 
 Returns publish fare, tax, NTA values, and available seats.
-    """
+""",
+    responses={
+        200: {"description": "Price data retrieved"},
+        404: {"description": "No result / route not found"},
+        500: {"description": "Internal server error"},
+    }
 )
+
 async def get_price(req: GetPriceRequest):
     result = await mmbc.get_price(**req.dict())
 
@@ -44,13 +53,22 @@ async def get_price(req: GetPriceRequest):
 
 
 # 2. Post Booking
-@router.post("/postbooking-json", response_model=PostBookingResponse,summary="Book a flight",
-description="""
+@router.post(
+    "/postbooking-json",
+    response_model=PostBookingResponse,
+    summary="Book a flight",
+    description="""
 Creates a new booking on MMBC. This can be used by both guests and registered users.
 
 You must provide contact details, passenger name, and booking information.
-"""
+""",
+    responses={
+        200: {"description": "Booking success"},
+        400: {"description": "Booking failed / invalid input"},
+        500: {"description": "Internal server error"},
+    }
 )
+
 
 async def post_booking(req: PostBookingRequest):
     result = await mmbc.post_booking(**req.dict())
@@ -116,25 +134,8 @@ async def get_status(req: KodeBookingRequest):
     return result
 
 
-
-# 5. Reset Password
-@router.post("/resetpassword", response_model=ResetPasswordResponse, summary="Reset agent password",
-description="""
-Allows travel agents to reset their MMBC credentials using email, phone, and agent code.
-
-Returns success message or reason for failure.
-"""
-)
-
-async def reset_password(req: ResetPasswordRequest):
-    result = await mmbc.reset_password(**req.dict())
-
-    if result.get("result") == "no":
-        raise HTTPException(400, detail=result.get("reason", "Reset failed"))
-
-
-    return result
-
+# 5. Get E-Ticket
+# This endpoint retrieves the e-ticket PDF URL or error message from MMBC.
 @router.post("/getetiket-json", response_model=GetETicketResponse, summary="Retrieve E-Ticket",
 description="""
 Fetches issued ticket document and ticket number from MMBC, if available.
@@ -153,6 +154,39 @@ async def get_eticket(req: GetETicketRequest):
     url = match.group(0) if match else None
 
     return {"result": "ok", "eticket_url": url}
+
+
+# 6. Reset Password
+@router.post(
+    "/resetpassword",
+    response_model=ResetPasswordResponse,
+    summary="Reset agent password",
+    description="""
+    Allows travel agents to reset their MMBC credentials using email, phone, and agent code.
+
+    **Request Body**:
+    - `username`: dummy  
+    - `email`: user@bemail.com  
+    - `phone`: 0812xxxxx  
+    - `agencode`: JKT-111  
+    - `newpassword`: Sd1231 (min. 6 characters)
+
+    Returns success message or reason for failure.
+    """,
+    responses={
+        200: {"description": "Password reset success"},
+        400: {"description": "Validation error / reset failed"},
+        500: {"description": "Internal server error"},
+    }
+)
+async def reset_password(req: ResetPasswordRequest):
+    result = await mmbc.reset_password(**req.dict())
+
+    if result.get("result") == "no":
+        raise HTTPException(status_code=400, detail=result.get("reason", "Reset failed"))
+
+    return result
+
 
 
 class MidtransWebhook(BaseModel):
