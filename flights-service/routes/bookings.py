@@ -148,7 +148,7 @@ async def get_eticket(req: GetETicketRequest):
     if result.get("result") == "no":
         raise HTTPException(404, detail=result.get("reason", "Failed to retrieve e-ticket"))
 
-    # 🔧 Updated regex
+    
     match = re.search(r"https?://[^\s]+etiket-[\w\d]+\.pdf", result.get("reason", ""))
     url = match.group(0) if match else None
 
