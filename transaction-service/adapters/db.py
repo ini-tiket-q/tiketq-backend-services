@@ -509,6 +509,9 @@ class DBOrderRepository(OrderRepository):
         return self._to_domain_model(db_order)
 
     def _to_domain_model(self, db_order: Order) -> OrderInDB:
+        # Ensure updated_at is never None
+        updated_at = db_order.updated_at or db_order.created_at or datetime.now(timezone.utc)
+        
         return OrderInDB(
             id=db_order.id,
             user_id=db_order.user_id,
@@ -520,9 +523,9 @@ class DBOrderRepository(OrderRepository):
             discount=db_order.discount,
             total=db_order.total,
             status=db_order.status,
-            metadata=db_order.meta_data,
+            metadata=db_order.meta_data or {},
             created_at=db_order.created_at,
-            updated_at=db_order.updated_at,
+            updated_at=updated_at,
         )
 
 
