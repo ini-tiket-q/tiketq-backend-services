@@ -37,6 +37,11 @@ from adapters.db import (
 )
 
 # Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
+)
 logger = logging.getLogger(__name__)
 
 class TransactionService:
@@ -519,12 +524,14 @@ class PaymentService:
             payment = PaymentCreate(
                 transaction_id=validated_request.transaction_id,
                 amount=validated_request.amount,
-                currency=Currency(validated_request.currency) if validated_request.currency else transaction.currency,
+                currency=Currency(validated_request.currency)
+                if validated_request.currency
+                else transaction.currency,
                 payment_method=validated_request.payment_method,
-                payment_gateway=validated_request.gateway,
+                payment_gateway=validated_request.payment_gateway,
                 gateway_transaction_id=validated_request.gateway_transaction_id,
                 status=PaymentStatus.PENDING,
-                metadata=validated_request.metadata or {}
+                metadata=validated_request.metadata or {},
             )
             
             # Save payment to database
@@ -554,7 +561,7 @@ class PaymentService:
         self, 
         payment_id: int, 
         gateway_response: PaymentConfirmRequest,
-        confirmed_by: Optional[int] = None
+        confirmed_by: int
     ) -> Optional[PaymentInDB]:
         """Confirm a payment with gateway response data.
         
@@ -569,34 +576,26 @@ class PaymentService:
         Raises:
             ValueError: If payment confirmation data validation fails
         """
-        # Validate request data using Pydantic model
-        request_dict = {
-            "payment_id": payment_id,
-            "gateway_response": gateway_response,
-            "confirmed_by": confirmed_by
-        }
-        
-        try:
-            validated_request = PaymentConfirmRequest(**request_dict)
-        except Exception as e:
-            logger.error(f"Payment confirmation validation failed: {str(e)}")
-            raise ValueError(f"Payment confirmation validation failed: {str(e)}")
-        
+    
         try:
             # Get payment with transaction
-            payment = self.payment_repo.get_payment(validated_request.payment_id)
+            logger.info(f"Payment {payment_id} found")
+            payment = self.payment_repo.get_payment(payment_id)
             if not payment:
                 logger.error(f"Payment {payment_id} not found")
                 return None
-                
+            
             # Update payment status
-            status = PaymentStatus.COMPLETED if validated_request.gateway_response.get('success', False) else PaymentStatus.FAILED
+            logger.info(
+                f"Payment {gateway_response.gateway_response.get('success', False)}"
+            )
+            status = PaymentStatus.COMPLETED if gateway_response.gateway_response.get('success', False) else PaymentStatus.FAILED
             
             # Update payment record
             updated_payment = self.payment_repo.update_payment_status(
-                payment_id=validated_request.payment_id,
+                payment_id=payment_id,
                 status=status,
-                gateway_transaction_id=validated_request.gateway_response.get('transaction_id')
+                gateway_transaction_id=gateway_response.gateway_response.get('transaction_id')
             )
             
             if not updated_payment:
@@ -614,12 +613,12 @@ class PaymentService:
                 transaction_id=payment.transaction_id,
                 transaction=TransactionUpdate(
                     status=transaction_status,
-                    gateway_transaction_id=validated_request.gateway_response.get('transaction_id'),
+                    gateway_transaction_id=gateway_response.gateway_response.get('transaction_id'),
                     metadata={
-                        **payment.transaction.metadata,
-                        'gateway_response': validated_request.gateway_response,
-                        'confirmed_by': validated_request.confirmed_by,
-                        'confirmed_at': datetime.utcnow().isoformat()
+                        **payment.metadata,
+                        'gateway_response': gateway_response.gateway_response,
+                        'confirmed_by': confirmed_by,
+                        'confirmed_at': datetime.now(timezone.utc)
                     }
                 )
             )
@@ -664,7 +663,7 @@ class PaymentService:
         
         try:
             # Get the payment first
-            payment = self.payment_repo.get_payment(validated_request.payment_id)
+            payment = self.payment_repo.get_payment(payment_id)
             if not payment:
                 logger.error(f"Payment {payment_id} not found")
                 return None
@@ -677,13 +676,13 @@ class PaymentService:
             # Note: This is a simplified implementation
             # In a real system, you'd integrate with payment gateway APIs
             updated_payment = self.payment_repo.update_payment(
-                payment_id=validated_request.payment_id,
+                payment_id=payment_id,
                 payment_data={
                     "status": PaymentStatus.REFUNDED.value,
                     "metadata": {
                         **payment.metadata,
                         "refund_reason": validated_request.reason,
-                        "refunded_by": validated_request.refunded_by,
+                        "refunded_by": refunded_by,
                         "refund_amount": validated_request.amount or payment.amount
                     }
                 }
