@@ -1,9 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 
 from domain.models import (
     PaymentCreateRequest, PaymentInDB, PaymentConfirmRequest,
-    PaymentRefundRequest, PaymentWebhookRequest
+    PaymentRefundRequest, PaymentWebhookRequest,
+    UserRole
 )
 from domain.services import (
     PaymentService, 
@@ -14,6 +17,8 @@ from domain.services import (
     require_user_or_admin,
     require_admin
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["payments"])
 
@@ -87,10 +92,10 @@ async def get_payment_details(
             )
         
         # Check authorization - users can only see their own payments
-        if current_user["role"] != "admin":
+        if current_user.role != UserRole.ADMIN:
             # Get associated transaction to check user ownership
             transaction = payment_service.transaction_repo.get_transaction(payment.transaction_id)
-            if not transaction or transaction.user_id != current_user["id"]:
+            if not transaction or transaction.user_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to view this payment"
@@ -117,11 +122,9 @@ async def confirm_payment(
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     try:
-        # Convert Pydantic model to dict for the service layer
-        confirm_dict = confirm_data.model_dump()
         payment = payment_service.confirm_payment(
             payment_id=payment_id,
-            gateway_response=confirm_dict.get("gateway_response", {}),
+            gateway_response=confirm_data,
             confirmed_by=current_user.id
         )
         
@@ -139,9 +142,10 @@ async def confirm_payment(
             detail=str(e)
         )
     except Exception as e:
+        logger.error(f"Error confirming payment: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to confirm payment {str(e)}"
+            detail="Failed to confirm payment"
         )
 
 @router.post(
@@ -160,7 +164,7 @@ async def process_payment_refund(
         updated_payment = payment_service.process_refund(
             payment_id=payment_id,
             refund_data=refund_dict,
-            refunded_by=current_user["id"]
+            refunded_by=current_user.id
         )
         
         if not updated_payment:

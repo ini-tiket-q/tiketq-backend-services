@@ -605,6 +605,14 @@ class DBPaymentRepository(PaymentRepository):
         return self._to_domain_model(db_payment)
 
     def _to_domain_model(self, db_payment: Payment) -> PaymentInDB:
+        # Ensure metadata is a dict and not SQLAlchemy's MetaData
+        metadata = db_payment.meta_data or {}
+        if hasattr(metadata, 'copy'):
+            metadata = metadata.copy()
+            
+        # Ensure updated_at is never None
+        updated_at = db_payment.updated_at or db_payment.created_at or datetime.now(timezone.utc)
+        
         return PaymentInDB(
             id=db_payment.id,
             transaction_id=db_payment.transaction_id,
@@ -614,9 +622,9 @@ class DBPaymentRepository(PaymentRepository):
             payment_gateway=PaymentGateway(db_payment.payment_gateway),
             gateway_transaction_id=db_payment.gateway_transaction_id,
             status=PaymentStatus(db_payment.status),
-            metadata=db_payment.metadata,
+            metadata=metadata,
             created_at=db_payment.created_at,
-            updated_at=db_payment.updated_at,
+            updated_at=updated_at,
         )
 
 
