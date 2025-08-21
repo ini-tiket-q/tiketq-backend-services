@@ -335,13 +335,9 @@ class OrderService:
             ValueError: If validation fails or required data is missing
         """
         try:
-            print(f"DEBUG: Starting create_order with order_request type: {type(order_request)}")
-            print(f"DEBUG: Order request attributes: {dir(order_request)}")
-            
             # Calculate totals from validated items
             items = order_request.items
-            print(f"DEBUG: Items type: {type(items)}, Items: {items}")
-            subtotal = sum(item.get("price", 0) * item.get("quantity", 1) for item in items)
+            subtotal = sum(item.price * item.quantity for item in items)
             total = subtotal + order_request.tax - order_request.discount
             
             # Convert dictionary items to TransactionItem objects
@@ -349,11 +345,11 @@ class OrderService:
             for item in items:
                 print(f"DEBUG: Processing item: {item}, type: {type(item)}")
                 transaction_item = TransactionItem(
-                    name=item.get("name", ""),
-                    price=item.get("price", 0),
-                    quantity=item.get("quantity", 1),
-                    description=item.get("description"),
-                    metadata=item.get("metadata", {})
+                    name=item.name,
+                    price=item.price,
+                    quantity=item.quantity,
+                    description=item.description,
+                    metadata=item.metadata
                 )
                 transaction_items.append(transaction_item)
             
@@ -370,10 +366,7 @@ class OrderService:
                 "metadata": order_request.metadata
             }
             
-            print(f"DEBUG: About to create OrderCreate with data: {order_create_data.keys()}")
             order_create = OrderCreate(**order_create_data)
-            print(f"DEBUG: OrderCreate created successfully, type: {type(order_create)}")
-            print(f"DEBUG: OrderCreate attributes: {dir(order_create)}")
             
             return self.order_repo.create_order(order_create)
             
@@ -874,6 +867,7 @@ class RefundService:
                 "reason": refund_request.reason,
                 "status": RefundStatus.PROCESSING,
                 "processed_by": processed_by,
+                "processed_at": datetime.now(timezone.utc),
                 "notes": refund_request.notes
             }
             
