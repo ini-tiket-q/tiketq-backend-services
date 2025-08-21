@@ -1,47 +1,43 @@
-# domain/services.py
-from typing import List, Optional
-from datetime import datetime
-import uuid
-from .models import FerryRoute, FerrySchedule, BookingCreate, Booking
-from .repository import BookingRepository
-from adapters.external_api import ExternalFerryAPIClient
+# from domain.models import FerryBookingRequest, FerryBookingResponse
+# from adapters.external_api import create_ferry_booking
+# from adapters.transaction_api import create_transaction
 
-class FerryService:
-    def __init__(self, repo: BookingRepository, ext: ExternalFerryAPIClient):
-        self.repo = repo
-        self.ext = ext
+# def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
+#     # Step 1: create booking in external ferry API
+#     booking_res = create_ferry_booking(request.schedule_id, request.passengers)
 
-    # --- Query use-cases ---
-    def search_routes(self, origin: Optional[str], destination: Optional[str]) -> List[FerryRoute]:
-        return self.ext.search_routes(origin, destination)
+#     booking_id = booking_res.get("booking_id")
+#     total_price = booking_res.get("total_price", 0.0)
+#     status = booking_res.get("status", "incomplete")
 
-    def get_schedules(self, route_id: str, when: datetime) -> List[FerrySchedule]:
-        return self.ext.get_schedules(route_id, when)
+#     # Step 2: create transaction in internal transaction-service
+#     create_transaction(booking_id, total_price)
 
-    # --- Command use-cases ---
-    def create_booking(self, payload: BookingCreate) -> Booking:
-        # Ambil schedule
-        all_schedules = []
-        for route in self.ext.search_routes(None, None):
-            all_schedules.extend(self.ext.get_schedules(route.id, datetime.utcnow()))
+#     return FerryBookingResponse(
+#         booking_id=booking_id,
+#         status=status,
+#         total_price=total_price,
+#         message="Booking created and transaction recorded"
+#     )
 
-        schedule = next((s for s in all_schedules if s.id == payload.schedule_id), None)
-        if not schedule:
-            raise ValueError("Schedule not found")
+from domain.models import FerryBookingRequest, FerryBookingResponse
+from adapters.external_api import create_ferry_booking
+from adapters.transaction_api import create_transaction
 
-        total_price = schedule.price * len(payload.passengers)
-        booking = Booking(
-            id=str(uuid.uuid4()),
-            schedule_id=schedule.id,
-            passengers=payload.passengers,
-            contact_email=payload.contact_email,
-            total_price=total_price,
-            created_at=datetime.utcnow(),
-        )
-        return self.repo.save(booking)
+def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
+    # Step 1: Mock external booking
+    booking_res = create_ferry_booking(request.schedule_id, request.passengers)
 
-    def get_booking(self, booking_id: str) -> Optional[Booking]:
-        return self.repo.get(booking_id)
+    booking_id = booking_res["booking_id"]
+    total_price = booking_res["total_price"]
+    status = booking_res["status"]
 
-    def list_bookings(self) -> List[Booking]:
-        return self.repo.list()
+    # Step 2: Mock transaction
+    transaction_res = create_transaction(booking_id, total_price)
+
+    return FerryBookingResponse(
+        booking_id=booking_id,
+        status=status,
+        total_price=total_price,
+        message=f"Booking created. Transaction ID: {transaction_res['transaction_id']}"
+    )
