@@ -44,10 +44,19 @@ class CodeAreaResponse(BaseModel):
 # --------------------------------
 # Flight Search Params
 # --------------------------------
+from typing import Literal, Optional
+
 class FlightSearchParams(BaseModel):
     origin: AirportCode = Field(..., alias="flight_from")
     destination: AirportCode = Field(..., alias="flight_to")
     date: date
+    airline: Optional[str] = None
+    transit: Optional[str] = None
+    baggage: Optional[str] = None
+    flight_class: Optional[Literal["economy", "business", "first"]] = None
+    sort_by: Optional[Literal["harga_tertinggi", "harga_terendah", "waktu_terbaik"]] = None
+    page: int = 1
+    per_page: int = 10
 
     @field_validator("date", mode="before")
     @classmethod
@@ -60,6 +69,7 @@ class FlightSearchParams(BaseModel):
         return v
 
     model_config = {"validate_by_name": True}
+
 
 
 # --------------------------------
