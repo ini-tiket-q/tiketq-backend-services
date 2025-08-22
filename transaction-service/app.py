@@ -8,6 +8,7 @@ import logging
 
 from adapters.db import Base, engine
 from routes import payments, transactions, orders, reports
+from domain.audit_service import initialize_audit_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,6 +22,14 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting Transaction Service...")
+    
+    # Initialize audit service
+    try:
+        initialize_audit_service()
+        logger.info("Audit service initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize audit service: {e}")
+        # Continue startup even if audit service fails to initialize
     
     # Create database tables
     try:
