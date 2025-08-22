@@ -96,63 +96,95 @@ Sample response:
 
 Since the project doesn't have a real API yet, we'll use a mock API to simulate API calls.
 
-The mock data is located in the ferries-service\adapters\external_api.py file:
+
+### Post booking
 
 ```bash
-def _mock_routes(self) -> List[FerryRoute]:
-        return [
-            FerryRoute(id="R1", origin="Tanjung Priok", destination="Pontianak", operator="Pelni"),
-            FerryRoute(id="R2", origin="Surabaya", destination="Makassar", operator="Pelni"),
-            FerryRoute(id="R3", origin="Batam", destination="Belawan", operator="ASDP"),
-        ]
+POST http://localhost:5001/ferries/book
 ```
 
-### 1. Get all routes
+Example:
 ```bash
-Get http://localhost:5001/ferries/routes
-```
-
-### 2. Get route by origin
-```bash
-Get http://localhost:5001/ferries/routes?origin={origin}
-```
-example:
-```bash
-Get http://localhost:5001/ferries/routes?origin=Surabaya
-```
-
-### 3. Get ferry schedules by route_id and 
-```bash
-Get http://localhost:5001/ferries/schedules?route_id={route_id}
-```
-example:
-```bash
-Get http://localhost:5001/ferries/schedules?route_id=R1
-```
-
-### 4. Get ferries booking
-```bash
-Get http://localhost:5001/ferries/bookings
-```
-
-### 5. Post booking
-```bash
-curl --location 'http://localhost:5001/ferries/bookings' \
+curl --location 'http://localhost:5001/ferries/book' \
 --header 'Content-Type: application/json' \
 --data-raw '{
-    "schedule_id": "SR11",
+    "schedule_id": "SCH003",
     "passengers": [
-        { "full_name": "Budi", "id_number": "12345" }
+        {
+        "type": "Adult",
+        "title": "Mr",
+        "name": "Yusuf Johan",
+        "passport_no": "A1234565",
+        "nationality": "ID",
+        "issuing_country": "Indonesia",
+        "dob": "1999-05-21",
+        "passport_expiry": "2030-05-21",
+        "passport_issue": "2020-05-21"
+        },
+        {
+        "type": "Adult",
+        "title": "Miss",
+        "name": "Siti",
+        "passport_no": "B7654321",
+        "nationality": "ID",
+        "issuing_country": "Indonesia",
+        "dob": "2015-02-10",
+        "passport_expiry": "2030-02-10",
+        "passport_issue": "2020-02-10"
+        }
+        
     ],
-    "contact_email": "budi@example.com"
+    "requirements": {
+        "email": "yusuf@mail.com",
+        "confirm_email": "yusuf@mail.com",
+        "mobile_phone": "08123456666",
+        "whatsapp_no": "628123456666"
+    }
 }'
 ```
-
-### 6. Get booking by id
+Response:
 ```bash
-Get http://localhost:5001/ferries/bookings/{booking_id}
+{
+    "booking_id": "587dde66-c892-47a9-ab71-f6b8540a98c8",
+    "status": "incomplete",
+    "total_price": 340000.0,
+    "message": "Booking created. Transaction ID: 357885ed-d81e-420a-9b70-b461c444a390"
+}
 ```
 
+### Get Transactions
+```bash
+GET http://localhost:5001/ferries/transactions
+```
+Response:
+```bash
+[
+    {
+        "transaction_id": "357885ed-d81e-420a-9b70-b461c444a390",
+        "booking_id": "587dde66-c892-47a9-ab71-f6b8540a98c8",
+        "amount": 340000,
+        "status": "pending"
+    }
+]
+```
+
+### Update Transaction Status
+```bash
+PUT http://localhost:5001/ferries/transactions/{transaction_id}?status=<new_status>
+```
+Example:
+```bash
+http://localhost:5001/ferries/transactions/699b87e1-ac15-495c-99b0-8fcf572eb3d0?status=paid
+```
+Response:
+```bash
+{
+    "transaction_id": "357885ed-d81e-420a-9b70-b461c444a390",
+    "booking_id": "587dde66-c892-47a9-ab71-f6b8540a98c8",
+    "amount": 340000,
+    "status": "paid"
+}
+```
 
 ## 🗂 Folder Structure
 ```graphql
