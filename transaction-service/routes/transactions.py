@@ -7,23 +7,33 @@ from domain.models import (
     TransactionCreateRequest, TransactionUpdateRequest, TransactionRefundRequest, UserRole
 )
 
-from domain.services import RefundService
+from domain.audited_services import (
+    AuditedTransactionService, AuditedRefundService
+)
 from domain.services import (
-    TransactionService,
     get_database_session,
-    create_transaction_service,
-    get_refund_service,
     require_user_or_admin,
     require_admin
+)
+from adapters.db import (
+    DBTransactionRepository, DBRefundRepository, DBPaymentRepository, DBOrderRepository
 )
 
 router = APIRouter(tags=["transactions"])
 
-def get_transaction_service(db: Session = Depends(get_database_session)) -> TransactionService:
-    """Dependency injection for TransactionService"""
-    return create_transaction_service(db)
+def get_audited_transaction_service(db: Session = Depends(get_database_session)) -> AuditedTransactionService:
+    """Dependency injection for AuditedTransactionService"""
+    transaction_repo = DBTransactionRepository(db)
+    order_repo = DBOrderRepository(db)
+    return AuditedTransactionService(transaction_repo, order_repo)
 
-# Transaction Endpoints
+def get_audited_refund_service(db: Session = Depends(get_database_session)) -> AuditedRefundService:
+    """Dependency injection for AuditedRefundService"""
+    transaction_repo = DBTransactionRepository(db)
+    refund_repo = DBRefundRepository(db)
+    payment_repo = DBPaymentRepository(db)
+    return AuditedRefundService(transaction_repo, refund_repo, payment_repo)
+
 @router.post(
     "/transactions/", 
     response_model=TransactionInDB,
@@ -32,13 +42,13 @@ def get_transaction_service(db: Session = Depends(get_database_session)) -> Tran
 async def create_transaction(
     transaction_request: TransactionCreateRequest,
     current_user: dict = Depends(require_user_or_admin),
-    service: TransactionService = Depends(get_transaction_service)
+    service: AuditedTransactionService = Depends(get_audited_transaction_service)
 ):
     """Create a new transaction - USER/ADMIN access"""
     try:
         transaction = service.create_transaction(
             transaction_request=transaction_request,
-            user_id=current_user.id
+            user=current_user
         )
         
         if not transaction:
@@ -67,23 +77,16 @@ async def list_transactions(
     skip: int = 0,
     limit: int = 100,
     current_user: dict = Depends(require_user_or_admin),
-    service: TransactionService = Depends(get_transaction_service)
+    service: AuditedTransactionService = Depends(get_audited_transaction_service)
 ):
     """List transactions for the current user - USER/ADMIN access"""
     try:
-        if current_user.role == UserRole.ADMIN:
-            # Admin can see all transactions
-            transactions = service.get_all_transactions(
-                skip=skip, 
-                limit=limit
-            )
-        else:
-            # Regular users can only see their own transactions
-            transactions = service.get_transactions_by_user(
-                user_id=current_user.id,
-                skip=skip,
-                limit=limit
-            )
+        # The audited service handles authorization internally
+        transactions = service.get_transactions_by_user(
+            user=current_user,
+            skip=skip,
+            limit=limit
+        )
         return transactions
     except Exception as e:
         raise HTTPException(
@@ -98,13 +101,13 @@ async def list_transactions(
 async def get_transaction(
     transaction_id: int,
     current_user: dict = Depends(require_user_or_admin),
-    service: TransactionService = Depends(get_transaction_service)
+    service: AuditedTransactionService = Depends(get_audited_transaction_service)
 ):
     """Get transaction details by ID - USER/ADMIN access"""
     try:
         transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
+            user=current_user
         )
         
         if not transaction:
@@ -112,8 +115,6 @@ async def get_transaction(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Transaction not found"
             )
-        
-            # Access rights are already checked by require_user_or_admin decorator
             
         return transaction
     except HTTPException:
@@ -132,40 +133,21 @@ async def update_transaction(
     transaction_id: int,
     update_request: TransactionUpdateRequest,
     current_user: dict = Depends(require_user_or_admin),
-    service: TransactionService = Depends(get_transaction_service)
+    service: AuditedTransactionService = Depends(get_audited_transaction_service)
 ):
     """Update transaction - USER/ADMIN access"""
     try:
-        # First check if transaction exists and user has access
-        existing_transaction = service.get_transaction(
-            transaction_id=transaction_id,
-            user_id=current_user.id
-        )
-        
-        if not existing_transaction:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Transaction not found"
-            )
-        
-        # Check access rights
-        if current_user.role != UserRole.ADMIN and existing_transaction.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this transaction"
-            )
-        
-        # Update transaction using validated request model
+        # The audited service handles authorization internally
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=update_request,
-            user_id=current_user.id
+            user=current_user
         )
         
         if not updated_transaction:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update transaction"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transaction not found or access denied"
             )
             
         return updated_transaction
@@ -189,49 +171,21 @@ async def update_transaction(
 async def cancel_transaction(
     transaction_id: int,
     current_user: dict = Depends(require_user_or_admin),
-    service: TransactionService = Depends(get_transaction_service)
+    service: AuditedTransactionService = Depends(get_audited_transaction_service)
 ):
     """Cancel transaction - USER/ADMIN access"""
     try:
-        # First check if transaction exists and user has access
-        existing_transaction = service.get_transaction(
+        # The audited service includes a specialized cancel method
+        cancelled_transaction = service.cancel_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
-        )
-        
-        if not existing_transaction:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Transaction not found"
-            )
-        
-        # Check access rights
-        if current_user.role != UserRole.ADMIN and existing_transaction.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this transaction"
-            )
-        
-        # Check if transaction can be cancelled
-        if existing_transaction.status not in ["PENDING", "PROCESSING"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot cancel transaction with status: {existing_transaction.status}"
-            )
-        
-        # Cancel transaction using validated request model
-        from domain.models import TransactionStatus
-        cancel_request = TransactionUpdateRequest(status=TransactionStatus.CANCELLED)
-        cancelled_transaction = service.update_transaction(
-            transaction_id=transaction_id,
-            update_request=cancel_request,
-            user_id=current_user.id
+            user=current_user,
+            reason="User requested cancellation"
         )
         
         if not cancelled_transaction:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to cancel transaction"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transaction not found or cannot be cancelled"
             )
             
         return cancelled_transaction
@@ -252,7 +206,7 @@ async def refund_transaction(
     transaction_id: int,
     refund_request: TransactionRefundRequest,
     current_user: dict = Depends(require_admin),  # Only admin can process refunds
-    refund_service: RefundService = Depends(get_refund_service)
+    refund_service: AuditedRefundService = Depends(get_audited_refund_service)
 ):
     """
     Process a refund for a completed transaction - ADMIN access only
@@ -263,11 +217,11 @@ async def refund_transaction(
     - **notes**: Additional notes about the refund (optional)
     """
     try:
-        # Process the refund using the refund service
+        # Process the refund using the audited refund service
         refund = refund_service.create_refund(
             transaction_id=transaction_id,
             refund_request=refund_request,
-            processed_by=current_user.id
+            user=current_user
         )
         
         if not refund:
