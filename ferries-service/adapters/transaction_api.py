@@ -31,7 +31,7 @@ def create_transaction(booking_id: str, amount: float):
         "transaction_id": transaction_id,
         "booking_id": booking_id,
         "amount": amount,
-        "status": "pending"
+        "status": "incomplete"
     }
     mock_transactions.append(transaction)
     return transaction
@@ -48,7 +48,7 @@ def update_transaction_status(transaction_id: str, status: str):
     """
     for tx in mock_transactions:
         if tx["transaction_id"] == transaction_id:
-            if status not in ["pending", "paid", "failed", "cancelled"]:
+            if status not in ["incomplete", "paid", "failed", "cancelled"]:
                 raise ValueError("Invalid transaction status")
             tx["status"] = status
             return tx
