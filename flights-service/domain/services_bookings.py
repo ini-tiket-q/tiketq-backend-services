@@ -4,24 +4,73 @@ from domain.schemas_bookings import (
     PostBookingRequest, PostBookingResponse,
     ResetPasswordRequest, ResetPasswordResponse,
     KodeBookingRequest,
-    IssuedResponseSuccess, IssuedResponseError,
+    GetIssuedResponseSuccess, GetIssuedResponseError,
     GetStatusBookingResponse
 )
 
-async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
-    return await mmbc.get_price(**req.dict(by_alias=True))
+class PriceError(Exception):
+    def __init__(self, reason: str):
+        self.reason = reason
 
+class IssuedError(Exception):
+    def __init__(self, reason: str):
+        self.reason = reason
+
+class BookingError(Exception):
+    def __init__(self, reason: str, full_body: dict):
+        self.reason = reason
+        self.full_body = full_body       
+
+class StatusBookingError(Exception):
+    def __init__(self, reason: str):
+        self.reason = reason
+
+class ETicketError(Exception):
+    def __init__(self, reason: str):
+        self.reason = reason        
+
+
+async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
+    result = await mmbc.get_price(**req.dict(by_alias=True))
+
+    if result.get("result") == "no":
+        raise PriceError(result.get("reason", "No result"))
+
+    return result
 
 async def post_booking_service(req: PostBookingRequest) -> PostBookingResponse:
-    return await mmbc.post_booking(**req.dict(by_alias=True))
+    result = await mmbc.post_booking(**req.dict(by_alias=True))
 
+    if result.get("result") == "no":
+        raise BookingError(
+            reason=result.get("reason") or result.get("message") or "Booking failed",
+            full_body=result
+        )
 
-async def get_issued_service(kodebooking: str):
-    return await mmbc.get_issued(kodebooking)
+    return result
 
+async def get_issued_service(kodebooking: str) -> dict:
+    result = await mmbc.get_issued(kodebooking=kodebooking)
+    if result.get("result") == "no":
+        raise IssuedError(result.get("reason", "Unknown error"))
+
+    return result
 
 async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
-    return await mmbc.get_status_booking(kodebooking=kodebooking)
+    result = await mmbc.get_status_booking(kodebooking=kodebooking)
+
+    if result.get("result") == "no":
+        raise StatusBookingError(result.get("reason", "Booking not found"))
+
+    return result
+
+async def get_eticket_service(kodebooking: str) -> dict:
+    result = await mmbc.get_eticket(kodebooking=kodebooking)
+
+    if result.get("result") == "no":
+        raise ETicketError(result.get("reason", "Failed to retrieve e-ticket"))
+
+    return result
 
 
 async def reset_password_service(req: ResetPasswordRequest) -> ResetPasswordResponse:
