@@ -19,14 +19,25 @@
 
 import uuid
 
+# In-memory store
+mock_transactions = []
+
 def create_transaction(booking_id: str, amount: float):
     """
     Mock transaction-service
     """
     transaction_id = str(uuid.uuid4())
-    return {
+    transaction = {
         "transaction_id": transaction_id,
         "booking_id": booking_id,
         "amount": amount,
         "status": "pending"
     }
+    mock_transactions.append(transaction)
+    return transaction
+
+def list_transactions():
+    """
+    Return all mock transactions
+    """
+    return mock_transactions

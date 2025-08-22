@@ -22,7 +22,7 @@
 
 from domain.models import FerryBookingRequest, FerryBookingResponse
 from adapters.external_api import create_ferry_booking
-from adapters.transaction_api import create_transaction
+from adapters.transaction_api import create_transaction, list_transactions
 
 def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
     # Step 1: Mock external booking
@@ -41,3 +41,7 @@ def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
         total_price=total_price,
         message=f"Booking created. Transaction ID: {transaction_res['transaction_id']}"
     )
+
+def get_all_transactions():
+    return list_transactions()
+
