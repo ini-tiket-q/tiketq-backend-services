@@ -41,3 +41,13 @@ def list_transactions():
     Return all mock transactions
     """
     return mock_transactions
+
+def update_transaction_status(transaction_id: str, new_status: str):
+    """
+    Update transaction status by ID
+    """
+    for tx in mock_transactions:
+        if tx["transaction_id"] == transaction_id:
+            tx["status"] = new_status
+            return tx
+    return None

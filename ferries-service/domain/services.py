@@ -24,6 +24,14 @@ from domain.models import FerryBookingRequest, FerryBookingResponse
 from adapters.external_api import create_ferry_booking
 from adapters.transaction_api import create_transaction, list_transactions
 
+from adapters.transaction_api import (
+    create_transaction, 
+    list_transactions, 
+    update_transaction_status
+)
+from domain.models import FerryBookingRequest, FerryBookingResponse
+from adapters.external_api import create_ferry_booking
+
 def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
     # Step 1: Mock external booking
     booking_res = create_ferry_booking(request.schedule_id, request.passengers)
@@ -45,3 +53,5 @@ def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
 def get_all_transactions():
     return list_transactions()
 
+def change_transaction_status(transaction_id: str, new_status: str):
+    return update_transaction_status(transaction_id, new_status)
