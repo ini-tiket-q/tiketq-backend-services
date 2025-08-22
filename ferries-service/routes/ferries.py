@@ -19,9 +19,13 @@ def list_all_transactions():
 @router.put("/transactions/{transaction_id}")
 def update_transaction(transaction_id: str, status: str):
     """
-    Update transaction status (pending -> paid -> cancelled)
+    Update transaction status (mock).
+    Example: paid, failed, cancelled
     """
-    updated = services.change_transaction_status(transaction_id, status)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return updated
+    try:
+        tx = services.update_transaction_status(transaction_id, status)
+        if not tx:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        return tx
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

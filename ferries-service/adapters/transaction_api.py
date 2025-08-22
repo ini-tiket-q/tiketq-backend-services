@@ -42,12 +42,14 @@ def list_transactions():
     """
     return mock_transactions
 
-def update_transaction_status(transaction_id: str, new_status: str):
+def update_transaction_status(transaction_id: str, status: str):
     """
     Update transaction status by ID
     """
     for tx in mock_transactions:
         if tx["transaction_id"] == transaction_id:
-            tx["status"] = new_status
+            if status not in ["pending", "paid", "failed", "cancelled"]:
+                raise ValueError("Invalid transaction status")
+            tx["status"] = status
             return tx
     return None
