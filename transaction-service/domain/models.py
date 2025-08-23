@@ -4,6 +4,8 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import uuid4
 
+from .model_configs import ModelConfigs, ValidationMessages
+
 
 class TransactionType(str, Enum):
     BOOKING = "BOOKING"
@@ -91,10 +93,12 @@ class TransactionItem(BaseModel):
         default_factory=dict, description="Additional item metadata"
     )
 
+    model_config = ModelConfigs.transaction_item_config()
+
     @field_validator("price")
     def validate_price(cls, v):
         if v <= 0:
-            raise ValueError("Price must be greater than 0")
+            raise ValueError(ValidationMessages.ITEM_PRICE_POSITIVE)
         return v
 
 
@@ -268,13 +272,15 @@ class PaymentCreateRequest(BaseModel):
     gateway_transaction_id: Optional[str] = Field(None, max_length=255)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+    model_config = ModelConfigs.payment_create_config()
+
     @field_validator("amount")
     @classmethod
     def validate_amount(cls, v):
         if v <= 0:
-            raise ValueError("Payment amount must be greater than 0")
+            raise ValueError(ValidationMessages.AMOUNT_POSITIVE)
         if v > 999999999:  # 999 million max
-            raise ValueError("Payment amount exceeds maximum allowed value")
+            raise ValueError(ValidationMessages.AMOUNT_MAX_EXCEEDED)
         return v
 
 
@@ -300,7 +306,7 @@ class PaymentRefundRequest(BaseModel):
     @classmethod
     def validate_amount(cls, v):
         if v is not None and v <= 0:
-            raise ValueError("Refund amount must be greater than 0")
+            raise ValueError(ValidationMessages.REFUND_AMOUNT_POSITIVE)
         return v
 
 
@@ -327,6 +333,7 @@ class OrderCreateRequest(BaseModel):
         default_factory=dict, description="Additional order metadata"
     )
 
+    model_config = ModelConfigs.order_create_config()
 
     @field_validator("tax", "discount")
     @classmethod
@@ -383,12 +390,14 @@ class TransactionCreateRequest(BaseModel):
         default_factory=dict, description="Additional transaction metadata"
     )
 
+    model_config = ModelConfigs.transaction_create_config()
+
     @field_validator("items")
     @classmethod
     def validate_items(cls, v):
         """Validate transaction items structure"""
         if not v:
-            raise ValueError("Items cannot be empty")
+            raise ValueError(ValidationMessages.ITEMS_EMPTY)
         return v
 
     @field_validator("amount", "subtotal", "tax", "discount", "total")
