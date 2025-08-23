@@ -14,11 +14,12 @@ from domain.services_bookings import (
     get_eticket_service, ETicketError, get_price_service, PriceError
     )
 
-from domain.mmbc_services import mmbc, MOCK_REMOTE
+#from domain.mmbc_services import mmbc, MOCK_REMOTE
 from domain.schemas_bookings import GetETicketRequest, GetETicketResponse, MMBCErrorResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 from adapters.store import BOOKING_STATUS
+from adapters.mmbc_factory import mmbc
 from domain.repository_bookings import BookingRepository
 
 

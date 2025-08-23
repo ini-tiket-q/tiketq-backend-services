@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, Form, Query, HTTPException, status, Request
 from typing import Optional
 from typing import List
@@ -11,18 +12,26 @@ from domain.schemas_flights import (
 )
 from domain.services_flights import FlightService
 from domain.repository_flights import FlightRepository
-from adapters.external_api_flights import ExternalFlightAPI
+from adapters.external_api import MMBCClient
+#from adapters.external_api_flights import ExternalFlightAPI
 
 print("📦 routes_flights.py LOADED")
 
 router = APIRouter(prefix="/json", tags=["Flight Services"])
 
+mmbc = MMBCClient(
+    base_url=os.getenv("MMBC_BASE_URL"),
+    user=os.getenv("MMBC_USER_ID"),
+    password=os.getenv("MMBC_PASSWORD"),
+    agent=os.getenv("MMBC_AGENT")
+)
+
+flight_repo = FlightRepository(api=mmbc)
 
 # --- Service Dependency ---
 def get_flight_service() -> FlightService:
     print("✈️ get_flight_service() CALLED")
-    repo = FlightRepository(ExternalFlightAPI())
-    return FlightService(repo)
+    return FlightService(flight_repo)  
 
 
 # -------------------------------
@@ -75,13 +84,13 @@ def check_balance(
         500: {"description": "Internal server error"},
     },
 )
-def get_code_area(service: FlightService = Depends(get_flight_service)):
+async def get_code_area(service: FlightService = Depends(get_flight_service)):
     """
     Return list of airport codes and city names.
     """
     try:
         print("🌍 Fetching airport codes...")
-        return service.get_code_area()
+        return await service.get_code_area()
     except Exception as e:
         print(f"❌ Error in /getcodearea-json: {e}")
         raise HTTPException(500, detail="Internal server error")
@@ -99,13 +108,13 @@ def get_code_area(service: FlightService = Depends(get_flight_service)):
         500: {"description": "Internal server error"},
     },
 )
-def get_code_flights(service: FlightService = Depends(get_flight_service)):
+async def get_code_flights(service: FlightService = Depends(get_flight_service)):
     """
     Return list of airline codes, names, and logos.
     """
     try:
         print("✈️ Fetching airline codes...")
-        return service.get_code_flights()
+        return await service.get_code_flights()
     except Exception as e:
         print(f"❌ Error in /getcodeflights-json: {e}")
         raise HTTPException(500, detail="Internal server error")
@@ -114,7 +123,7 @@ def get_code_flights(service: FlightService = Depends(get_flight_service)):
 # -------------------------------
 # Search Available Flights
 # -------------------------------
-from fastapi import Request  # Add this at the top
+
 
 @router.get(
     "/getflights-json",
@@ -127,15 +136,13 @@ from fastapi import Request  # Add this at the top
         500: {"description": "Internal server error"},
     },
 )
-def get_flights(
-    request: Request,  # ✅ Move this line before default arguments
-    username: str = Query(...),
-    password: str = Query(...),
+async def get_flights(  
+    request: Request,
+    username: Optional[str] = Query(None),
+    password: Optional[str] = Query(None),
     origin: AirportCode = Query(..., alias="flight_from"),
     destination: AirportCode = Query(..., alias="flight_to"),
     date: str = Query(...),
-
-    # Extra filters
     airline: Optional[str] = Query(None),
     transit: Optional[str] = Query(None),
     baggage: Optional[str] = Query(None),
@@ -143,52 +150,51 @@ def get_flights(
     sort_by: Optional[str] = Query(None),
     page: Optional[int] = Query(1),
     per_page: Optional[int] = Query(10),
-
     service: FlightService = Depends(get_flight_service),
-    
-    ):
+):
+    try:
         try:
-            try:
-                parsed_date = datetime.strptime(date, "%d-%m-%Y").date()
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Date must be in format dd-mm-yyyy",
-                )
-
-            params = FlightSearchParams(
-                origin=origin,
-                destination=destination,
-                date=parsed_date,
-                airline=request.query_params.get("airline"),
-                transit=request.query_params.get("transit"),
-                baggage=request.query_params.get("baggage"),
-                flight_class=request.query_params.get("flight_class"),
-                sort_by=request.query_params.get("sort_by"),
-                page=int(request.query_params.get("page", 1)),
-                per_page=int(request.query_params.get("per_page", 10)),
+            parsed_date = datetime.strptime(date, "%d-%m-%Y").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Date must be in format dd-mm-yyyy",
             )
 
+        params = FlightSearchParams(
+            origin=origin,
+            destination=destination,
+            date=parsed_date,
+            airline=request.query_params.get("airline"),
+            transit=request.query_params.get("transit"),
+            baggage=request.query_params.get("baggage"),
+            flight_class=request.query_params.get("flight_class"),
+            sort_by=request.query_params.get("sort_by"),
+            page=int(request.query_params.get("page", 1)),
+            per_page=int(request.query_params.get("per_page", 10)),
+        )
+
+        if username and password:
             if not service.validate_login(username, password):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail={"result": "no", "reason": "invalid login"},
                 )
 
-            results = service.get_flights(params)
-            if not results:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail={"result": "no", "reason": "no result"},
-                )
-
-            return results
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"❌ Error in /getflights-json: {e}")
+        results = await service.get_flights(params) 
+        if not results:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={"result": "no", "reason": "internal server error"},
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"result": "no", "reason": "no result"},
             )
+
+        return results
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in /getflights-json: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"result": "no", "reason": "internal server error"},
+        )

@@ -27,5 +27,5 @@ def health_check():
         "port": PORT,
         "db_url_present": bool(DB_URL),
         "api_key_present": bool(FLIGHT_API_KEY),
-        "mmbc_base_url": MMBC_BASE_URL
+        "mmbc_base_url": os.getenv("MMBC_BASE_URL")
     }

@@ -9,31 +9,59 @@ class MMBCClient:
         self.timeout = timeout
         self.headers = {
             "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "tiketq-flights-service/1.0",
+            "User-Agent": "tiketq-bookings-service/1.0",
         }
+        
+        print(f"[MMBCClient] Connected to MMBC at: {self.base}", flush=True)
+
+
+    async def get_flights(self, *, from_, to, date):
+        return await self._post("/json/getflights-json", {
+            "from": from_,
+            "to": to,
+            "date": date,
+        })
+    
 
     async def _post(self, path: str, payload: dict) -> dict:
-        # MMBC expects form-encoded; include auth in body if required by their spec.
-        body = {"username": self.user, "password": self.password, **payload}
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as c:
-            r = await c.post(f"{self.base}{path}", json=body)
-            text = r.text.strip()
+        body = {
+            "username": self.user,
+            "password": self.password,
+            **payload
+        }
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as client:
+            res = await client.post(f"{self.base}{path}", data=body)
+            text = res.text.strip()
             try:
-                return r.json()
+                return res.json()
             except Exception:
-                raise RuntimeError(f"Upstream non-JSON (status {r.status_code}, len {len(text)}): {text[:200]}")
+                raise RuntimeError(f"Upstream non-JSON (status {res.status_code}, len {len(text)}): {text[:200]}")
 
     async def reset_password(self, *, username, email, phone, agencode, newpassword):
         return await self._post("/json/resetpassword", {
-            "username": username, "email": email, "phone": phone,
-            "agencode": agencode, "newpassword": newpassword
+            "username": username,
+            "email": email,
+            "phone": phone,
+            "agencode": agencode,
+            "newpassword": newpassword
         })
 
     async def get_price(self, *, flight, from_, to, date, adult, child, infant):
         return await self._post("/json/getprice-json", {
-            "flight": flight, "from": from_, "to": to, "date": date,
-            "adult": adult, "child": child, "infant": infant
+            "flight": flight,
+            "from": from_,
+            "to": to,
+            "date": date,
+            "adult": adult,
+            "child": child,
+            "infant": infant
         })
+    
+    async def get_code_area(self):
+        return await self._post("/json/getcodearea-json", {})
+
+    async def get_code_flights(self):
+        return await self._post("/json/getcodeflight-json", {})
 
     async def post_booking(self, **body):
         return await self._post("/json/postbooking-json", body)
@@ -43,3 +71,6 @@ class MMBCClient:
 
     async def get_status_booking(self, *, kodebooking):
         return await self._post("/json/getstatusbooking-json", {"kodebooking": kodebooking})
+
+    async def get_etiket(self, *, kodebooking):
+        return await self._post("/json/getetiket-json", {"kodebooking": kodebooking})

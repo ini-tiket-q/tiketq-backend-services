@@ -1,3 +1,4 @@
+import os
 from adapters.mmbc_factory import mmbc
 from domain.schemas_bookings import (
     GetPriceRequest, GetPriceResponse,
@@ -6,6 +7,18 @@ from domain.schemas_bookings import (
     KodeBookingRequest,
     GetIssuedResponseSuccess, GetIssuedResponseError,
     GetStatusBookingResponse
+)
+from adapters.mmbc_factory import mmbc
+from adapters.external_api import MMBCClient
+
+print("ENV CHECK:", os.getenv("MMBC_BASE_URL"), os.getenv("MMBC_USER_ID"))
+
+
+mmbc = MMBCClient(
+    base_url=os.getenv("MMBC_BASE_URL"),
+    user=os.getenv("MMBC_USER_ID"),
+    password=os.getenv("MMBC_PASSWORD"),
+    agent=os.getenv("MMBC_AGENT")
 )
 
 class PriceError(Exception):

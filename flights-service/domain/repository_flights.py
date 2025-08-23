@@ -1,9 +1,10 @@
+import asyncio
 from typing import List, Dict, Any
-from adapters.external_api_flights import ExternalFlightAPI
+from adapters.external_api import MMBCClient
 
 
 class FlightRepository:
-    def __init__(self, api: ExternalFlightAPI):
+    def __init__(self, api: MMBCClient):
         self.api = api
 
     def check_balance(self, username: str, password: str) -> Dict[str, Any]:
@@ -12,20 +13,24 @@ class FlightRepository:
         """
         return self.api.check_balance(username, password)
 
-    def get_code_area(self) -> List[Dict[str, str]]:
+    async def get_code_area(self) -> List[Dict[str, str]]:
         """
         Mengambil daftar kode area bandara dan kota.
         """
-        return self.api.get_code_area()
+        return await self.api.get_code_area()
 
-    def get_code_flights(self) -> List[Dict[str, str]]:
+    async def get_code_flights(self) -> List[Dict[str, str]]:
         """
         Mengambil daftar maskapai.
         """
-        return self.api.get_code_flights()
+        return await self.api.get_code_flights()
 
-    def get_flights(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def get_flights(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Mencari penerbangan berdasarkan parameter yang diberikan.
         """
-        return self.api.search_flights(params)
+        return await self.api.get_flights(
+            from_=params["origin"],
+            to=params["destination"],
+            date=params["date"],
+        )
