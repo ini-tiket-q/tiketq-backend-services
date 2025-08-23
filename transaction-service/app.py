@@ -7,10 +7,19 @@ from contextlib import asynccontextmanager
 import logging
 
 from adapters.db import Base, engine
+from adapters.audit_middleware import AuditLoggingMiddleware, TransactionContextMiddleware
+from adapters.audit_logger import audit_logger, AuditEventType
 from routes import payments, transactions, orders, reports
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure comprehensive logging with structured format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('/tmp/transaction-service.log') if os.getenv("LOG_FILE") else logging.NullHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Security scheme for JWT Bearer token
@@ -21,19 +30,37 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting Transaction Service...")
+    audit_logger.log_security_event(
+        event_type=AuditEventType.AUTHENTICATION_SUCCESS,
+        message="Transaction Service starting up",
+        details={"service": "transaction-service", "version": "1.0.0"}
+    )
     
     # Create database tables
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
+        audit_logger.log_security_event(
+            event_type=AuditEventType.AUTHENTICATION_SUCCESS,
+            message="Database initialization completed",
+            details={"database_status": "ready"}
+        )
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
+        audit_logger.log_error(
+            error=e,
+            context={"operation": "database_initialization"}
+        )
         raise
     
     yield
     
     # Shutdown
     logger.info("Shutting down Transaction Service...")
+    audit_logger.log_security_event(
+        event_type=AuditEventType.AUTHENTICATION_SUCCESS,
+        message="Transaction Service shutting down gracefully"
+    )
 
 # Create FastAPI application
 app = FastAPI(
@@ -84,6 +111,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add audit logging middleware
+app.add_middleware(
+    AuditLoggingMiddleware,
+    excluded_paths=["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico", "/"]
+)
+
+# Add transaction context middleware  
+app.add_middleware(TransactionContextMiddleware)
 
 # Register routers
 app.include_router(payments.router)
