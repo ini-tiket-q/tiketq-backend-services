@@ -8,14 +8,14 @@ from domain.models import (
     TransactionCreateRequest, TransactionUpdateRequest, TransactionRefundRequest, UserRole
 )
 
-from domain.services import RefundService
 from domain.services import (
-    TransactionService,
+    TransactionService, RefundService,
     get_database_session,
-    create_transaction_service,
-    get_refund_service,
     require_user_or_admin,
     require_admin
+)
+from adapters.db import (
+    DBTransactionRepository, DBRefundRepository, DBPaymentRepository, DBOrderRepository
 )
 
 from adapters.audit_logger import (
@@ -27,9 +27,17 @@ router = APIRouter(tags=["transactions"])
 
 def get_transaction_service(db: Session = Depends(get_database_session)) -> TransactionService:
     """Dependency injection for TransactionService"""
-    return create_transaction_service(db)
+    transaction_repo = DBTransactionRepository(db)
+    order_repo = DBOrderRepository(db)
+    return TransactionService(transaction_repo, order_repo)
 
-# Transaction Endpoints
+def get_refund_service(db: Session = Depends(get_database_session)) -> RefundService:
+    """Dependency injection for RefundService"""
+    transaction_repo = DBTransactionRepository(db)
+    refund_repo = DBRefundRepository(db)
+    payment_repo = DBPaymentRepository(db)
+    return RefundService(transaction_repo, refund_repo, payment_repo)
+
 @router.post(
     "/transactions/", 
     response_model=TransactionInDB,
@@ -103,7 +111,7 @@ async def create_transaction(
         
         transaction = service.create_transaction(
             transaction_request=transaction_request,
-            user_id=current_user.id
+            user_id=current_user["id"]
         )
         
         if not transaction:
@@ -305,7 +313,7 @@ async def get_transaction(
         
         transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
+            user_id=current_user["id"]
         )
         
         if not transaction:
@@ -454,7 +462,7 @@ async def update_transaction(
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=update_request,
-            user_id=current_user.id
+            user_id=current_user["id"]
         )
         
         if not updated_transaction:
@@ -472,8 +480,8 @@ async def update_transaction(
             )
             
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update transaction"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transaction not found or access denied"
             )
         
         # Log successful update
@@ -667,8 +675,8 @@ async def cancel_transaction(
             )
             
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to cancel transaction"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transaction not found or cannot be cancelled"
             )
         
         # Log successful cancellation
@@ -761,7 +769,7 @@ async def refund_transaction(
         refund = refund_service.create_refund(
             transaction_id=transaction_id,
             refund_request=refund_request,
-            processed_by=current_user.id
+            processed_by=current_user["id"]
         )
         
         if not refund:
