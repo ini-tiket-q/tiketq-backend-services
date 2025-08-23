@@ -2,7 +2,15 @@
 
 This microservice handles the flight-related functionalities for the TiketQ OTA platform. It follows the Hexagonal Architecture (Ports and Adapters) pattern for better maintainability and testability.
 
----
+
+
+## ✅ MMBC Payment Endpoints (via Flight-Service)
+
+This service handles communication with MMBC for flight-related operations such as pricing, booking, and issuing tickets. It does **not** use a database. All data comes from MMBC directly.
+
+These endpoints are defined under `routes/payments.py`, using FastAPI with `services.py` for the logic and `external_api.py` for MMBC communication.
+
+
 
 ## 🧱 Folder Structure
 
@@ -23,7 +31,7 @@ flights-service/
 │    └── payments.py           #  Innound API (FastAPI route handler)
 ```
 
----
+
 
 ## ⚙️ Environment Variables
 
@@ -51,33 +59,6 @@ MOCK_REMOTE=true
 ```
 
 
-## 🧪 Health Check
-
-### Endpoint:
-```http
-GET /health
-```
-
-### Example response:
-```json
-{
-  "status": "ok",
-  "port": 5001,
-  "db_url_present": true,
-  "api_key_present": true
-}
-```
-
-
----
-
-## ✅ MMBC Payment Endpoints (via Flight-Service)
-
-This service handles communication with MMBC for flight-related operations such as pricing, booking, and issuing tickets. It does **not** use a database. All data comes from MMBC directly.
-
-These endpoints are defined under `routes/payments.py`, using FastAPI with `services.py` for the logic and `external_api.py` for MMBC communication.
-
----
 
 ## ⚙️ Environment & Tooling
 
@@ -110,8 +91,95 @@ The service will be accessible at:
 `http://localhost:5001/health`
 
 ---
+<br><br><br>
 
-## 🔌 Endpoints Overview
+# 🔌 Endpoints Overview
+
+<br><br>
+
+## 🧪 Health Check Endpoint:
+```http
+GET /health
+```
+
+### Example response:
+```json
+{
+  "status": "ok",
+  "port": 5001,
+  "db_url_present": true,
+  "api_key_present": true
+}
+```
+<br><br>
+
+## 🛫 Flight Service Endpoints
+
+### ✅ `/json/ceksaldo` (POST)
+Check user balance.
+
+#### Request (form):
+- `username`, `password`
+
+#### Response (Success):
+```json
+{ "result": "ok", "saldo": "1000000" }
+```
+#### Response (Fail):
+```json
+{ "result": "no", "reason": "invalid login" }
+```
+
+---
+
+### ✅ `/json/getcodearea-json` (GET)
+Get airport code and city.
+
+#### Response:
+```json
+{
+  "codes": [
+    { "airport": "CGK", "city": "Jakarta" }
+  ]
+}
+```
+
+---
+
+### ✅ `/json/getcodeflights-json` (GET)
+Get airline code and name.
+
+#### Response:
+```json
+[
+  { "flight_code": "JT", "flight_name": "Lion Air", "flight_image": "..." }
+]
+```
+
+---
+
+### ✅ `/json/getflights-json` (GET)
+Search available flights.
+
+#### Query Params:
+- `username`, `password`
+- `flight_from`, `flight_to`, `date`
+- Optional: `airline`, `transit`, `baggage`, `flight_class`, `sort_by`, `page`, `per_page`
+
+#### Response:
+```json
+[
+  {
+    "flight_id": "1",
+    "flight": "Lion Air",
+    "flight_code": "JT-101",
+    "flight_price": "900000"
+  }
+]
+```
+<br><br><br>
+## 🧾 Booking Service Endpoints
+
 
 ### 1. `POST /json/getprice-json`
 > Get pricing info for a flight from MMBC.
