@@ -125,6 +125,17 @@ class TransactionService:
             if not db_transaction:
                 logger.error("Failed to create transaction")
                 return None
+            
+            # Log successful transaction creation
+            logger.info(
+                f"Transaction created successfully - ID: {db_transaction.id}, "
+                f"User: {user_id}, Amount: {db_transaction.amount} {db_transaction.currency}, "
+                f"Service: {transaction_request.service_type.value}, "
+                f"Order: {order.order_number}, "
+                f"Method: {transaction_request.payment_method.value if transaction_request.payment_method else 'Not set'}, "
+                f"Gateway: {transaction_request.payment_gateway.value if transaction_request.payment_gateway else 'Not set'}, "
+                f"Items: {len(transaction_request.items)}"
+            )
                 
             return db_transaction
             
@@ -242,14 +253,49 @@ class TransactionService:
                 update_data["metadata"] = update_request.metadata
 
             transaction_update = TransactionUpdate(**update_data)
+            
+            # Store original transaction for audit logging
+            original_transaction = transaction_check
                 
-            return self.transaction_repo.update_transaction(
+            updated_transaction = self.transaction_repo.update_transaction(
                 transaction_id, 
                 transaction_update
             )
+            
+            # Log successful transaction update
+            if updated_transaction:
+                logger.info(
+                    f"Transaction updated successfully - ID: {transaction_id}, "
+                    f"User: {user_id}, "
+                    f"Status changed: {original_transaction.status.value if original_transaction.status else 'None'} -> "
+                    f"{updated_transaction.status.value if updated_transaction.status else 'None'}, "
+                    f"Order: {original_transaction.order_id}, "
+                    f"Amount: {original_transaction.amount}, "
+                    f"Changes: {update_data}"
+                )
+            
+            return updated_transaction
         except Exception as e:
             logger.error(f"Error updating transaction {transaction_id}: {str(e)}")
             return None
+    
+    def cancel_transaction(self, transaction_id: int, user_id: int) -> Optional[TransactionInDB]:
+        """Cancel a transaction with logging"""
+        try:
+            from domain.models import TransactionStatus
+            
+            # Create an update request to set status to cancelled
+            cancel_request = TransactionUpdateRequest(status=TransactionStatus.CANCELLED)
+            
+            result = self.update_transaction(transaction_id, cancel_request, user_id)
+            
+            if result:
+                logger.info(f"Transaction cancelled: transaction_id={transaction_id}, user_id={user_id}")
+                
+            return result
+        except Exception as e:
+            logger.error(f"Failed to cancel transaction {transaction_id} for user {user_id}: {str(e)}")
+            raise
     
     # Delete transaction with authorization check (should be admin)
     # def delete_transaction(self, transaction_id: int, user_id: int) -> bool:
@@ -532,6 +578,15 @@ class PaymentService:
             if not db_payment:
                 logger.error(f"Failed to create payment for transaction {transaction_id}")
                 return None
+                
+            # Log successful payment creation
+            logger.info(
+                f"Payment created successfully - ID: {db_payment.id}, "
+                f"Transaction: {transaction_id}, User: {user_id}, "
+                f"Amount: {db_payment.amount} {db_payment.currency}, "
+                f"Method: {db_payment.payment_method.value}, "
+                f"Gateway: {db_payment.payment_gateway.value}"
+            )
                 
             # Update transaction status
             self.transaction_repo.update_transaction(
@@ -890,6 +945,15 @@ class RefundService:
                 status=RefundStatus.COMPLETED,
                 processed_by=processed_by,
                 notes="Refund processed successfully"
+            )
+            
+            # Log successful refund processing
+            logger.info(
+                f"Refund processed successfully - ID: {refund.id}, "
+                f"Transaction: {transaction_id}, "
+                f"Amount: {refund_amount}, "
+                f"Processed by: {processed_by}, "
+                f"Reason: {refund_request.reason}"
             )
             
             return {
