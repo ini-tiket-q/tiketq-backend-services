@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,34 @@ def get_order_service(db: Session = Depends(get_database_session)) -> OrderServi
     status_code=status.HTTP_201_CREATED
 )
 async def create_order(
-    order_request: OrderCreateRequest,
+    order_request: OrderCreateRequest = Body(
+        ...,
+        example={
+            "service_type": "FLIGHTS",
+            "items": [
+                {
+                    "name": "Jakarta to Bali Flight",
+                    "price": 850000,
+                    "quantity": 1,
+                    "description": "Economy class flight from Jakarta (CGK) to Bali (DPS)",
+                    "metadata": {
+                        "departure_date": "2025-09-15",
+                        "flight_number": "GA-123",
+                        "airline": "Garuda Indonesia",
+                        "class": "Economy"
+                    }
+                }
+            ],
+            "tax": 85000,
+            "discount": 50000,
+            "metadata": {
+                "passenger_name": "John Doe",
+                "booking_reference": "TQ-FL-001",
+                "contact_email": "john.doe@example.com",
+                "special_requests": "Window seat preferred"
+            }
+        }
+    ),
     current_user = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):

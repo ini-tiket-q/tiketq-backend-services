@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from typing import List
 from sqlalchemy.orm import Session
 
@@ -30,7 +30,41 @@ def get_transaction_service(db: Session = Depends(get_database_session)) -> Tran
     status_code=status.HTTP_201_CREATED
 )
 async def create_transaction(
-    transaction_request: TransactionCreateRequest,
+    transaction_request: TransactionCreateRequest = Body(
+        ...,
+        example={
+            "transaction_type": "BOOKING",
+            "amount": 885000,
+            "currency": "IDR",
+            "service_type": "FLIGHTS",
+            "items": [
+                {
+                    "name": "Jakarta to Bali Flight",
+                    "price": 850000,
+                    "quantity": 1,
+                    "description": "Economy class flight from Jakarta (CGK) to Bali (DPS)",
+                    "metadata": {
+                        "departure_date": "2025-09-15",
+                        "flight_number": "GA-123",
+                        "airline": "Garuda Indonesia",
+                        "class": "Economy"
+                    }
+                }
+            ],
+            "subtotal": 850000,
+            "tax": 85000,
+            "discount": 50000,
+            "total": 885000,
+            "payment_method": "CREDIT_CARD",
+            "payment_gateway": "MIDTRANS",
+            "metadata": {
+                "order_id": "ORD-79AFA780",
+                "passenger_name": "John Doe",
+                "booking_reference": "TQ-FL-001",
+                "ip_address": "192.168.1.100"
+            }
+        }
+    ),
     current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):

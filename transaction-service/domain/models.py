@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from uuid import uuid4
 
 
@@ -79,23 +79,49 @@ class Currency(str, Enum):
 
 # Transaction Item Model
 class TransactionItem(BaseModel):
-    """Model for individual transaction items"""
+    """Individual item in a transaction"""
 
-    name: str = Field(..., min_length=1, max_length=255, description="Item name")
-    price: float = Field(..., gt=0, description="Item price (must be greater than 0)")
-    quantity: int = Field(1, gt=0, description="Item quantity (defaults to 1)")
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "Jakarta to Bali Flight",
+                "price": 850000,
+                "quantity": 1,
+                "description": "Economy class flight from Jakarta (CGK) to Bali (DPS)",
+                "metadata": {
+                    "departure_date": "2025-09-15",
+                    "flight_number": "GA-123",
+                    "airline": "Garuda Indonesia",
+                    "class": "Economy"
+                }
+            }
+        }
+    )
+
+    name: str = Field(
+        ..., 
+        max_length=200, 
+        description="Item name"
+    )
+    price: float = Field(
+        ..., 
+        gt=0, 
+        description="Item price"
+    )
+    quantity: int = Field(
+        ..., 
+        gt=0, 
+        description="Item quantity"
+    )
     description: Optional[str] = Field(
-        None, max_length=1000, description="Item description"
+        None, 
+        max_length=500, 
+        description="Item description"
     )
     metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional item metadata"
+        default_factory=dict, 
+        description="Item metadata"
     )
-
-    @field_validator("price")
-    def validate_price(cls, v):
-        if v <= 0:
-            raise ValueError("Price must be greater than 0")
-        return v
 
 
 class TransactionBase(BaseModel):
@@ -319,12 +345,58 @@ class PaymentWebhookRequest(BaseModel):
 class OrderCreateRequest(BaseModel):
     """Request model for order creation validation"""
 
-    service_type: ServiceType = Field(..., description="Type of service being ordered")
-    items: List[TransactionItem] = Field(..., min_length=1, description="Order items")
-    tax: float = Field(0.0, ge=0, description="Tax amount")
-    discount: float = Field(0.0, ge=0, description="Discount amount")
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "service_type": "FLIGHTS",
+                "items": [
+                    {
+                        "name": "Jakarta to Bali Flight",
+                        "price": 850000,
+                        "quantity": 1,
+                        "description": "Economy class flight from Jakarta (CGK) to Bali (DPS)",
+                        "metadata": {
+                            "departure_date": "2025-09-15",
+                            "flight_number": "GA-123",
+                            "airline": "Garuda Indonesia",
+                            "class": "Economy"
+                        }
+                    }
+                ],
+                "tax": 85000,
+                "discount": 50000,
+                "metadata": {
+                    "passenger_name": "John Doe",
+                    "booking_reference": "TQ-FL-001",
+                    "contact_email": "john.doe@example.com",
+                    "special_requests": "Window seat preferred"
+                }
+            }
+        }
+    )
+
+    service_type: ServiceType = Field(
+        ..., 
+        description="Type of service being ordered"
+    )
+    items: List[TransactionItem] = Field(
+        ..., 
+        min_length=1, 
+        description="Order items"
+    )
+    tax: float = Field(
+        0.0, 
+        ge=0, 
+        description="Tax amount"
+    )
+    discount: float = Field(
+        0.0, 
+        ge=0, 
+        description="Discount amount"
+    )
     metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional order metadata"
+        default_factory=dict, 
+        description="Additional order metadata"
     )
 
 
@@ -360,27 +432,96 @@ class OrderStatusUpdateRequest(BaseModel):
 class TransactionCreateRequest(BaseModel):
     """Request model for transaction creation validation"""
 
-    transaction_type: TransactionType = Field(..., description="Type of transaction")
-    amount: float = Field(..., gt=0, description="Transaction amount")
-    currency: Currency = Field(Currency.IDR, description="Transaction currency")
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "transaction_type": "BOOKING",
+                "amount": 885000,
+                "currency": "IDR",
+                "service_type": "FLIGHTS",
+                "items": [
+                    {
+                        "name": "Jakarta to Bali Flight",
+                        "price": 850000,
+                        "quantity": 1,
+                        "description": "Economy class flight from Jakarta (CGK) to Bali (DPS)",
+                        "metadata": {
+                            "departure_date": "2025-09-15",
+                            "flight_number": "GA-123",
+                            "airline": "Garuda Indonesia",
+                            "class": "Economy"
+                        }
+                    }
+                ],
+                "subtotal": 850000,
+                "tax": 85000,
+                "discount": 50000,
+                "total": 885000,
+                "payment_method": "CREDIT_CARD",
+                "payment_gateway": "MIDTRANS",
+                "metadata": {
+                    "order_id": "ORD-79AFA780",
+                    "passenger_name": "John Doe",
+                    "booking_reference": "TQ-FL-001",
+                    "ip_address": "192.168.1.100"
+                }
+            }
+        }
+    )
+
+    transaction_type: TransactionType = Field(
+        ..., 
+        description="Type of transaction"
+    )
+    amount: float = Field(
+        ..., 
+        gt=0, 
+        description="Transaction amount"
+    )
+    currency: Currency = Field(
+        Currency.IDR, 
+        description="Transaction currency"
+    )
     service_type: ServiceType = Field(
-        ..., description="Type of service being transacted"
+        ..., 
+        description="Type of service being transacted"
     )
     items: List[TransactionItem] = Field(
-        ..., min_length=1, description="List of transaction items"
+        ..., 
+        min_length=1, 
+        description="List of transaction items"
     )
     subtotal: Optional[float] = Field(
-        None, ge=0, description="Subtotal before tax and discount"
+        None, 
+        ge=0, 
+        description="Subtotal before tax and discount"
     )
-    tax: float = Field(0.0, ge=0, description="Tax amount")
-    discount: float = Field(0.0, ge=0, description="Discount amount")
-    total: Optional[float] = Field(None, ge=0, description="Total amount")
-    payment_method: Optional[PaymentMethod] = Field(None, description="Payment method")
+    tax: float = Field(
+        0.0, 
+        ge=0, 
+        description="Tax amount"
+    )
+    discount: float = Field(
+        0.0, 
+        ge=0, 
+        description="Discount amount"
+    )
+    total: Optional[float] = Field(
+        None, 
+        ge=0, 
+        description="Total amount"
+    )
+    payment_method: Optional[PaymentMethod] = Field(
+        None, 
+        description="Payment method"
+    )
     payment_gateway: Optional[PaymentGateway] = Field(
-        None, description="Payment gateway"
+        None, 
+        description="Payment gateway"
     )
     metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional transaction metadata"
+        default_factory=dict, 
+        description="Additional transaction metadata"
     )
 
     @field_validator("items")
@@ -403,9 +544,9 @@ class TransactionCreateRequest(BaseModel):
     def validate_totals(self):
         """Validate total calculation consistency"""
         if self.subtotal is None:
-            # Calculate subtotal from items
+            # Calculate subtotal from items - items are TransactionItem objects
             self.subtotal = sum(
-                item.get("price", 0) * item.get("quantity", 1) for item in self.items
+                item.price * item.quantity for item in self.items
             )
 
         if self.total is None:
