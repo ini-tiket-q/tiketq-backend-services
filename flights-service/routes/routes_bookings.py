@@ -19,168 +19,16 @@ from domain.schemas_bookings import GetETicketRequest, GetETicketResponse, MMBCE
 from pydantic import BaseModel, Field
 from typing import Optional
 from adapters.store import BOOKING_STATUS
+from domain.repository_bookings import BookingRepository
 
 
+booking_repo = BookingRepository()
 
 router = APIRouter(prefix="/json", tags=["MMBC Flight-Service (Bookings)"])
 
-
-
-class GetETicketResponse(BaseModel):
-    result: str
-    eticket_url: Optional[str] = None
-
-# 1. Get Price
-@router.post(
-    "/getprice-json",
-    response_model=GetPriceResponse,
-    responses={
-        200: {"description": "Price retrieved", "model": GetPriceResponse},
-        404: {"description": "No result / route not found", "model": MMBCErrorResponse},
-        500: {"description": "Internal server error"},
-    },
-    summary="Check flight price",
-    description="Retrieve flight fare, tax, seat info for a specific route/date."
-)
-async def get_price(req: GetPriceRequest):
-    try:
-        return await get_price_service(req)
-
-    except PriceError as e:
-        return JSONResponse(
-            status_code=404,
-            content={"result": "no", "reason": e.reason}
-        )
-
-
-# 2. Post Booking
-@router.post(
-    "/postbooking-json",
-    response_model=PostBookingResponse,
-    summary="Book a flight",
-    description="""
-Creates a new booking on MMBC. This can be used by both guests and registered users.
-""",
-responses={
-    200: {"description": "Booking success", "model": PostBookingResponse},
-    400: {"description": "Booking failed", "model": MMBCErrorResponse},
-    500: {"description": "Internal server error"},
-})
-async def post_booking(req: PostBookingRequest):
-    try:
-        result = await post_booking_service(req)
-
-        kodebooking = result.get("kodebooking")
-        if kodebooking:
-            BOOKING_STATUS[kodebooking] = "incomplete"
-
-        return result
-
-    except BookingError as e:
-        return JSONResponse(
-            status_code=400,
-            content=e.full_body  # MMBC might include flight_code, seat info, message, etc.
-        )
-
-
-# 3. Get Issued
-
-
-@router.post(
-    "/getissued-json",
-    response_model=GetIssuedResponseSuccess,
-    responses={
-        200: {"description": "Issued ticket retrieved", "model": GetIssuedResponseSuccess},
-        403: {"description": "Booking not paid", "model": GetIssuedResponseError},
-        404: {"description": "Booking not found", "model": GetIssuedResponseError},
-        410: {"description": "Booking expired", "model": GetIssuedResponseError},
-        400: {"description": "Other error", "model": GetIssuedResponseError},
-    },
-    summary="Check if booking is issued",
-    description="Returns full ticket + passenger info if issued."
-)
-async def get_issued(req: KodeBookingRequest):
-    if BOOKING_STATUS.get(req.kodebooking) != "PAID":
-        return JSONResponse(
-            status_code=403,
-            content={
-                "result": "no",
-                "reason": "Sisa saldo tidak cukup untuk Issued tiket, sisa saldo anda adalah 0."
-            }
-        )
-
-    try:
-        result = await get_issued_service(kodebooking=req.kodebooking)
-        return result
-
-    except IssuedError as e:
-        reason = e.reason.lower()
-        if "expired" in reason:
-            return JSONResponse(status_code=410, content={"result": "no", "reason": e.reason})
-        elif "sisa saldo" in reason:
-            return JSONResponse(status_code=403, content={"result": "no", "reason": e.reason})
-        elif "tidak ditemukan" in reason:
-            return JSONResponse(status_code=404, content={"result": "no", "reason": e.reason})
-        else:
-            return JSONResponse(status_code=400, content={"result": "no", "reason": e.reason})
-
-
-
-# 4. Get Booking Status
-@router.post(
-    "/getstatusbooking-json",
-    response_model=GetStatusBookingResponse,
-    responses={
-        200: {"description": "Booking status retrieved", "model": GetStatusBookingResponse},
-        404: {"description": "Booking not found", "model": MMBCErrorResponse},
-        500: {"description": "Internal server error"},
-    },
-    summary="Check booking status",
-    description="Retrieves full details and status of a booking using its booking code."
-)
-async def get_status(req: KodeBookingRequest):
-    try:
-        return await get_status_service(req.kodebooking)
-
-    except StatusBookingError as e:
-        return JSONResponse(
-            status_code=404,
-            content={"result": "no", "reason": e.reason}
-        )
-
-
-
-# 5. Get E-Ticket
-# This endpoint retrieves the e-ticket PDF URL or error message from MMBC.
-@router.post(
-    "/getetiket-json",
-    response_model=GetETicketResponse,
-    responses={
-        200: {"description": "E-ticket URL returned", "model": GetETicketResponse},
-        404: {"description": "E-ticket not found", "model": MMBCErrorResponse},
-        500: {"description": "Internal server error"},
-    },
-    summary="Retrieve E-Ticket",
-    description="Fetches e-ticket download URL if booking is issued."
-)
-async def get_eticket(req: GetETicketRequest):
-    try:
-        result = await get_eticket_service(req.kodebooking)
-
-        # Extract URL from reason
-        match = re.search(r"https?://[^\s]+etiket-[\w\d]+\.pdf", result.get("reason", ""))
-        url = match.group(0) if match else None
-
-        return {"result": "ok", "eticket_url": url}
-
-    except ETicketError as e:
-        return JSONResponse(
-            status_code=404,
-            content={"result": "no", "reason": e.reason}
-        )
-
-
-# 6. Reset Password
+# -------------------------------
+# Reset Password Endpoint
+# -------------------------------
 @router.post(
     "/resetpassword",
     response_model=ResetPasswordResponse,
@@ -211,6 +59,165 @@ async def reset_password(req: ResetPasswordRequest):
 
     return result
 
+# -------------------------------
+# Get Price Endpoint
+# -------------------------------
+@router.post(
+    "/getprice-json",
+    response_model=GetPriceResponse,
+    responses={
+        200: {"description": "Price retrieved", "model": GetPriceResponse},
+        404: {"description": "No result / route not found", "model": MMBCErrorResponse},
+        500: {"description": "Internal server error"},
+    },
+    summary="Check flight price",
+    description="Retrieve flight fare, tax, seat info for a specific route/date."
+)
+async def get_price(req: GetPriceRequest):
+    try:
+        return await get_price_service(req)
+
+    except PriceError as e:
+        return JSONResponse(
+            status_code=404,
+            content={"result": "no", "reason": e.reason}
+        )
+    
+# -------------------------------
+# Post Bookings Endpoint
+# -------------------------------
+@router.post(
+    "/postbooking-json",
+    response_model=PostBookingResponse,
+    summary="Book a flight",
+    description="""
+Creates a new booking on MMBC. This can be used by both guests and registered users.
+""",
+responses={
+    200: {"description": "Booking success", "model": PostBookingResponse},
+    400: {"description": "Booking failed", "model": MMBCErrorResponse},
+    500: {"description": "Internal server error"},
+})
+async def post_booking(req: PostBookingRequest):
+    try:
+        result = await post_booking_service(req)
+
+        if result.get("result") != "no":
+            kodebooking = result.get("kodebooking")
+        if kodebooking:
+            booking_repo.set_status(kodebooking, "incomplete")
+
+
+        return result
+
+    except BookingError as e:
+        return JSONResponse(
+            status_code=400,
+            content=e.full_body  # MMBC might include flight_code, seat info, message, etc.
+        )
+
+# -------------------------------
+# Get Issued Endpoint
+# -------------------------------
+@router.post(
+    "/getissued-json",
+    response_model=GetIssuedResponseSuccess,
+    responses={
+        200: {"description": "Issued ticket retrieved", "model": GetIssuedResponseSuccess},
+        403: {"description": "Booking not paid", "model": GetIssuedResponseError},
+        404: {"description": "Booking not found", "model": GetIssuedResponseError},
+        410: {"description": "Booking expired", "model": GetIssuedResponseError},
+        400: {"description": "Other error", "model": GetIssuedResponseError},
+    },
+    summary="Check if booking is issued",
+    description="Returns full ticket + passenger info if issued."
+)
+async def get_issued(req: KodeBookingRequest):
+    if booking_repo.get_status(req.kodebooking) != "PAID":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "result": "no",
+                "reason": "Sisa saldo tidak cukup untuk Issued tiket, sisa saldo anda adalah 0."
+            }
+        )
+
+    try:
+        result = await get_issued_service(kodebooking=req.kodebooking)
+        return result
+
+    except IssuedError as e:
+        reason = e.reason.lower()
+        if "expired" in reason:
+            return JSONResponse(status_code=410, content={"result": "no", "reason": e.reason})
+        elif "sisa saldo" in reason:
+            return JSONResponse(status_code=403, content={"result": "no", "reason": e.reason})
+        elif "tidak ditemukan" in reason:
+            return JSONResponse(status_code=404, content={"result": "no", "reason": e.reason})
+        else:
+            return JSONResponse(status_code=400, content={"result": "no", "reason": e.reason})
+
+# -------------------------------
+# Get Booking Status Endpoint
+# -------------------------------
+@router.post(
+    "/getstatusbooking-json",
+    response_model=GetStatusBookingResponse,
+    responses={
+        200: {"description": "Booking status retrieved", "model": GetStatusBookingResponse},
+        404: {"description": "Booking not found", "model": MMBCErrorResponse},
+        500: {"description": "Internal server error"},
+    },
+    summary="Check booking status",
+    description="Retrieves full details and status of a booking using its booking code."
+)
+async def get_status(req: KodeBookingRequest):
+    try:
+        return await get_status_service(req.kodebooking)
+
+    except StatusBookingError as e:
+        return JSONResponse(
+            status_code=404,
+            content={"result": "no", "reason": e.reason}
+        )
+
+# -------------------------------
+# Get Etiket
+# -------------------------------
+class GetETicketResponse(BaseModel):
+    result: str
+    eticket_url: Optional[str] = None
+
+@router.post(
+    "/getetiket-json",
+    response_model=GetETicketResponse,
+    responses={
+        200: {"description": "E-ticket URL returned", "model": GetETicketResponse},
+        404: {"description": "E-ticket not found", "model": MMBCErrorResponse},
+        500: {"description": "Internal server error"},
+    },
+    summary="Retrieve E-Ticket",
+    description="Fetches e-ticket download URL if booking is issued."
+)
+async def get_eticket(req: GetETicketRequest):
+    try:
+        result = await get_eticket_service(req.kodebooking)
+
+        # Extract URL from reason
+        match = re.search(r"https?://[^\s]+etiket-[\w\d]+\.pdf", result.get("reason", ""))
+        url = match.group(0) if match else None
+
+        return {"result": "ok", "eticket_url": url}
+
+    except ETicketError as e:
+        return JSONResponse(
+            status_code=404,
+            content={"result": "no", "reason": e.reason}
+        )
+
+
+
+
 
 
 class MidtransWebhook(BaseModel):
@@ -220,11 +227,10 @@ class MidtransWebhook(BaseModel):
 async def simulate_payment(req: MidtransWebhook):
     kodebooking = req.order_id
 
-    if kodebooking not in BOOKING_STATUS:
+    if not booking_repo.has(kodebooking):
         raise HTTPException(404, detail="Booking not found")
 
-    # Update to paid
-    BOOKING_STATUS[kodebooking] = "PAID"
+    booking_repo.set_status(kodebooking, "PAID")
 
     return {"message": f"Booking {kodebooking} updated to 'paid'"}
 
