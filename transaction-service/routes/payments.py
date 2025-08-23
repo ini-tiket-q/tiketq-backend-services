@@ -8,8 +8,8 @@ from domain.models import (
     PaymentRefundRequest, PaymentWebhookRequest,
     UserRole
 )
-from domain.audited_services import AuditedPaymentService
 from domain.services import (
+    PaymentService,
     get_database_session,
     require_user_or_admin,
     require_admin
@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["payments"])
 
-def get_audited_payment_service(db: Session = Depends(get_database_session)) -> AuditedPaymentService:
-    """Dependency injection for AuditedPaymentService"""
+def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentService:
+    """Dependency injection for PaymentService"""
     transaction_repo = DBTransactionRepository(db)
     payment_repo = DBPaymentRepository(db)
-    return AuditedPaymentService(transaction_repo, payment_repo)
+    return PaymentService(transaction_repo, payment_repo)
 
 @router.post(
     "/payments/", 
@@ -36,7 +36,7 @@ def get_audited_payment_service(db: Session = Depends(get_database_session)) -> 
 async def create_payment(
     payment_data: PaymentCreateRequest = Body(...),
     current_user = Depends(require_user_or_admin),
-    payment_service: AuditedPaymentService = Depends(get_audited_payment_service),
+    payment_service: PaymentService = Depends(get_payment_service),
     db: Session = Depends(get_database_session)
 ):
     """Create payment - USER/ADMIN access"""
@@ -44,7 +44,7 @@ async def create_payment(
         payment = payment_service.create_payment(
             transaction_id=payment_data.transaction_id,
             payment_data=payment_data,
-            user=current_user
+            user_id=current_user["id"]
         )
         
         if not payment:
@@ -74,7 +74,7 @@ async def create_payment(
 async def get_payment_details(
     payment_id: int,
     current_user = Depends(require_user_or_admin),
-    payment_service: AuditedPaymentService = Depends(get_audited_payment_service)
+    payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Get payment details - USER/ADMIN access"""
     try:
@@ -87,10 +87,10 @@ async def get_payment_details(
             )
         
         # Check authorization - users can only see their own payments
-        if current_user.role != UserRole.ADMIN:
+        if current_user["role"] != UserRole.ADMIN:
             # Get associated transaction to check user ownership
             transaction = payment_service.transaction_repo.get_transaction(payment.transaction_id)
-            if not transaction or transaction.user_id != current_user.id:
+            if not transaction or transaction.user_id != current_user["id"]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to view this payment"
@@ -114,13 +114,13 @@ async def confirm_payment(
     payment_id: int,
     confirm_data: PaymentConfirmRequest = Body(...),
     current_user = Depends(require_admin),
-    payment_service: AuditedPaymentService = Depends(get_audited_payment_service)
+    payment_service: PaymentService = Depends(get_payment_service)
 ):
     try:
         payment = payment_service.confirm_payment(
             payment_id=payment_id,
             gateway_response=confirm_data,
-            user=current_user
+            confirmed_by=current_user["id"]
         )
         
         if not payment:
@@ -151,7 +151,7 @@ async def process_payment_refund(
     payment_id: int,
     refund_data: PaymentRefundRequest = Body(...),
     current_user = Depends(require_admin),
-    payment_service: AuditedPaymentService = Depends(get_audited_payment_service)
+    payment_service: PaymentService = Depends(get_payment_service)
 ):
     try:
         # For now, use a simplified refund process
@@ -186,7 +186,7 @@ async def process_payment_refund(
 )
 async def payment_webhook(
     webhook_request: PaymentWebhookRequest = Body(...),
-    payment_service: AuditedPaymentService = Depends(get_audited_payment_service)
+    payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Payment gateway webhook - Public access"""
     try:

@@ -7,10 +7,8 @@ from domain.models import (
     TransactionCreateRequest, TransactionUpdateRequest, TransactionRefundRequest, UserRole
 )
 
-from domain.audited_services import (
-    AuditedTransactionService, AuditedRefundService
-)
 from domain.services import (
+    TransactionService, RefundService,
     get_database_session,
     require_user_or_admin,
     require_admin
@@ -21,18 +19,18 @@ from adapters.db import (
 
 router = APIRouter(tags=["transactions"])
 
-def get_audited_transaction_service(db: Session = Depends(get_database_session)) -> AuditedTransactionService:
-    """Dependency injection for AuditedTransactionService"""
+def get_transaction_service(db: Session = Depends(get_database_session)) -> TransactionService:
+    """Dependency injection for TransactionService"""
     transaction_repo = DBTransactionRepository(db)
     order_repo = DBOrderRepository(db)
-    return AuditedTransactionService(transaction_repo, order_repo)
+    return TransactionService(transaction_repo, order_repo)
 
-def get_audited_refund_service(db: Session = Depends(get_database_session)) -> AuditedRefundService:
-    """Dependency injection for AuditedRefundService"""
+def get_refund_service(db: Session = Depends(get_database_session)) -> RefundService:
+    """Dependency injection for RefundService"""
     transaction_repo = DBTransactionRepository(db)
     refund_repo = DBRefundRepository(db)
     payment_repo = DBPaymentRepository(db)
-    return AuditedRefundService(transaction_repo, refund_repo, payment_repo)
+    return RefundService(transaction_repo, refund_repo, payment_repo)
 
 @router.post(
     "/transactions/", 
@@ -42,13 +40,13 @@ def get_audited_refund_service(db: Session = Depends(get_database_session)) -> A
 async def create_transaction(
     transaction_request: TransactionCreateRequest,
     current_user: dict = Depends(require_user_or_admin),
-    service: AuditedTransactionService = Depends(get_audited_transaction_service)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """Create a new transaction - USER/ADMIN access"""
     try:
         transaction = service.create_transaction(
             transaction_request=transaction_request,
-            user=current_user
+            user_id=current_user["id"]
         )
         
         if not transaction:
@@ -77,13 +75,13 @@ async def list_transactions(
     skip: int = 0,
     limit: int = 100,
     current_user: dict = Depends(require_user_or_admin),
-    service: AuditedTransactionService = Depends(get_audited_transaction_service)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """List transactions for the current user - USER/ADMIN access"""
     try:
-        # The audited service handles authorization internally
+        # Use the existing get_transactions_by_user method
         transactions = service.get_transactions_by_user(
-            user=current_user,
+            user_id=current_user["id"],
             skip=skip,
             limit=limit
         )
@@ -101,13 +99,13 @@ async def list_transactions(
 async def get_transaction(
     transaction_id: int,
     current_user: dict = Depends(require_user_or_admin),
-    service: AuditedTransactionService = Depends(get_audited_transaction_service)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """Get transaction details by ID - USER/ADMIN access"""
     try:
         transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user=current_user
+            user_id=current_user["id"]
         )
         
         if not transaction:
@@ -133,15 +131,15 @@ async def update_transaction(
     transaction_id: int,
     update_request: TransactionUpdateRequest,
     current_user: dict = Depends(require_user_or_admin),
-    service: AuditedTransactionService = Depends(get_audited_transaction_service)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """Update transaction - USER/ADMIN access"""
     try:
-        # The audited service handles authorization internally
+        # Use the existing update_transaction method
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=update_request,
-            user=current_user
+            user_id=current_user["id"]
         )
         
         if not updated_transaction:
@@ -171,15 +169,14 @@ async def update_transaction(
 async def cancel_transaction(
     transaction_id: int,
     current_user: dict = Depends(require_user_or_admin),
-    service: AuditedTransactionService = Depends(get_audited_transaction_service)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """Cancel transaction - USER/ADMIN access"""
     try:
-        # The audited service includes a specialized cancel method
+        # Cancel the transaction and let the service handle logging
         cancelled_transaction = service.cancel_transaction(
             transaction_id=transaction_id,
-            user=current_user,
-            reason="User requested cancellation"
+            user_id=current_user["id"]
         )
         
         if not cancelled_transaction:
@@ -206,7 +203,7 @@ async def refund_transaction(
     transaction_id: int,
     refund_request: TransactionRefundRequest,
     current_user: dict = Depends(require_admin),  # Only admin can process refunds
-    refund_service: AuditedRefundService = Depends(get_audited_refund_service)
+    refund_service: RefundService = Depends(get_refund_service)
 ):
     """
     Process a refund for a completed transaction - ADMIN access only
@@ -217,11 +214,11 @@ async def refund_transaction(
     - **notes**: Additional notes about the refund (optional)
     """
     try:
-        # Process the refund using the audited refund service
+        # Process the refund using the refund service with integrated logging
         refund = refund_service.create_refund(
             transaction_id=transaction_id,
             refund_request=refund_request,
-            user=current_user
+            processed_by=current_user["id"]
         )
         
         if not refund:
