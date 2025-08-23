@@ -554,7 +554,6 @@ class TransactionCreateRequest(BaseModel):
             # Calculate subtotal from items - items are TransactionItem objects
             self.subtotal = sum(
                 item.price * item.quantity for item in self.items
-                item.price * item.quantity for item in self.items
             )
 
         if self.total is None:
