@@ -90,7 +90,7 @@ class Transaction(Base):
     payment_method = Column(Enum(PaymentMethod), nullable=True)
     payment_gateway = Column(Enum(PaymentGateway), nullable=True)
     gateway_transaction_id = Column(String(255), nullable=True, index=True)
-    meta_data = Column(JSON, nullable=True)
+    meta_data = Column("metadata", JSON, nullable=True)  # Use meta_data attribute to avoid SQLAlchemy conflict
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -114,7 +114,7 @@ class Order(Base):
     discount = Column(Float, default=0.0, nullable=False)
     total = Column(Float, nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.DRAFT, nullable=False)
-    meta_data = Column(JSON, nullable=True)
+    meta_data = Column("metadata", JSON, nullable=True)  # Use meta_data attribute to avoid SQLAlchemy conflict
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -132,7 +132,7 @@ class Payment(Base):
     payment_gateway = Column(Enum(PaymentGateway), nullable=False)
     gateway_transaction_id = Column(String(255), nullable=True, index=True)
     status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING, nullable=False)
-    meta_data = Column(JSON, nullable=True)
+    meta_data = Column("metadata", JSON, nullable=True)  # Use meta_data attribute to avoid SQLAlchemy conflict
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
