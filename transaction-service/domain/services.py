@@ -534,18 +534,6 @@ class PaymentService:
         Raises:
             ValueError: If payment data validation fails
         """
-        # Validate request data using Pydantic model
-        request_dict = {
-            "transaction_id": transaction_id,
-            **payment_data
-        }
-        
-        try:
-            validated_request = PaymentCreateRequest(**request_dict)
-        except Exception as e:
-            logger.error(f"Payment validation failed: {str(e)}")
-            raise ValueError(f"Payment validation failed: {str(e)}")
-        
         try:
             # Get and validate transaction
             transaction = self.transaction_repo.get_transaction(transaction_id)
@@ -561,16 +549,16 @@ class PaymentService:
             
             # Create payment record using validated data
             payment = PaymentCreate(
-                transaction_id=validated_request.transaction_id,
-                amount=validated_request.amount,
-                currency=Currency(validated_request.currency)
-                if validated_request.currency
+                transaction_id=payment_data.transaction_id,
+                amount=payment_data.amount,
+                currency=Currency(payment_data.currency)
+                if payment_data.currency
                 else transaction.currency,
-                payment_method=validated_request.payment_method,
-                payment_gateway=validated_request.payment_gateway,
-                gateway_transaction_id=validated_request.gateway_transaction_id,
+                payment_method=payment_data.payment_method,
+                payment_gateway=payment_data.payment_gateway,
+                gateway_transaction_id=payment_data.gateway_transaction_id,
                 status=PaymentStatus.PENDING,
-                metadata=validated_request.metadata or {},
+                metadata=payment_data.metadata or {},
             )
             
             # Save payment to database

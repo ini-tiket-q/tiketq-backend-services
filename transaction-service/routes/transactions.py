@@ -111,7 +111,7 @@ async def create_transaction(
         
         transaction = service.create_transaction(
             transaction_request=transaction_request,
-            user_id=current_user["id"]
+            user_id=current_user.id
         )
         
         if not transaction:
@@ -313,7 +313,7 @@ async def get_transaction(
         
         transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user["id"]
+            user_id=current_user.id
         )
         
         if not transaction:
@@ -462,7 +462,7 @@ async def update_transaction(
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=update_request,
-            user_id=current_user["id"]
+            user_id=current_user.id
         )
         
         if not updated_transaction:
@@ -769,7 +769,7 @@ async def refund_transaction(
         refund = refund_service.create_refund(
             transaction_id=transaction_id,
             refund_request=refund_request,
-            processed_by=current_user["id"]
+            processed_by=current_user.id
         )
         
         if not refund:
