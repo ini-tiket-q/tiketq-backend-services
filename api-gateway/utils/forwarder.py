@@ -12,6 +12,8 @@ SERVICES = {
     "hotels": os.getenv("HOTELS_SERVICE_URL", "http://hotels-service:8000"),
     "ppob": os.getenv("PPOB_SERVICE_URL", "http://ppob-service:8000"),
     "payment": os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8000"),
+    "transaction": os.getenv("TRANSACTION_SERVICE_URL", "http://transaction-service:8000"),
+    "trains": os.getenv("TRAINS_SERVICE_URL", "http://trains-service:8000"),
 }
 
 ROUTE_SERVICE_MAP = {
@@ -22,6 +24,8 @@ ROUTE_SERVICE_MAP = {
     "/hotels": "hotels",
     "/ppob": "ppob",
     "/payments": "payment",
+    "/transactions": "transaction",
+    "/trains": "trains",
 }
 
 
@@ -40,4 +44,33 @@ async def forward_request(request: Request, full_path: str) -> Response:
     Forward the request to the matched service.
     """
     target_url = resolve_target_url(full_path)
-    if not target_url_
+    if not target_url:
+        return Response(content="Service not found", status_code=404)
+    
+    # Get request body
+    body = await request.body()
+    
+    # Get headers (excluding host and content-length)
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    headers.pop("content-length", None)
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=body,
+                timeout=30
+            )
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
+        except httpx.RequestError as e:
+            return Response(
+                content=f"Service unavailable: {str(e)}", 
+                status_code=503
+            )

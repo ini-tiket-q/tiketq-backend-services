@@ -1,34 +1,22 @@
 from fastapi import FastAPI
-from dotenv import load_dotenv
-from pathlib import Path
-import os
-
-load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
-
 from routes.user_routes import router
 
 app = FastAPI(
-    title="TiketQ User Service",
-    description="User profile management service with Role-Based Access Control (RBAC)",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_tags=[
-        {
-            "name": "User Profiles",
-            "description": "User profile management operations with RBAC protection"
-        },
-        {
-            "name": "User Management",
-            "description": "Admin-only user management operations"
-        }
-    ]
+    title="User Service",
+    description="User profile management service for TiketQ platform",
+    version="1.0.0"
 )
 
-app.include_router(router, prefix="/users", tags=["User Profiles", "User Management"])
+app.include_router(router)
 
-from adapters.db import Base, engine
+@app.get("/")
+async def root():
+    return {"service": "User Service", "status": "running", "version": "1.0.0"}
 
-@app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine) 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "user-service"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000) 
