@@ -41,7 +41,6 @@ async def create_payment(
 ):
     """Create payment - USER/ADMIN access"""
     try:
-        logger.info(f"Creating payment for transaction {payment_data.transaction_id}")
         payment = payment_service.create_payment(
             transaction_id=payment_data.transaction_id,
             payment_data=payment_data,
