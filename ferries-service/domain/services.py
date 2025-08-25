@@ -37,18 +37,22 @@ def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
     booking_res = create_ferry_booking(request.schedule_id, request.passengers)
 
     booking_id = booking_res["booking_id"]
-    total_price = booking_res["total_price"]
-    status = booking_res["status"]
+    total = booking_res["total"]
 
     # Step 2: Mock transaction
-    transaction_res = create_transaction(booking_id, total_price)
+    transaction_res = create_transaction(booking_id, total)
 
     return FerryBookingResponse(
         booking_id=booking_id,
-        status=status,
-        total_price=total_price,
-        message=f"Booking created. Transaction ID: {transaction_res['transaction_id']}"
+        status="incomplete",
+        subtotal=booking_res["subtotal"],
+        tax=booking_res["tax"],
+        discount=booking_res["discount"],
+        total=total,
+        items=booking_res["items"],
+        metadata=booking_res["metadata"],
     )
+
 
 def get_all_transactions():
     return list_transactions()

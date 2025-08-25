@@ -27,5 +27,10 @@ class FerryBookingRequest(BaseModel):
 class FerryBookingResponse(BaseModel):
     booking_id: str
     status: str
-    total_price: float
-    message: str
+    subtotal: float
+    tax: float = 0.0
+    discount: float = 0.0
+    total: float
+    items: list[dict]
+    metadata: dict
+
