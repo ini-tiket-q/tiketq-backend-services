@@ -1,5 +1,91 @@
 import uuid
 from domain.models import Passenger
+from datetime import datetime, timedelta
+
+def get_mock_schedules():
+    return [
+        {
+            "schedule_id": "SCH-001",
+            "origin": "Tanjung Priok",
+            "destination": "Pontianak",
+            "departure_time": "2025-09-10T08:00:00",
+            "arrival_time": "2025-09-10T20:00:00",
+            "operator": "Pelni",
+            "base_price": 170000,
+            "currency": "IDR",
+            "available_seats": 120,
+            "metadata": {
+                "ship_name": "KM Bukit Raya",
+                "class": "Economy",
+                "duration": "12h"
+            }
+        },
+        {
+            "schedule_id": "SCH-002",   # identik dengan SCH-001
+            "origin": "Tanjung Priok",
+            "destination": "Pontianak",
+            "departure_time": "2025-09-10T08:00:00",
+            "arrival_time": "2025-09-10T20:00:00",
+            "operator": "Pelni",
+            "base_price": 170000,
+            "currency": "IDR",
+            "available_seats": 120,
+            "metadata": {
+                "ship_name": "KM Bukit Raya",
+                "class": "Economy",
+                "duration": "12h"
+            }
+        },
+        {
+            "schedule_id": "SCH-003",
+            "origin": "Surabaya",
+            "destination": "Makassar",
+            "departure_time": "2025-09-11T09:00:00",
+            "arrival_time": "2025-09-11T19:00:00",
+            "operator": "Pelni",
+            "base_price": 200000,
+            "currency": "IDR",
+            "available_seats": 100,
+            "metadata": {
+                "ship_name": "KM Labobar",
+                "class": "Business",
+                "duration": "10h"
+            }
+        },
+        {
+            "schedule_id": "SCH-004",
+            "origin": "Batam",
+            "destination": "Singapore",
+            "departure_time": "2025-09-12T07:00:00",
+            "arrival_time": "2025-09-12T09:00:00",
+            "operator": "Batam Fast",
+            "base_price": 300000,
+            "currency": "IDR",
+            "available_seats": 50,
+            "metadata": {
+                "ship_name": "Batam Fast 8",
+                "class": "VIP",
+                "duration": "2h"
+            }
+        },
+        {
+            "schedule_id": "SCH-005",
+            "origin": "Medan",
+            "destination": "Penang",
+            "departure_time": "2025-09-15T06:30:00",
+            "arrival_time": "2025-09-15T11:30:00",
+            "operator": "Pelni",
+            "base_price": 250000,
+            "currency": "IDR",
+            "available_seats": 75,
+            "metadata": {
+                "ship_name": "KM Kelud",
+                "class": "Economy",
+                "duration": "5h"
+            }
+        }
+    ]
+
 
 def calculate_price(passengers: list[Passenger]) -> float:
     """

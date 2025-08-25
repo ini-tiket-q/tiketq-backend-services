@@ -1,24 +1,3 @@
-# from domain.models import FerryBookingRequest, FerryBookingResponse
-# from adapters.external_api import create_ferry_booking
-# from adapters.transaction_api import create_transaction
-
-# def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
-#     # Step 1: create booking in external ferry API
-#     booking_res = create_ferry_booking(request.schedule_id, request.passengers)
-
-#     booking_id = booking_res.get("booking_id")
-#     total_price = booking_res.get("total_price", 0.0)
-#     status = booking_res.get("status", "incomplete")
-
-#     # Step 2: create transaction in internal transaction-service
-#     create_transaction(booking_id, total_price)
-
-#     return FerryBookingResponse(
-#         booking_id=booking_id,
-#         status=status,
-#         total_price=total_price,
-#         message="Booking created and transaction recorded"
-#     )
 
 from domain.models import FerryBookingRequest, FerryBookingResponse
 from adapters.external_api import create_ferry_booking
@@ -31,6 +10,20 @@ from adapters.transaction_api import (
 )
 from domain.models import FerryBookingRequest, FerryBookingResponse
 from adapters.external_api import create_ferry_booking
+from adapters.external_api import get_mock_schedules
+
+def get_ferry_schedules(origin: str = None, destination: str = None, date: str = None):
+    schedules = get_mock_schedules()
+
+    if origin:
+        schedules = [s for s in schedules if s["origin"].lower() == origin.lower()]
+    if destination:
+        schedules = [s for s in schedules if s["destination"].lower() == destination.lower()]
+    if date:
+        schedules = [s for s in schedules if s["departure_time"].startswith(date)]
+
+    return {"schedules": schedules}
+
 
 def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
     # Step 1: Mock external booking
