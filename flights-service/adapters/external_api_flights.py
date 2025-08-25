@@ -1,66 +1,130 @@
+import os
+import requests
 from typing import Dict, List, Any
 
 
 class ExternalFlightAPI:
+    def __init__(self):
+        self.base_url = os.getenv("MMBC_BASE_URL")
+        self.user_id = os.getenv("MMBC_USER_ID")
+        self.password = os.getenv("MMBC_PASSWORD")
+        self.agent_code = os.getenv("MMBC_AGENT_CODE")
+        self.timeout = int(os.getenv("MMBC_TIMEOUT_SECONDS", 15))
+
     def check_balance(self, username: str, password: str) -> Dict[str, Any]:
         """
-        Mock check balance.
-        Gantikan dengan pemanggilan API eksternal atau DB sesungguhnya.
+        Mengambil saldo user dari external API.
         """
-        if username == "feri" and password == "password123":
-            return {"balance": 99999, "currency": "IDR"}
-        return {"balance": 0, "currency": "IDR"}
+        try:
+            url = f"{self.base_url}/ceksaldo"
+            payload = {
+                "username": username,
+                "password": password,
+                "agent": self.agent_code,
+                "userid": self.user_id,
+                "pin": self.password,
+            }
+
+            print(f"🔁 [MMBC] POST {url} | payload={payload}")
+            response = requests.post(url, data=payload, timeout=self.timeout)
+
+            print(f"🔎 [MMBC] Status Code: {response.status_code}")
+            print(f"📄 [MMBC] Raw Response: {response.text}")
+
+            response.raise_for_status()  # Raises an HTTPError for bad responses
+
+            try:
+                data = response.json()
+                print(f"✅ [MMBC] Parsed JSON: {data}")
+            except ValueError as json_error:
+                print(f"❌ [MMBC] Failed to parse JSON: {json_error}")
+                return {"balance": 0, "currency": "IDR"}
+
+            if data.get("result") == "ok":
+                balance = int(data.get("saldo", "0").replace(",", "").replace(".", ""))
+                return {"balance": balance, "currency": "IDR"}
+            else:
+                return {"balance": 0, "currency": "IDR"}
+
+        except Exception as e:
+            print(f"❌ [MMBC] Error during check_balance: {e}")
+            return {"balance": 0, "currency": "IDR"}
 
     def get_code_area(self) -> List[Dict[str, str]]:
-        """
-        Mock data kode bandara dan kota.
-        """
-        return [
-            {"code": "CGK", "city": "Jakarta"},
-            {"code": "SUB", "city": "Surabaya"},
-            {"code": "DPS", "city": "Denpasar"},
-        ]
+        try:
+            url = f"{self.base_url}/getcodearea-json"
+            print(f"🌍 [MMBC] GET {url}")
+            response = requests.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"❌ [MMBC] Error in get_code_area: {e}")
+            return []
 
     def get_code_flights(self) -> List[Dict[str, str]]:
-        """
-        Mock data kode dan nama maskapai serta logo.
-        """
-        return [
-            {
-                "flight_code": "A3",
-                "flight_name": "Aegean Airlines",
-                "flight_image": "https://da8hvrloj7e7d.cloudfront.net/imageResource/sample.png",
-            },
-            {
-                "flight_code": "GA",
-                "flight_name": "Garuda Indonesia",
-                "flight_image": "https://example.com/garuda.png",
-            },
-        ]
+        try:
+            url = f"{self.base_url}/getcodeflights-json"
+            print(f"✈️ [MMBC] GET {url}")
+            response = requests.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            data = response.json()
+            print(f"✅ [MMBC] Flights JSON received: {data}")
+            return data
+        except Exception as e:
+            print(f"❌ [MMBC] Error in get_code_flights: {e}")
+            return []
 
     def search_flights(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Mock pencarian penerbangan.
-        Param `params` bisa berisi origin, destination, date, dll.
+        Panggil GET /getflights-json dengan query parameters:
+        username, password, from, to, date (dd-mm-yyyy)
+
+        params harus minimal punya key:
+            - username
+            - password
+            - from
+            - to
+            - date (format dd-mm-yyyy)
+
+        Return list of flights dict atau list kosong jika gagal.
         """
-        # Contoh static hasil, sesuaikan dengan params jika perlu
-        return [
-            {
-                "flight_id": "05",
-                "flight": "Citilink",
-                "flight_code": "QG-724",
-                "flight_image": "https://.../citilink.png",
-                "flight_from": "CGK",
-                "flight_to": "SUB",
-                "flight_route": "CGK-SUB",
-                "flight_date": "2025-08-30",
-                "flight_transit": "Nonstop",
-                "flight_infotransit": "Jakarta(CGK) 18:40 - Surabaya(SUB) 20:20",
-                "flight_datetime": "18:40 - 20:20",
-                "flight_price": "537500",
-                "flight_publishfare": "425000",
-                "flight_seatavail": "7",
-                "flight_baggage": "20 Kg",
-                "flight_facilities": "Meal, In-flight entertainment",
-            }
-        ]
+        url = f"{self.base_url}/getflights-json"
+
+        required_keys = ["username", "password", "from", "to", "date"]
+        if not all(k in params for k in required_keys):
+            print(
+                f"❌ [MMBC] Missing required params for search_flights. Got: {params}"
+            )
+            return []
+
+        query_params = {
+            "username": params["username"],
+            "password": params["password"],
+            "from": params["from"],
+            "to": params["to"],
+            "date": params["date"],
+        }
+
+        try:
+            print(f"✈️ [MMBC] GET {url} with params {query_params}")
+            response = requests.get(url, params=query_params, timeout=self.timeout)
+            response.raise_for_status()
+
+            data = response.json()
+            print(f"✅ [MMBC] Response data: {data}")
+
+            # Jika gagal, biasanya response dict dengan key result = no
+            if isinstance(data, dict) and data.get("result") == "no":
+                print(f"⚠️ [MMBC] Search flights failed: {data.get('reason')}")
+                return []
+
+            # Jika berhasil, data berupa list of dict
+            if isinstance(data, list):
+                return data
+
+            print(f"⚠️ [MMBC] Unexpected response format: {data}")
+            return []
+
+        except Exception as e:
+            print(f"❌ [MMBC] Exception in search_flights: {e}")
+            return []
