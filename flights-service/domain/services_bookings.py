@@ -7,6 +7,7 @@ from domain.schemas_bookings import (
     GetIssuedResponseSuccess, GetIssuedResponseError,
     GetStatusBookingResponse
 )
+from fastapi import HTTPException
 
 class PriceError(Exception):
     def __init__(self, reason: str):
@@ -60,9 +61,10 @@ async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
     result = await mmbc.get_status_booking(kodebooking=kodebooking)
 
     if result.get("result") == "no":
-        raise StatusBookingError(result.get("reason", "Booking not found"))
+        raise HTTPException(status_code=404, detail=result)
 
     return result
+
 
 async def get_eticket_service(kodebooking: str) -> dict:
     result = await mmbc.get_eticket(kodebooking=kodebooking)

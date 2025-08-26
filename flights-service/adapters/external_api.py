@@ -13,15 +13,28 @@ class MMBCClient:
         }
 
     async def _post(self, path: str, payload: dict) -> dict:
-        # MMBC expects form-encoded; include auth in body if required by their spec.
-        body = {"username": self.user, "password": self.password, **payload}
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as c:
-            r = await c.post(f"{self.base}{path}", json=body)
+        body = {
+            "username": self.user,
+            "password": self.password,
+            **payload
+        }
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers, verify=False) as client:
+            r = await client.post(f"{self.base}{path}", data=body)
             text = r.text.strip()
+
             try:
                 return r.json()
             except Exception:
+                # 🔥 Detect 404 with HTML response from MMBC
+                if r.status_code == 404 and "<html>" in text:
+                    return {
+                        "result": "no",
+                        "reason": f"Invalid Kode Booking {payload.get('kodebooking', 'UNKNOWN')}!",
+                    }
+
                 raise RuntimeError(f"Upstream non-JSON (status {r.status_code}, len {len(text)}): {text[:200]}")
+
+
 
     async def reset_password(self, *, username, email, phone, agencode, newpassword):
         return await self._post("/json/resetpassword", {
@@ -43,3 +56,7 @@ class MMBCClient:
 
     async def get_status_booking(self, *, kodebooking):
         return await self._post("/json/getstatusbooking-json", {"kodebooking": kodebooking})
+    
+    async def get_eticket(self, *, kodebooking):
+        return await self._post("/json/getetiket-json", {"kodebooking": kodebooking})
+
