@@ -24,11 +24,12 @@ class TransactionRepository(ABC):
     @abstractmethod
     def get_transactions_by_user(
         self, 
-        user_id: int, 
+        email: str, 
         skip: int = 0, 
-        limit: int = 100
+        limit: int = 100,
+        status: Optional[TransactionStatus] = None
     ) -> List[TransactionInDB]:
-        """Get transactions for a specific user with pagination"""
+        """Get transactions for a specific user with pagination and optional status filter"""
         pass
     
     @abstractmethod
@@ -70,7 +71,7 @@ class OrderRepository(ABC):
     @abstractmethod
     def get_orders_by_user(
         self, 
-        user_id: int, 
+        email: str, 
         status: Optional[OrderStatus] = None,
         skip: int = 0, 
         limit: int = 100
@@ -168,9 +169,19 @@ class RefundRepository(ABC):
         self, 
         refund_id: int, 
         status: RefundStatus,
-        processed_by: Optional[int] = None,
+        processed_by: Optional[str] = None,
         notes: Optional[str] = None
     ) -> Optional[RefundInDB]:
-        """Update refund status and processing information"""
+        """Update refund status and processing information
+        
+        Args:
+            refund_id: The ID of the refund to update
+            status: New status for the refund
+            processed_by: Email of the admin processing the refund
+            notes: Optional notes about the refund
+            
+        Returns:
+            Updated refund record or None if not found
+        """
         pass
 

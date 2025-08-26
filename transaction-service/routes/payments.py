@@ -44,7 +44,7 @@ async def create_payment(
         payment = payment_service.create_payment(
             transaction_id=payment_data.transaction_id,
             payment_data=payment_data,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not payment:
@@ -90,7 +90,7 @@ async def get_payment_details(
         if current_user.role != UserRole.ADMIN:
             # Get associated transaction to check user ownership
             transaction = payment_service.transaction_repo.get_transaction(payment.transaction_id)
-            if not transaction or transaction.user_id != current_user.id:
+            if not transaction or transaction.email != current_user.email:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to view this payment"
@@ -134,7 +134,7 @@ async def confirm_payment(
         payment = payment_service.confirm_payment(
             payment_id=payment_id,
             gateway_response=confirm_data,
-            confirmed_by=current_user.id
+            confirmed_by=current_user.email
         )
         
         if not payment:

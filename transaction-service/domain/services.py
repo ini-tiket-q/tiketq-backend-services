@@ -59,12 +59,12 @@ class TransactionService:
         self.transaction_repo = transaction_repo
         self.order_repo = order_repo
     
-    def create_transaction(self, transaction_request: TransactionCreateRequest, user_id: int) -> Optional[TransactionInDB]:
+    def create_transaction(self, transaction_request: TransactionCreateRequest, email: str) -> Optional[TransactionInDB]:
         """Create a new transaction with validated request model.
         
         Args:
             transaction_request: Validated TransactionCreateRequest model
-            user_id: ID of the user creating the transaction
+            email: Email of the user creating the transaction
             
         Returns:
             TransactionInDB if successful, None otherwise
@@ -91,10 +91,10 @@ class TransactionService:
                 item.model_dump() if hasattr(item, 'model_dump') else dict(item)
                 for item in transaction_request.items
             ]
-            
-            # Create order first
+
+            # Create order data with email
             order_data = {
-                'user_id': user_id,
+                'email': email,
                 'order_number': order_number,
                 'service_type': transaction_request.service_type,
                 'items': items_as_dicts,
@@ -113,7 +113,7 @@ class TransactionService:
             
             # Create transaction using validated request data
             transaction = TransactionCreate(
-                user_id=user_id,
+                email=email,
                 order_id=order.order_number,
                 transaction_type=transaction_request.transaction_type,
                 amount=transaction_request.amount,
@@ -133,7 +133,7 @@ class TransactionService:
             # Log successful transaction creation
             logger.info(
                 f"Transaction created successfully - ID: {db_transaction.id}, "
-                f"User: {user_id}, Amount: {db_transaction.amount} {db_transaction.currency}, "
+                f"Email: {email}, Amount: {db_transaction.amount} {db_transaction.currency}, " 
                 f"Service: {transaction_request.service_type.value}, "
                 f"Order: {order.order_number}, "
                 f"Method: {transaction_request.payment_method.value if transaction_request.payment_method else 'Not set'}, "
@@ -147,19 +147,19 @@ class TransactionService:
             logger.error(f"Error creating transaction: {str(e)}", exc_info=True)
             return None
     
-    def get_transaction(self, transaction_id: int, user_id: int) -> Optional[TransactionInDB]:
+    def get_transaction(self, transaction_id: int, email: str) -> Optional[TransactionInDB]:
         """Get a transaction by ID with authorization check.
         
         Args:
             transaction_id: ID of the transaction to retrieve
-            user_id: ID of the user making the request
+            email: Email of the user making the request
             
         Returns:
             TransactionInDB if found and authorized, None otherwise
         """
         try:
             transaction = self.transaction_repo.get_transaction(transaction_id)
-            if not transaction or transaction.user_id != user_id:
+            if not transaction or transaction.email != email:
                 return None
             return transaction
         except Exception as e:
@@ -168,7 +168,7 @@ class TransactionService:
 
     def get_transactions_by_user(
         self, 
-        user_id: int, 
+        email: str, 
         status: Optional[TransactionStatus] = None,
         skip: int = 0, 
         limit: int = 100
@@ -176,7 +176,7 @@ class TransactionService:
         """Get paginated list of transactions for a user.
         
         Args:
-            user_id: ID of the user
+            email: Email of the user
             status: Optional status filter
             skip: Number of records to skip
             limit: Maximum number of records to return
@@ -186,13 +186,13 @@ class TransactionService:
         """
         try:
             return self.transaction_repo.get_transactions_by_user(
-                user_id=user_id,
+                email=email,
                 status=status,
                 skip=skip,
                 limit=limit
             )
         except Exception as e:
-            logger.error(f"Error retrieving transactions for user {user_id}: {str(e)}")
+            logger.error(f"Error retrieving transactions for user {email}: {str(e)}")
             return []
     
     def get_all_transactions(
@@ -222,14 +222,14 @@ class TransactionService:
         self, 
         transaction_id: int, 
         update_request: TransactionUpdateRequest,
-        user_id: int,  
+        email: str
     ) -> Optional[TransactionInDB]:
         """Update transaction with validated request model.
         
         Args:
             transaction_id: ID of the transaction to update
             update_request: Validated TransactionUpdateRequest model
-            user_id: User ID for authorization
+            email: Email of the user making the request
             
         Returns:
             Updated TransactionInDB if successful, None otherwise
@@ -239,7 +239,7 @@ class TransactionService:
         """
         try:
             transaction_check = self.transaction_repo.get_transaction(transaction_id)
-            if not transaction_check or transaction_check.user_id != user_id:
+            if not transaction_check or transaction_check.email != email:
                 raise ValueError("Transaction not found or access denied")
 
             # Create update data from validated request
@@ -270,7 +270,7 @@ class TransactionService:
             if updated_transaction:
                 logger.info(
                     f"Transaction updated successfully - ID: {transaction_id}, "
-                    f"User: {user_id}, "
+                    f"Email: {email}, "
                     f"Status changed: {original_transaction.status.value if original_transaction.status else 'None'} -> "
                     f"{updated_transaction.status.value if updated_transaction.status else 'None'}, "
                     f"Order: {original_transaction.order_id}, "
@@ -283,7 +283,7 @@ class TransactionService:
             logger.error(f"Error updating transaction {transaction_id}: {str(e)}")
             return None
     
-    def cancel_transaction(self, transaction_id: int, user_id: int) -> Optional[TransactionInDB]:
+    def cancel_transaction(self, transaction_id: int, email: str) -> Optional[TransactionInDB]:
         """Cancel a transaction with logging"""
         try:
             from domain.models import TransactionStatus
@@ -291,21 +291,21 @@ class TransactionService:
             # Create an update request to set status to cancelled
             cancel_request = TransactionUpdateRequest(status=TransactionStatus.CANCELLED)
             
-            result = self.update_transaction(transaction_id, cancel_request, user_id)
+            result = self.update_transaction(transaction_id, cancel_request, email)
             
             if result:
-                logger.info(f"Transaction cancelled: transaction_id={transaction_id}, user_id={user_id}")
+                logger.info(f"Transaction cancelled: transaction_id={transaction_id}, email={email}")
                 
             return result
         except Exception as e:
-            logger.error(f"Failed to cancel transaction {transaction_id} for user {user_id}: {str(e)}")
+            logger.error(f"Failed to cancel transaction {transaction_id} for user {email}: {str(e)}")
             raise
     
     # Delete transaction with authorization check (should be admin)
-    # def delete_transaction(self, transaction_id: int, user_id: int) -> bool:
+    # def delete_transaction(self, transaction_id: int, email: str) -> bool:
     #     """Delete a transaction with authorization check"""
     #     transaction = self.transaction_repo.get_transaction(transaction_id)
-    #     if not transaction or transaction.user_id != user_id:
+    #     if not transaction or transaction.email != email:
     #         return False
             
     #     return self.transaction_repo.delete_transaction(transaction_id)
@@ -323,28 +323,34 @@ class OrderService:
     ):
         self.order_repo = order_repo
     
-    def get_order(self, order_id: int, user_id: int) -> Optional[OrderInDB]:
+    def get_order(self, order_id: int, email: Optional[str] = None) -> Optional[OrderInDB]:
         """Get an order by ID with optional authorization check.
         
         Args:
             order_id: ID of the order to retrieve
-            user_id: Optional user ID for authorization
+            email: Optional user email for authorization
             
         Returns:
-            OrderInDB if found (and authorized if user_id provided), None otherwise
+            OrderInDB if found (and authorized if email provided), None otherwise
         """
         try:
             order = self.order_repo.get_order(order_id)
-            if not order or order.user_id != user_id:
+            if not order:
                 return None
+                
+            # If email is provided, verify the order belongs to this user
+            if email is not None and order.email != email:
+                return None
+                
             return order
+            
         except Exception as e:
             logger.error(f"Error retrieving order {order_id}: {str(e)}")
             return None
     
     def get_orders_by_user(
         self, 
-        user_id: int, 
+        email: str, 
         status: Optional[OrderStatus] = None,
         skip: int = 0, 
         limit: int = 100
@@ -352,7 +358,7 @@ class OrderService:
         """Get paginated list of orders for a user.
         
         Args:
-            user_id: ID of the user
+            email: Email of the user
             status: Optional status filter
             skip: Number of records to skip
             limit: Maximum number of records to return
@@ -362,21 +368,21 @@ class OrderService:
         """
         try:
             return self.order_repo.get_orders_by_user(
-                user_id=user_id,
+                email=email,
                 status=status,
                 skip=skip,
                 limit=limit
             )
         except Exception as e:
-            logger.error(f"Error retrieving orders for user {user_id}: {str(e)}")
+            logger.error(f"Error retrieving orders for user {email}: {str(e)}")
             return []
     
-    def create_order(self, order_request: "OrderCreateRequest", user_id: int) -> Optional[OrderInDB]:
+    def create_order(self, order_request: "OrderCreateRequest", email: str) -> Optional[OrderInDB]:
         """Create a new order with Pydantic validation.
         
         Args:
             order_request: Validated OrderCreateRequest model
-            user_id: ID of the user creating the order
+            email: Email of the user creating the order
             
         Returns:
             OrderInDB if created successfully, None otherwise
@@ -405,7 +411,7 @@ class OrderService:
             
             # Prepare order data
             order_create_data = {
-                "user_id": user_id,
+                "email": email,
                 "service_type": order_request.service_type,
                 "items": transaction_items,
                 "subtotal": subtotal,
@@ -423,7 +429,7 @@ class OrderService:
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
-            logger.error(f"Error creating order for user {user_id}: {str(e)}")
+            logger.error(f"Error creating order for user {email}: {str(e)}")
             logger.error(f"Full traceback: {tb}")
             print(f"TRACEBACK: {tb}")
             return None
@@ -458,14 +464,14 @@ class OrderService:
         self, 
         order_id: int, 
         status_request: "OrderStatusUpdateRequest",
-        user_id: int
+        email: str
     ) -> Optional[OrderInDB]:
         """Update order status with Pydantic validation.
         
         Args:
             order_id: ID of the order to update
             status_request: Validated OrderStatusUpdateRequest model
-            user_id: User ID for authorization
+            email: Email of the user making the request
             
         Returns:
             Updated OrderInDB if successful, None otherwise
@@ -475,7 +481,7 @@ class OrderService:
         """
         try:
             order_check = self.order_repo.get_order(order_id)
-            if not order_check or order_check.user_id != user_id:
+            if not order_check or order_check.email != email:
                 raise ValueError("Order not found or access denied")
                 
             # Create update data from validated request
@@ -501,7 +507,7 @@ class OrderService:
             logger.error(f"Error updating order {order_id}: {str(e)}")
             return None
 
-    # def delete_order(self, order_id: int, user_id: int) -> bool:
+    # def delete_order(self, order_id: int, email: str) -> bool:
                 
 
 class PaymentService:
@@ -523,14 +529,14 @@ class PaymentService:
         self, 
         transaction_id: int,
         payment_data: PaymentCreateRequest,
-        user_id: int
+        email: str
     ) -> Optional[PaymentInDB]:
         """Create a new payment record for a transaction.
         
         Args:
             transaction_id: ID of the transaction to create payment for
             payment_data: Dictionary containing payment details
-            user_id: ID of the user making the payment
+            email: Email of the user making the payment
             
         Returns:
             PaymentInDB if successful, None otherwise
@@ -541,7 +547,7 @@ class PaymentService:
         try:
             # Get and validate transaction
             transaction = self.transaction_repo.get_transaction(transaction_id)
-            if not transaction or transaction.user_id != user_id:
+            if not transaction or transaction.email != email:
                 logger.error(f"Transaction {transaction_id} not found or unauthorized")
                 return None
                 
@@ -574,7 +580,7 @@ class PaymentService:
             # Log successful payment creation
             logger.info(
                 f"Payment created successfully - ID: {db_payment.id}, "
-                f"Transaction: {transaction_id}, User: {user_id}, "
+                f"Transaction: {transaction_id}, Email: {email}, "
                 f"Amount: {db_payment.amount} {db_payment.currency}, "
                 f"Method: {db_payment.payment_method.value}, "
                 f"Gateway: {db_payment.payment_gateway.value}"
@@ -673,14 +679,14 @@ class PaymentService:
         self,
         payment_id: int,
         refund_data: Dict[str, Any],
-        refunded_by: int
+        refunded_by: str
     ) -> Optional[PaymentInDB]:
         """Process a payment refund with validation.
         
         Args:
             payment_id: ID of the payment to refund
             refund_data: Dictionary containing refund details
-            refunded_by: ID of the user processing the refund
+            refunded_by: Email of the user processing the refund
             
         Returns:
             Updated PaymentInDB if successful, None otherwise
@@ -866,14 +872,14 @@ class RefundService:
         self,
         transaction_id: int,
         refund_request: "TransactionRefundRequest",
-        processed_by: int
-    ) -> Optional[Dict[str, Any]]:
+        processed_by: str
+    ) -> Dict[str, Any]:
         """Create a new refund for a transaction.
         
         Args:
             transaction_id: ID of the transaction to refund
             refund_request: Validated refund request data
-            processed_by: ID of the admin processing the refund
+            processed_by: Email of the admin processing the refund
             
         Returns:
             Dict containing refund details if successful, None otherwise
@@ -1036,7 +1042,7 @@ class ReportsService:
                 transaction_type_filter=report_request.transaction_type,
                 min_amount=report_request.min_amount,
                 max_amount=report_request.max_amount,
-                user_id=report_request.user_id,
+                email=report_request.email,
                 currency=report_request.currency
             )
             
@@ -1068,7 +1074,7 @@ class ReportsService:
             transaction_data = [
                 TransactionReportData(
                     transaction_id=t.id,
-                    user_id=t.user_id,
+                    email=t.email,
                     order_id=t.order_id,
                     transaction_type=t.transaction_type,
                     amount=t.amount,
@@ -1185,7 +1191,7 @@ class ReportsService:
                 RefundReportData(
                     refund_id=r.id,
                     transaction_id=r.transaction_id,
-                    user_id=r.user_id if hasattr(r, 'user_id') else 0,  # Get from transaction if needed
+                    email=r.email if hasattr(r, 'email') else None,  # Get from transaction if needed
                     amount=r.amount,
                     reason=r.reason,
                     status=r.status,

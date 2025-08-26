@@ -79,7 +79,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
     order_id = Column(String(255), unique=True, nullable=False, index=True)
     transaction_type = Column(Enum(TransactionType), nullable=False)
     amount = Column(Float, nullable=False)
@@ -105,7 +105,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
     order_number = Column(String(255), unique=True, nullable=False, index=True)
     service_type = Column(Enum(ServiceType), nullable=False)
     items = Column(JSON, nullable=False)
@@ -150,7 +150,7 @@ class Refund(Base):
     amount = Column(Float, nullable=False)
     reason = Column(Text, nullable=False)
     status = Column(Enum(RefundStatus), default=RefundStatus.PENDING, nullable=False)
-    processed_by = Column(Integer, nullable=True)
+    processed_by = Column(String(255), nullable=True)
     processed_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -172,7 +172,7 @@ class DBTransactionRepository(TransactionRepository):
         now = datetime.now(timezone.utc)
         
         db_transaction = Transaction(
-            user_id=transaction.user_id,
+            email=transaction.email,  
             order_id=transaction.order_id,
             transaction_type=transaction.transaction_type.value,
             amount=float(transaction.amount),
@@ -206,18 +206,15 @@ class DBTransactionRepository(TransactionRepository):
         return self._to_domain_model(db_transaction) if db_transaction else None
 
     def get_transactions_by_user(
-        self, user_id: int, skip: int = 0, limit: int = 100, status: Optional[TransactionStatus] = None
+        self, email: str, skip: int = 0, limit: int = 100, status: Optional[TransactionStatus] = None
     ) -> List[TransactionInDB]:
-        db_transactions = (
-            self.db.query(Transaction)
-            .filter(Transaction.user_id == user_id)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+        query = self.db.query(Transaction).filter(Transaction.email == email)
+        
         if status:
-            db_transactions = db_transactions.filter(Transaction.status == status.value)
-        return [self._to_domain_model(t) for t in db_transactions]
+            query = query.filter(Transaction.status == status.value)
+            
+        transactions = query.offset(skip).limit(limit).all()
+        return [self._to_domain_model(t) for t in transactions]
     
     def get_transactions(
         self, skip: int = 0, limit: int = 100
@@ -288,7 +285,7 @@ class DBTransactionRepository(TransactionRepository):
             
         return TransactionInDB(
             id=db_transaction.id,
-            user_id=db_transaction.user_id,
+            email=db_transaction.email,  
             order_id=db_transaction.order_id,
             transaction_type=TransactionType(db_transaction.transaction_type),
             amount=db_transaction.amount,
@@ -312,7 +309,7 @@ class DBTransactionRepository(TransactionRepository):
 
     def get_transactions_for_report(self, start_date, end_date, status_filter=None, 
                                    transaction_type_filter=None, min_amount=None, 
-                                   max_amount=None, user_id=None, currency=None):
+                                   max_amount=None, email=None, currency=None):
         """Get transactions for reporting with filters"""
         query = self.db.query(Transaction).filter(
             Transaction.created_at >= start_date,
@@ -343,8 +340,8 @@ class DBTransactionRepository(TransactionRepository):
         if max_amount is not None:
             query = query.filter(Transaction.amount <= max_amount)
         
-        if user_id is not None:
-            query = query.filter(Transaction.user_id == user_id)
+        if email is not None:
+            query = query.filter(Transaction.email == email)
         
         if currency:
             query = query.filter(Transaction.currency == currency)
@@ -415,15 +412,15 @@ class DBOrderRepository(OrderRepository):
             # Create the order with current timestamps
             now = datetime.now(timezone.utc)
             db_order = Order(
-                user_id=order.user_id,
+                email=order.email,  
                 order_number=order.order_number,
-                service_type=order.service_type,
+                service_type=order.service_type.value,
                 items=items_as_dicts,
                 subtotal=order.subtotal,
                 tax=order.tax,
                 discount=order.discount,
                 total=order.total,
-                status=order.status,
+                status=order.status.value,
                 meta_data=order.metadata,
                 created_at=now,
                 updated_at=now,
@@ -446,12 +443,12 @@ class DBOrderRepository(OrderRepository):
 
     def get_orders_by_user(
         self,
-        user_id: int,
+        email: str,
         status: Optional[OrderStatus] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> List[OrderInDB]:
-        query = self.db.query(Order).filter(Order.user_id == user_id)
+        query = self.db.query(Order).filter(Order.email == email)
         
         if status is not None:
             query = query.filter(Order.status == status)
@@ -521,7 +518,7 @@ class DBOrderRepository(OrderRepository):
         
         return OrderInDB(
             id=db_order.id,
-            user_id=db_order.user_id,
+            email=db_order.email,  
             order_number=db_order.order_number,
             service_type=db_order.service_type,
             items=db_order.items,

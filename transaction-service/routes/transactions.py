@@ -91,7 +91,7 @@ async def create_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=0,  # Will be updated after creation
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=transaction_request.amount,
             currency=transaction_request.currency,
@@ -110,7 +110,7 @@ async def create_transaction(
         
         transaction = service.create_transaction(
             transaction_request=transaction_request,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not transaction:
@@ -118,7 +118,7 @@ async def create_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=0,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 amount=transaction_request.amount,
                 currency=transaction_request.currency,
@@ -136,7 +136,7 @@ async def create_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=transaction.id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=transaction.amount,
             currency=transaction.currency,
@@ -166,10 +166,10 @@ async def create_transaction(
             context={
                 "operation": "create_transaction",
                 "validation_error": True,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "amount": transaction_request.amount
             },
-            user_id=current_user.id,
+            email=current_user.email,
             endpoint="/transactions/"
         )
         
@@ -183,11 +183,11 @@ async def create_transaction(
             error=e,
             context={
                 "operation": "create_transaction",
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "amount": transaction_request.amount,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             endpoint="/transactions/"
         )
         
@@ -216,7 +216,7 @@ async def list_transactions(
         audit_logger.log_api_request(
             method="GET",
             endpoint="/transactions/",
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             ip_address=request_context.get("ip_address"),
             user_agent=request_context.get("user_agent")
@@ -232,7 +232,7 @@ async def list_transactions(
             # Log admin access to all transactions
             audit_logger.log_security_event(
                 event_type=AuditEventType.API_REQUEST,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Admin accessed all transactions (count: {len(transactions)})",
                 details={
@@ -246,7 +246,7 @@ async def list_transactions(
         else:
             # Regular users can only see their own transactions
             transactions = service.get_transactions_by_user(
-                user_id=current_user.id,
+                email=current_user.email,
                 skip=skip,
                 limit=limit
             )
@@ -255,7 +255,7 @@ async def list_transactions(
             audit_logger.log_api_request(
                 method="GET",
                 endpoint="/transactions/",
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 duration_ms=(time.time() - start_time) * 1000,
                 status_code=200,
@@ -271,12 +271,12 @@ async def list_transactions(
             error=e,
             context={
                 "operation": "list_transactions",
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "skip": skip,
                 "limit": limit,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             endpoint="/transactions/"
         )
         
@@ -304,7 +304,7 @@ async def get_transaction(
         audit_logger.log_api_request(
             method="GET",
             endpoint=f"/transactions/{transaction_id}",
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             ip_address=request_context.get("ip_address"),
             user_agent=request_context.get("user_agent")
@@ -312,14 +312,14 @@ async def get_transaction(
         
         transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not transaction:
             # Log unauthorized access attempt
             audit_logger.log_security_event(
                 event_type=AuditEventType.UNAUTHORIZED_ACCESS,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Unauthorized access to transaction {transaction_id}",
                 details={
@@ -339,7 +339,7 @@ async def get_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.API_REQUEST,
             transaction_id=transaction.id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=transaction.amount,
             currency=transaction.currency,
@@ -364,10 +364,10 @@ async def get_transaction(
             context={
                 "operation": "get_transaction",
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}"
         )
@@ -397,7 +397,7 @@ async def update_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_UPDATED,
             transaction_id=transaction_id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             details={
                 "operation": "update_transaction",
@@ -413,14 +413,14 @@ async def update_transaction(
         # First check if transaction exists and user has access
         existing_transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not existing_transaction:
             # Log unauthorized access
             audit_logger.log_security_event(
                 event_type=AuditEventType.UNAUTHORIZED_ACCESS,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Unauthorized update attempt on transaction {transaction_id}",
                 details={
@@ -437,17 +437,17 @@ async def update_transaction(
             )
         
         # Check access rights
-        if current_user.role != UserRole.ADMIN and existing_transaction.user_id != current_user.id:
+        if current_user.role != UserRole.ADMIN and existing_transaction.email != current_user.email:
             # Log permission denied
             audit_logger.log_security_event(
                 event_type=AuditEventType.PERMISSION_DENIED,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Permission denied for transaction {transaction_id} update",
                 details={
                     "transaction_id": transaction_id,
-                    "transaction_owner": existing_transaction.user_id,
-                    "requesting_user": current_user.id
+                    "transaction_owner": existing_transaction.email,
+                    "requesting_user": current_user.email
                 },
                 request_context=request_context
             )
@@ -461,7 +461,7 @@ async def update_transaction(
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=update_request,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not updated_transaction:
@@ -469,7 +469,7 @@ async def update_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=transaction_id,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 details={
                     "operation": "update_transaction",
@@ -488,7 +488,7 @@ async def update_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_UPDATED,
             transaction_id=updated_transaction.id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=updated_transaction.amount,
             currency=updated_transaction.currency,
@@ -520,9 +520,9 @@ async def update_transaction(
                 "operation": "update_transaction",
                 "validation_error": True,
                 "transaction_id": transaction_id,
-                "user_id": current_user.id
+                "email": current_user.email,
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}"
         )
@@ -538,10 +538,10 @@ async def update_transaction(
             context={
                 "operation": "update_transaction",
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}"
         )
@@ -570,7 +570,7 @@ async def cancel_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CANCELLED,
             transaction_id=transaction_id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             details={
                 "operation": "cancel_transaction",
@@ -582,14 +582,14 @@ async def cancel_transaction(
         # First check if transaction exists and user has access
         existing_transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not existing_transaction:
             # Log unauthorized cancellation attempt
             audit_logger.log_security_event(
                 event_type=AuditEventType.UNAUTHORIZED_ACCESS,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Unauthorized cancellation attempt on transaction {transaction_id}",
                 details={
@@ -606,17 +606,17 @@ async def cancel_transaction(
             )
         
         # Check access rights
-        if current_user.role != UserRole.ADMIN and existing_transaction.user_id != current_user.id:
+        if current_user.role != UserRole.ADMIN and existing_transaction.email != current_user.email:
             # Log permission denied
             audit_logger.log_security_event(
                 event_type=AuditEventType.PERMISSION_DENIED,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Permission denied for transaction {transaction_id} cancellation",
                 details={
                     "transaction_id": transaction_id,
-                    "transaction_owner": existing_transaction.user_id,
-                    "requesting_user": current_user.id
+                    "transaction_owner": existing_transaction.email,
+                    "requesting_user": current_user.email
                 },
                 request_context=request_context
             )
@@ -632,7 +632,7 @@ async def cancel_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=transaction_id,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 amount=existing_transaction.amount,
                 currency=existing_transaction.currency,
@@ -656,7 +656,7 @@ async def cancel_transaction(
         cancelled_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=cancel_request,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not cancelled_transaction:
@@ -664,7 +664,7 @@ async def cancel_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=transaction_id,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 details={
                     "operation": "cancel_transaction",
@@ -683,7 +683,7 @@ async def cancel_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CANCELLED,
             transaction_id=cancelled_transaction.id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=cancelled_transaction.amount,
             currency=cancelled_transaction.currency,
@@ -710,10 +710,10 @@ async def cancel_transaction(
             context={
                 "operation": "cancel_transaction",
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}/cancel"
         )
@@ -751,7 +751,7 @@ async def refund_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_REFUNDED,
             transaction_id=transaction_id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=refund_request.amount,
             details={
@@ -776,7 +776,7 @@ async def refund_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=transaction_id,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 details={
                     "operation": "process_refund",
@@ -795,7 +795,7 @@ async def refund_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_REFUNDED,
             transaction_id=transaction_id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=refund["amount"],
             details={
@@ -815,7 +815,7 @@ async def refund_transaction(
         # Also log business event for compliance
         audit_logger.log_security_event(
             event_type=AuditEventType.BUSINESS_EVENT if hasattr(AuditEventType, 'BUSINESS_EVENT') else AuditEventType.API_REQUEST,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             message=f"Refund processed: {refund['amount']:.2f} IDR for transaction {transaction_id}",
             details={
@@ -846,10 +846,10 @@ async def refund_transaction(
                 "operation": "process_refund",
                 "validation_error": True,
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "refund_amount": refund_request.amount
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}/refund"
         )
@@ -867,11 +867,11 @@ async def refund_transaction(
             context={
                 "operation": "process_refund",
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "refund_amount": refund_request.amount,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}/refund"
         )

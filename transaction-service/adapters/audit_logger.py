@@ -79,7 +79,7 @@ class AuditLogEntry:
     version: str = "1.0.0"
     
     # User context
-    user_id: Optional[int] = None
+    email: Optional[str] = None
     user_role: Optional[str] = None
     session_id: Optional[str] = None
     
@@ -224,7 +224,7 @@ class AuditLogger:
         self,
         event_type: AuditEventType,
         transaction_id: int,
-        user_id: int,
+        email: str,
         user_role: str,
         amount: Optional[float] = None,
         currency: str = "IDR",
@@ -244,9 +244,9 @@ class AuditLogger:
         
         # Build message
         messages = {
-            AuditEventType.TRANSACTION_CREATED: f"Transaction {transaction_id} created by user {user_id}",
-            AuditEventType.TRANSACTION_UPDATED: f"Transaction {transaction_id} updated by user {user_id}",
-            AuditEventType.TRANSACTION_CANCELLED: f"Transaction {transaction_id} cancelled by user {user_id}",
+            AuditEventType.TRANSACTION_CREATED: f"Transaction {transaction_id} created by {email}",
+            AuditEventType.TRANSACTION_UPDATED: f"Transaction {transaction_id} updated by {email}",
+            AuditEventType.TRANSACTION_CANCELLED: f"Transaction {transaction_id} cancelled by {email}",
             AuditEventType.TRANSACTION_REFUNDED: f"Transaction {transaction_id} refunded",
             AuditEventType.TRANSACTION_COMPLETED: f"Transaction {transaction_id} completed successfully",
             AuditEventType.TRANSACTION_FAILED: f"Transaction {transaction_id} failed"
@@ -264,17 +264,17 @@ class AuditLogger:
         
         # Check for high-value transaction
         if amount and amount >= AuditConfig.HIGH_VALUE_THRESHOLD:
-            self._log_high_value_transaction(transaction_id, user_id, amount, currency)
+            self._log_high_value_transaction(transaction_id, email, amount, currency)
         
         # Check for compliance requirements
         if amount and AuditConfig.requires_compliance_review(amount):
-            self._log_compliance_alert(transaction_id, user_id, amount, currency, "HIGH_VALUE_COMPLIANCE")
+            self._log_compliance_alert(transaction_id, email, amount, currency, "HIGH_VALUE_COMPLIANCE")
         
         entry = AuditLogEntry(
             timestamp=datetime.now(timezone.utc).isoformat(),
             event_type=event_type.value,
             level=level.value,
-            user_id=user_id,
+            email=email,
             user_role=user_role,
             transaction_id=transaction_id,
             order_id=order_id,
@@ -293,7 +293,7 @@ class AuditLogger:
     def log_security_event(
         self,
         event_type: AuditEventType,
-        user_id: Optional[int] = None,
+        email: Optional[str] = None,
         user_role: Optional[str] = None,
         message: str = "",
         details: Optional[Dict[str, Any]] = None,
@@ -305,7 +305,7 @@ class AuditLogger:
             timestamp=datetime.now(timezone.utc).isoformat(),
             event_type=event_type.value,
             level=AuditLogLevel.SECURITY.value,
-            user_id=user_id,
+            email=email,
             user_role=user_role,
             message=message,
             details=details,
@@ -321,7 +321,7 @@ class AuditLogger:
         self,
         method: str,
         endpoint: str,
-        user_id: Optional[int] = None,
+        email: Optional[str] = None,
         user_role: Optional[str] = None,
         request_id: Optional[str] = None,
         duration_ms: Optional[float] = None,
@@ -349,7 +349,7 @@ class AuditLogger:
             timestamp=datetime.now(timezone.utc).isoformat(),
             event_type=AuditEventType.API_REQUEST.value,
             level=level.value,
-            user_id=user_id,
+            email=email,
             user_role=user_role,
             request_id=request_id,
             endpoint=endpoint,
@@ -367,7 +367,7 @@ class AuditLogger:
         self,
         error: Exception,
         context: Optional[Dict[str, Any]] = None,
-        user_id: Optional[int] = None,
+        email: Optional[str] = None,
         transaction_id: Optional[int] = None,
         endpoint: Optional[str] = None
     ):
@@ -383,7 +383,7 @@ class AuditLogger:
             timestamp=datetime.now(timezone.utc).isoformat(),
             event_type=AuditEventType.ERROR_OCCURRED.value,
             level=AuditLogLevel.ERROR.value,
-            user_id=user_id,
+            email=email,
             transaction_id=transaction_id,
             endpoint=endpoint,
             message=str(error),
@@ -397,7 +397,7 @@ class AuditLogger:
     def _log_high_value_transaction(
         self,
         transaction_id: int,
-        user_id: int,
+        email: str,
         amount: float,
         currency: str
     ):
@@ -407,7 +407,7 @@ class AuditLogger:
             timestamp=datetime.now(timezone.utc).isoformat(),
             event_type=AuditEventType.HIGH_VALUE_TRANSACTION.value,
             level=AuditLogLevel.BUSINESS.value,
-            user_id=user_id,
+            email=email,
             transaction_id=transaction_id,
             amount=amount,
             currency=currency,
@@ -426,7 +426,7 @@ class AuditLogger:
     def _log_compliance_alert(
         self,
         transaction_id: int,
-        user_id: int,
+        email: str,
         amount: float,
         currency: str,
         alert_type: str
@@ -437,7 +437,7 @@ class AuditLogger:
             timestamp=datetime.now(timezone.utc).isoformat(),
             event_type=AuditEventType.HIGH_VALUE_TRANSACTION.value,  # Reuse existing event type
             level=AuditLogLevel.CRITICAL.value,
-            user_id=user_id,
+            email=email,
             transaction_id=transaction_id,
             amount=amount,
             currency=currency,
@@ -467,9 +467,9 @@ def audit_transaction_operation(event_type: AuditEventType):
                 duration_ms = (time.time() - start_time) * 1000
                 
                 # Extract audit context from function arguments
-                # This assumes certain parameter naming conventions
-                user_id = kwargs.get('current_user', {}).id if hasattr(kwargs.get('current_user', {}), 'id') else None
-                user_role = kwargs.get('current_user', {}).role if hasattr(kwargs.get('current_user', {}), 'role') else None
+                current_user = kwargs.get('current_user', {})
+                email = getattr(current_user, 'email', None)
+                user_role = getattr(current_user, 'role', None)
                 transaction_id = kwargs.get('transaction_id')
                 
                 if hasattr(result, 'id'):
@@ -478,7 +478,7 @@ def audit_transaction_operation(event_type: AuditEventType):
                 audit_logger.log_transaction_event(
                     event_type=event_type,
                     transaction_id=transaction_id,
-                    user_id=user_id,
+                    email=email,
                     user_role=user_role.value if user_role else None,
                     details={"operation_duration_ms": duration_ms}
                 )
@@ -486,6 +486,8 @@ def audit_transaction_operation(event_type: AuditEventType):
                 return result
             except Exception as e:
                 duration_ms = (time.time() - start_time) * 1000
+                current_user = kwargs.get('current_user', {})
+                email = getattr(current_user, 'email', None)
                 audit_logger.log_error(
                     error=e,
                     context={
@@ -493,7 +495,7 @@ def audit_transaction_operation(event_type: AuditEventType):
                         "operation_duration_ms": duration_ms,
                         "event_type": event_type.value
                     },
-                    user_id=kwargs.get('current_user', {}).id if hasattr(kwargs.get('current_user', {}), 'id') else None,
+                    email=email,
                     transaction_id=kwargs.get('transaction_id')
                 )
                 raise
@@ -506,8 +508,9 @@ def audit_transaction_operation(event_type: AuditEventType):
                 duration_ms = (time.time() - start_time) * 1000
                 
                 # Extract audit context from function arguments
-                user_id = kwargs.get('current_user', {}).id if hasattr(kwargs.get('current_user', {}), 'id') else None
-                user_role = kwargs.get('current_user', {}).role if hasattr(kwargs.get('current_user', {}), 'role') else None
+                current_user = kwargs.get('current_user', {})
+                email = getattr(current_user, 'email', None)
+                user_role = getattr(current_user, 'role', None)
                 transaction_id = kwargs.get('transaction_id')
                 
                 if hasattr(result, 'id'):
@@ -516,7 +519,7 @@ def audit_transaction_operation(event_type: AuditEventType):
                 audit_logger.log_transaction_event(
                     event_type=event_type,
                     transaction_id=transaction_id,
-                    user_id=user_id,
+                    email=email,
                     user_role=user_role.value if user_role else None,
                     details={"operation_duration_ms": duration_ms}
                 )
@@ -524,6 +527,8 @@ def audit_transaction_operation(event_type: AuditEventType):
                 return result
             except Exception as e:
                 duration_ms = (time.time() - start_time) * 1000
+                current_user = kwargs.get('current_user', {})
+                email = getattr(current_user, 'email', None)
                 audit_logger.log_error(
                     error=e,
                     context={
@@ -531,7 +536,7 @@ def audit_transaction_operation(event_type: AuditEventType):
                         "operation_duration_ms": duration_ms,
                         "event_type": event_type.value
                     },
-                    user_id=kwargs.get('current_user', {}).id if hasattr(kwargs.get('current_user', {}), 'id') else None,
+                    email=email,
                     transaction_id=kwargs.get('transaction_id')
                 )
                 raise

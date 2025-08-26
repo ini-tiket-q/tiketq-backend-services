@@ -10,6 +10,7 @@ from domain.services import (
     OrderService,
     get_database_session,
     create_order_service,
+    require_admin,
     require_user_or_admin
 )
 
@@ -64,7 +65,7 @@ async def create_order(
         print(f"ROUTE DEBUG: Current user: {current_user}")
         
         # Create order using validated request model
-        order = service.create_order(order_request, current_user.id)
+        order = service.create_order(order_request, current_user.email)
         
         if not order:
             raise HTTPException(
@@ -113,7 +114,7 @@ async def list_orders(
         else:
             # Regular users can only see their own orders
             orders = service.get_orders_by_user(
-                user_id=current_user.id,
+                email=current_user.email,
                 status=status_filter,
                 skip=skip,
                 limit=limit
@@ -138,7 +139,7 @@ async def get_order(
     try:
         order = service.get_order(
             order_id=order_id,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not order:
@@ -148,7 +149,7 @@ async def get_order(
             )
         
         # Check access rights - users can only see their own orders
-        if current_user.role != "admin" and order.user_id != current_user.id:
+        if current_user.role != "admin" and order.email != current_user.email:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this order"
@@ -170,7 +171,7 @@ async def get_order(
 async def update_order_status(
     order_id: int,
     status_request: OrderStatusUpdateRequest,
-    current_user = Depends(require_user_or_admin),
+    current_user = Depends(require_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Update order status - ADMIN access only"""
@@ -180,7 +181,7 @@ async def update_order_status(
         # Check if order exists
         existing_order = service.get_order(
             order_id=order_id,
-            user_id=current_user.id  # Admin can access any order
+            email=current_user.email  # Admin can access any order
         )
         
         if not existing_order:
@@ -193,7 +194,7 @@ async def update_order_status(
         updated_order = service.update_order_status(
             order_id=order_id,
             status_request=status_request,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not updated_order:
