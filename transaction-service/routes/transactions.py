@@ -19,8 +19,7 @@ from adapters.db import (
 )
 
 from adapters.audit_logger import (
-    audit_logger, AuditEventType, extract_request_context, 
-    audit_transaction_operation
+    audit_logger, AuditEventType, extract_request_context
 )
 
 router = APIRouter(tags=["transactions"])

@@ -15,6 +15,10 @@ PUBLIC_ROUTES = {
     "/auth/login",
     "/auth/register",
     "/auth/verify-token",
+    "/payments",
+    "/webhooks/payment",
+    "/transactions",
+    "/orders"
 }
 
 # Load auth service URL

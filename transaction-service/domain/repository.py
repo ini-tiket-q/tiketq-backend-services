@@ -105,6 +105,11 @@ class OrderRepository(ABC):
     ) -> Optional[OrderInDB]:
         """Update order with full data"""
         pass
+        
+    @abstractmethod
+    def get_order_by_order_number(self, order_number: str) -> Optional[OrderInDB]:
+        """Find an order by its order number"""
+        pass
 
 class PaymentRepository(ABC):
     """Abstract base class for payment data access"""

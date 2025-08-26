@@ -508,6 +508,13 @@ class DBOrderRepository(OrderRepository):
         self.db.refresh(db_order)
         return self._to_domain_model(db_order)
 
+    def get_order_by_order_number(self, order_number: str) -> Optional[OrderInDB]:
+        """Find an order by its order number"""
+        db_order = self.db.query(Order).filter(Order.order_number == order_number).first()
+        if not db_order:
+            return None
+        return self._to_domain_model(db_order)
+
     def _to_domain_model(self, db_order: Order) -> OrderInDB:
         # Ensure updated_at is never None
         updated_at = db_order.updated_at or db_order.created_at or datetime.now(timezone.utc)

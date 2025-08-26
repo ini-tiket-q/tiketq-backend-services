@@ -73,8 +73,12 @@ class TransactionService:
             ValueError: If validation fails or required data is missing
         """
         try:
-            # Generate order number
-            order_number = f"ORD-{str(uuid4())[:8].upper()}"
+            # Generate unique order number
+            while True:
+                order_number = f"ORD-{str(uuid4())[:8].upper()}"
+                # Check if order number already exists
+                if not self.order_repo.get_order_by_order_number(order_number):
+                    break
             
             # Use validated amounts from request
             subtotal = transaction_request.subtotal

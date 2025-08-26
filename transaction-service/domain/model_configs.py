@@ -4,7 +4,7 @@ This file contains reusable model configurations, examples, and validation schem
 that can be used across different models to maintain consistency.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
 class ModelExamples:
