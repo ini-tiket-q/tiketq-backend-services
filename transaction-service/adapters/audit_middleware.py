@@ -63,7 +63,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
                 event_type=AuditEventType.UNAUTHORIZED_ACCESS if http_error.status_code == 401 
                          else AuditEventType.PERMISSION_DENIED if http_error.status_code == 403
                          else AuditEventType.ERROR_OCCURRED,
-                user_id=user_context.get("user_id"),
+                email=user_context.get("email"),
                 user_role=user_context.get("user_role"),
                 message=f"HTTP {http_error.status_code}: {http_error.detail}",
                 details={
@@ -90,7 +90,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
                     "endpoint": request_context.get("endpoint"),
                     "method": request_context.get("method")
                 },
-                user_id=user_context.get("user_id"),
+                email=user_context.get("email"),
                 endpoint=request_context.get("endpoint")
             )
             
@@ -113,7 +113,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
     
     async def _extract_user_context(self, request: Request) -> Dict[str, Any]:
         """Extract user context from request"""
-        user_context = {"user_id": None, "user_role": None}
+        user_context = {"email": None, "user_role": None}
         
         try:
             # Try to extract from Authorization header
@@ -179,7 +179,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         audit_logger.log_api_request(
             method=request_context.get("method", "UNKNOWN"),
             endpoint=request_context.get("endpoint", "UNKNOWN"),
-            user_id=user_context.get("user_id"),
+            email=user_context.get("email"),
             user_role=user_context.get("user_role"),
             request_id=request_id,
             duration_ms=duration_ms,
@@ -194,7 +194,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             audit_logger.log_api_request(
                 method=request_context.get("method", "UNKNOWN"),
                 endpoint=request_context.get("endpoint", "UNKNOWN"),
-                user_id=user_context.get("user_id"),
+                email=user_context.get("email"),
                 duration_ms=duration_ms,
                 status_code=status_code,
                 ip_address=request_context.get("ip_address"),
@@ -240,7 +240,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         if suspicious_indicators:
             audit_logger.log_security_event(
                 event_type=AuditEventType.SUSPICIOUS_ACTIVITY,
-                user_id=user_context.get("user_id"),
+                email=user_context.get("email"),
                 user_role=user_context.get("user_role"),
                 message=f"Suspicious activity detected: {', '.join(suspicious_indicators)}",
                 details={

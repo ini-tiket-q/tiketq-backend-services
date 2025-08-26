@@ -4,7 +4,7 @@ This file contains reusable model configurations, examples, and validation schem
 that can be used across different models to maintain consistency.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
 class ModelExamples:
@@ -201,6 +201,7 @@ class ModelConfigs:
             "json_schema_extra": {
                 "examples": [
                     {
+                        "email": "john.doe@example.com",
                         "transaction_id": 1,
                         "amount": 1565000,
                         "currency": "IDR",
@@ -214,6 +215,7 @@ class ModelConfigs:
                         }
                     },
                     {
+                        "email": "jane.smith@example.com",
                         "transaction_id": 2,
                         "amount": 495000,
                         "currency": "IDR",
