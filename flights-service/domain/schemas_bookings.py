@@ -131,6 +131,8 @@ class MMBCErrorResponse(BaseModel):
 
 # ===  Get Price ===
 class GetPriceRequest(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
     flight: str = Field(..., example="JT-792")
     from_: str = Field(..., alias="from", example="CGK")
     to: str = Field(..., example="DPS")
@@ -153,6 +155,8 @@ class GetPriceResponse(BaseModel):
 
 # ===  Post Booking ===
 class PostBookingRequest(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
     flight: str = Field(..., example="JT-792")
     from_: str = Field(..., alias="from", example="CGK")
     to: str = Field(..., example="DPS")
@@ -169,15 +173,76 @@ class PostBookingRequest(BaseModel):
 
 class PostBookingResponse(BaseModel):
     result: str
-    kodebooking: Optional[str]
-    reason: Optional[str]
+    tid: str
+    tanggal: str
+    flight: str
+    flight_code: str
+    kodebooking: str
+    flight_route: str
+    flight_departure: str
+    flight_time: str
+    flight_transit: str
+    flight_infotransit: str
+    flight_class: str
+    flight_totalpassenger: str
+    flight_datapassengers_json: str
+    flight_contactdetails_json: str
+    flight_currency: str
+    flight_publishfare: str
+    flight_tax: str
+    flight_totalfare: str
+    flight_realnta: str
+    flight_shownta: str
+    flight_bonus_agen: str
+    flight_timelimit: str
+    flight_bookingby: str
+    flight_bookingby_kodeagen: str
+    flight_issued_date: str
+    flight_issued_ticketnumber: str
+    flight_issuedby: str
+    flight_issuedby_kodeagen: str
+    flight_statusbooking: str
+    reason: Optional[str] = ""
+
 
 
 # ===  Get Issued ===
 class GetIssuedResponseSuccess(BaseModel):
     result: str
-    kodebooking: str
-    flight_statusbooking: str
+    tid: Optional[str]
+    tanggal: Optional[str]
+    flight: Optional[str]
+    flight_code: Optional[str]
+    kodebooking: Optional[str]
+    flight_route: Optional[str]
+    flight_departure: Optional[str]
+    flight_time: Optional[str]
+    flight_transit: Optional[str]
+    flight_infotransit: Optional[str]
+    flight_class: Optional[str]
+    flight_totalpassenger: Optional[str]
+    flight_datapassengers_json: Optional[Any]
+    flight_contactdetails_json: Optional[Any]
+    flight_currency: Optional[str]
+    flight_publishfare: Optional[str]
+    flight_tax: Optional[str]
+    flight_totalfare: Optional[str]
+    flight_realnta: Optional[str]
+    flight_shownta: Optional[str]
+    flight_bonus_agen: Optional[str]
+    flight_timelimit: Optional[str]
+    flight_bookingby: Optional[str]
+    flight_bookingby_kodeagen: Optional[str]
+    flight_issued_date: Optional[str]
+    flight_issued_ticketnumber: Optional[str]
+    flight_issuedby: Optional[str]
+    flight_issuedby_kodeagen: Optional[str]
+    flight_statusbooking: Optional[str]
+
+
+class GetStatusBookingResponse(GetIssuedResponseSuccess):
+    pass  # Same structure
+
 
 class GetIssuedResponseError(BaseModel):
     result: str = "no"
