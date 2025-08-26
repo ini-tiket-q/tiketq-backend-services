@@ -9,8 +9,11 @@ from adapters.transaction_api import (
     update_transaction_status
 )
 from domain.models import FerryBookingRequest, FerryBookingResponse
-from adapters.external_api import create_ferry_booking
-from adapters.external_api import get_mock_schedules
+from adapters.external_api import create_ferry_booking, get_mock_schedules, list_bookings
+
+def get_all_bookings():
+    return list_bookings()
+
 
 def get_ferry_schedules(origin: str = None, destination: str = None, date: str = None):
     schedules = get_mock_schedules()

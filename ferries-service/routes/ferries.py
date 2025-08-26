@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from domain.models import FerryBookingRequest, FerryBookingResponse
 from domain import services
 from fastapi import APIRouter, Query
-from domain.services import get_ferry_schedules
+from domain.services import get_ferry_schedules, get_all_bookings
 
 
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
@@ -40,3 +40,12 @@ def update_transaction(transaction_id: str, status: str):
         return tx
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+    
+# ✅ Admin endpoints
+@router.get("/bookings")
+def list_all_bookings():
+    """
+    Get all mock ferry bookings (admin view).
+    """
+    return get_all_bookings()

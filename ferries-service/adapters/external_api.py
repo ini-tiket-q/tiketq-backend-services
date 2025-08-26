@@ -1,6 +1,14 @@
 import uuid
 from domain.models import Passenger
 from datetime import datetime, timedelta
+import os
+import requests
+from dotenv import load_dotenv
+
+
+# In-memory store
+mock_bookings = []
+
 
 def get_mock_schedules():
     return [
@@ -125,7 +133,7 @@ def create_ferry_booking(schedule_id: str, passengers: list[Passenger]):
             }
         })
 
-    return {
+    booking = {
         "booking_id": booking_id,
         "status": "incomplete",
         "subtotal": subtotal,
@@ -138,3 +146,10 @@ def create_ferry_booking(schedule_id: str, passengers: list[Passenger]):
             "passenger_count": len(passengers)
         }
     }
+
+    mock_bookings.append(booking)
+    return booking
+
+
+def list_bookings():
+    return mock_bookings
