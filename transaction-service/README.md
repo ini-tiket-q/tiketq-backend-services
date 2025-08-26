@@ -77,7 +77,7 @@ The service follows the Hexagonal Architecture pattern:
 CREATE TABLE transactions (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    order_id VARCHAR(255) UNIQUE NOT NULL,
+    order_number VARCHAR(255) UNIQUE NOT NULL,
     transaction_type VARCHAR(50) NOT NULL,
     amount DECIMAL(10,2) NOT NULL,
     currency VARCHAR(3) DEFAULT 'IDR',

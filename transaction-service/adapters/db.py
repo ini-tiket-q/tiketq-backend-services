@@ -80,7 +80,7 @@ class Transaction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), nullable=False, index=True)
-    order_id = Column(String(255), unique=True, nullable=False, index=True)
+    order_number = Column(String(255), unique=True, nullable=False, index=True)
     transaction_type = Column(Enum(TransactionType), nullable=False)
     amount = Column(Float, nullable=False)
     currency = Column(Enum(Currency), default=Currency.IDR, nullable=False)
@@ -173,7 +173,7 @@ class DBTransactionRepository(TransactionRepository):
         
         db_transaction = Transaction(
             email=transaction.email,  
-            order_id=transaction.order_id,
+            order_number=transaction.order_number,
             transaction_type=transaction.transaction_type.value,
             amount=float(transaction.amount),
             currency=transaction.currency,
@@ -286,7 +286,7 @@ class DBTransactionRepository(TransactionRepository):
         return TransactionInDB(
             id=db_transaction.id,
             email=db_transaction.email,  
-            order_id=db_transaction.order_id,
+            order_number=db_transaction.order_number,
             transaction_type=TransactionType(db_transaction.transaction_type),
             amount=db_transaction.amount,
             currency=db_transaction.currency,

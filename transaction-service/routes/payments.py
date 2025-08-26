@@ -35,16 +35,14 @@ def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentS
 )
 async def create_payment(
     payment_data: PaymentCreateRequest = Body(...),
-    current_user = Depends(require_user_or_admin),
     payment_service: PaymentService = Depends(get_payment_service),
-    db: Session = Depends(get_database_session)
 ):
     """Create payment - USER/ADMIN access"""
     try:
         payment = payment_service.create_payment(
             transaction_id=payment_data.transaction_id,
             payment_data=payment_data,
-            email=current_user.email
+            email=payment_data.email
         )
         
         if not payment:

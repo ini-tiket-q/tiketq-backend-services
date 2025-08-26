@@ -164,6 +164,30 @@ async def get_order(
             detail=f"Failed to retrieve order {str(e)}"
         )
 
+@router.get("/orders/public/{order_number}", response_model=OrderInDB)
+async def get_order_by_number(
+    order_number: str,
+    service: OrderService = Depends(get_order_service),
+):
+    """Get order details by order number - public access"""
+    try:
+        order = service.get_order_by_number(order_number=order_number)
+
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+            )
+
+        return order
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve order {str(e)}",
+        )
+
 @router.put(
     "/orders/{order_id}/status", 
     response_model=OrderInDB

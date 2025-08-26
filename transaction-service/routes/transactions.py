@@ -44,11 +44,11 @@ def get_refund_service(db: Session = Depends(get_database_session)) -> RefundSer
 )
 async def create_transaction(
     request: Request,
-    current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service),
     transaction_request: TransactionCreateRequest = Body(
         ...,
         example={
+            "email": "john.doe@example.com",
             "transaction_type": "BOOKING",
             "amount": 885000,
             "currency": "IDR",
@@ -91,8 +91,7 @@ async def create_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=0,  # Will be updated after creation
-            email=current_user.email,
-            user_role=current_user.role.value,
+            email=transaction_request.email,
             amount=transaction_request.amount,
             currency=transaction_request.currency,
             details={
@@ -110,7 +109,7 @@ async def create_transaction(
         
         transaction = service.create_transaction(
             transaction_request=transaction_request,
-            email=current_user.email
+            email=transaction_request.email
         )
         
         if not transaction:
@@ -118,8 +117,7 @@ async def create_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=0,
-                email=current_user.email,
-                user_role=current_user.role.value,
+                email=transaction_request.email,
                 amount=transaction_request.amount,
                 currency=transaction_request.currency,
                 details={"error": "Failed to create transaction in service layer"},
@@ -136,11 +134,10 @@ async def create_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=transaction.id,
-            email=current_user.email,
-            user_role=current_user.role.value,
+            email=transaction_request.email,
             amount=transaction.amount,
             currency=transaction.currency,
-            order_id=transaction.order_id,
+            order_number=transaction.order_number,
             status=transaction.status.value,
             details={
                 "transaction_type": transaction.transaction_type.value,
@@ -166,10 +163,10 @@ async def create_transaction(
             context={
                 "operation": "create_transaction",
                 "validation_error": True,
-                "email": current_user.email,
+                "email": transaction_request.email,
                 "amount": transaction_request.amount
             },
-            email=current_user.email,
+            email=transaction_request.email,
             endpoint="/transactions/"
         )
         
@@ -183,11 +180,11 @@ async def create_transaction(
             error=e,
             context={
                 "operation": "create_transaction",
-                "email": current_user.email,
+                "email": transaction_request.email,
                 "amount": transaction_request.amount,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            email=current_user.email,
+            email=transaction_request.email,
             endpoint="/transactions/"
         )
         
@@ -343,7 +340,7 @@ async def get_transaction(
             user_role=current_user.role.value,
             amount=transaction.amount,
             currency=transaction.currency,
-            order_id=transaction.order_id,
+            order_number=transaction.order_number,
             status=transaction.status.value,
             details={
                 "operation": "get_transaction",
@@ -385,7 +382,7 @@ async def update_transaction(
     transaction_id: int,
     update_request: TransactionUpdateRequest,
     request: Request,
-    current_user: dict = Depends(require_user_or_admin),
+    current_user: dict = Depends(require_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Update transaction - USER/ADMIN access"""
@@ -436,27 +433,6 @@ async def update_transaction(
                 detail="Transaction not found"
             )
         
-        # Check access rights
-        if current_user.role != UserRole.ADMIN and existing_transaction.email != current_user.email:
-            # Log permission denied
-            audit_logger.log_security_event(
-                event_type=AuditEventType.PERMISSION_DENIED,
-                email=current_user.email,
-                user_role=current_user.role.value,
-                message=f"Permission denied for transaction {transaction_id} update",
-                details={
-                    "transaction_id": transaction_id,
-                    "transaction_owner": existing_transaction.email,
-                    "requesting_user": current_user.email
-                },
-                request_context=request_context
-            )
-            
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this transaction"
-            )
-        
         # Update transaction using validated request model
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
@@ -492,7 +468,7 @@ async def update_transaction(
             user_role=current_user.role.value,
             amount=updated_transaction.amount,
             currency=updated_transaction.currency,
-            order_id=updated_transaction.order_id,
+            order_number=updated_transaction.order_number,
             status=updated_transaction.status.value,
             details={
                 "operation": "update_transaction",
@@ -687,7 +663,7 @@ async def cancel_transaction(
             user_role=current_user.role.value,
             amount=cancelled_transaction.amount,
             currency=cancelled_transaction.currency,
-            order_id=cancelled_transaction.order_id,
+            order_number=cancelled_transaction.order_number,
             status=cancelled_transaction.status.value,
             details={
                 "operation": "cancel_transaction",

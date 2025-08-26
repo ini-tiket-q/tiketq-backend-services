@@ -86,6 +86,7 @@ class TransactionItem(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "email": "customer@example.com",
                 "name": "Jakarta to Bali Flight",
                 "price": 850000,
                 "quantity": 1,
@@ -128,7 +129,7 @@ class TransactionItem(BaseModel):
 
 class TransactionBase(BaseModel):
     email: str = Field(..., description="Email of the user who made the transaction", max_length=255)
-    order_id: str = Field(default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}")
+    order_number: str = Field(default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}")
     transaction_type: TransactionType
     amount: float
     currency: Currency = Currency.IDR
@@ -283,6 +284,11 @@ class RefundInDB(RefundBase):
 class PaymentCreateRequest(BaseModel):
     """Request model for creating payments with validation"""
 
+    email: str = Field(
+        ...,
+        max_length=255,
+        description="Email of the user making the payment"
+    )
     transaction_id: int = Field(
         ..., gt=0, description="Transaction ID must be positive"
     )
@@ -437,6 +443,7 @@ class TransactionCreateRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "email": "customer@example.com",
                 "transaction_type": "BOOKING",
                 "amount": 885000,
                 "currency": "IDR",
@@ -469,6 +476,11 @@ class TransactionCreateRequest(BaseModel):
                 }
             }
         }
+    )
+    email: str = Field(
+        ...,
+        max_length=255,
+        description="Email of the user making the transaction"
     )
     transaction_type: TransactionType = Field(
         ..., 

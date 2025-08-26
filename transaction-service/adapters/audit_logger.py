@@ -92,7 +92,7 @@ class AuditLogEntry:
     
     # Business context
     transaction_id: Optional[int] = None
-    order_id: Optional[str] = None
+    order_number: Optional[str] = None
     payment_id: Optional[int] = None
     amount: Optional[float] = None
     currency: Optional[str] = None
@@ -225,10 +225,10 @@ class AuditLogger:
         event_type: AuditEventType,
         transaction_id: int,
         email: str,
-        user_role: str,
+        user_role: Optional[str] = None,
         amount: Optional[float] = None,
         currency: str = "IDR",
-        order_id: Optional[str] = None,
+        order_number: Optional[str] = None,
         status: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
         request_context: Optional[Dict[str, str]] = None
@@ -277,7 +277,7 @@ class AuditLogger:
             email=email,
             user_role=user_role,
             transaction_id=transaction_id,
-            order_id=order_id,
+            order_number=order_number,
             amount=amount,
             currency=currency,
             message=message,

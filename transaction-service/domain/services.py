@@ -114,7 +114,7 @@ class TransactionService:
             # Create transaction using validated request data
             transaction = TransactionCreate(
                 email=email,
-                order_id=order.order_number,
+                order_number=order.order_number,
                 transaction_type=transaction_request.transaction_type,
                 amount=transaction_request.amount,
                 currency=transaction_request.currency,
@@ -340,12 +340,35 @@ class OrderService:
                 
             # If email is provided, verify the order belongs to this user
             if email is not None and order.email != email:
-                return None
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this order"
+                )
                 
             return order
             
         except Exception as e:
             logger.error(f"Error retrieving order {order_id}: {str(e)}")
+            return None
+
+    def get_order_by_number(self, order_number: str) -> Optional[OrderInDB]:
+        """Get an order by order number with optional authorization check.
+        
+        Args:
+            order_number: order number to retrieve
+            
+        Returns:
+            OrderInDB if found (and authorized if email provided), None otherwise
+        """
+        try:
+            order = self.order_repo.get_order_by_order_number(order_number)
+            if not order:
+                return None
+             
+            return order
+            
+        except Exception as e:
+            logger.error(f"Error retrieving order {order_number}: {str(e)}")
             return None
     
     def get_orders_by_user(

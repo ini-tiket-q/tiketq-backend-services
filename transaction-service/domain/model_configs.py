@@ -201,6 +201,7 @@ class ModelConfigs:
             "json_schema_extra": {
                 "examples": [
                     {
+                        "email": "john.doe@example.com",
                         "transaction_id": 1,
                         "amount": 1565000,
                         "currency": "IDR",
@@ -214,6 +215,7 @@ class ModelConfigs:
                         }
                     },
                     {
+                        "email": "jane.smith@example.com",
                         "transaction_id": 2,
                         "amount": 495000,
                         "currency": "IDR",
