@@ -40,7 +40,14 @@ def get_refund_service(db: Session = Depends(get_database_session)) -> RefundSer
 @router.post(
     "/transactions/", 
     response_model=TransactionInDB,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new transaction",
+    description="""
+    Create a new transaction.
+    
+    ### Access Level: Public
+    - No authentication required
+    """
 )
 async def create_transaction(
     request: Request,
@@ -195,7 +202,15 @@ async def create_transaction(
 
 @router.get(
     "/transactions/", 
-    response_model=List[TransactionInDB]
+    response_model=List[TransactionInDB],
+    summary="List all transactions",
+    description="""
+    Retrieve a list of transactions.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Regular users cannot access this endpoint
+    """
 )
 async def list_transactions(
     request: Request,
@@ -284,7 +299,16 @@ async def list_transactions(
 
 @router.get(
     "/transactions/{transaction_id}", 
-    response_model=TransactionInDB
+    response_model=TransactionInDB,
+    summary="Get transaction details by ID",
+    description="""
+    Retrieve details of a specific transaction by its ID.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only access their own transactions
+    - Admins can access any transaction
+    """
 )
 async def get_transaction(
     transaction_id: int,
@@ -376,7 +400,15 @@ async def get_transaction(
 
 @router.put(
     "/transactions/{transaction_id}", 
-    response_model=TransactionInDB
+    response_model=TransactionInDB,
+    summary="Update transaction details",
+    description="""
+    Update an existing transaction's details.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Used for administrative updates to transactions
+    """
 )
 async def update_transaction(
     transaction_id: int,
@@ -529,7 +561,17 @@ async def update_transaction(
 
 @router.post(
     "/transactions/{transaction_id}/cancel", 
-    response_model=TransactionInDB
+    response_model=TransactionInDB,
+    summary="Cancel a transaction",
+    description="""
+    Cancel an existing transaction.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only cancel their own transactions
+    - Admins can cancel any transaction
+    - Only PENDING or PROCESSING transactions can be cancelled
+    """
 )
 async def cancel_transaction(
     transaction_id: int,
@@ -702,7 +744,21 @@ async def cancel_transaction(
 @router.post(
     "/transactions/{transaction_id}/refund", 
     response_model=dict,
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
+    summary="Process a refund for a transaction",
+    description="""
+    Process a refund for a completed transaction.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Used for processing refunds for completed transactions
+    
+    ### Parameters:
+    - **transaction_id**: ID of the transaction to refund
+    - **amount**: Optional amount to refund (defaults to full amount)
+    - **reason**: Reason for the refund (required)
+    - **notes**: Additional notes about the refund (optional)
+    """
 )
 async def refund_transaction(
     transaction_id: int,

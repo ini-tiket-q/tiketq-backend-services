@@ -31,7 +31,14 @@ def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentS
 @router.post(
     "/payments/", 
     response_model=PaymentInDB,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new payment",
+    description="""
+    Create a new payment for a transaction.
+    
+    ### Access Level: Public
+    - No authentication required
+    """
 )
 async def create_payment(
     payment_data: PaymentCreateRequest = Body(...),
@@ -67,7 +74,16 @@ async def create_payment(
 
 @router.get(
     "/payments/{payment_id}", 
-    response_model=PaymentInDB
+    response_model=PaymentInDB,
+    summary="Get payment details by ID",
+    description="""
+    Retrieve details of a specific payment by its ID.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only view their own payments
+    - Admins can view any payment
+    """
 )
 async def get_payment_details(
     payment_id: int,
@@ -106,7 +122,15 @@ async def get_payment_details(
 
 @router.post(
     "/payments/{payment_id}/confirm",
-    response_model=PaymentInDB
+    response_model=PaymentInDB,
+    summary="Confirm a payment",
+    description="""
+    Confirm a payment that was initiated.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Used to confirm successful payments
+    """
 )
 async def confirm_payment(
     payment_id: int,
@@ -157,7 +181,15 @@ async def confirm_payment(
 
 @router.post(
     "/payments/{payment_id}/refund",
-    response_model=PaymentInDB
+    response_model=PaymentInDB,
+    summary="Process a payment refund",
+    description="""
+    Process a refund for a completed payment.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Used for processing refunds for completed payments
+    """
 )
 async def process_payment_refund(
     payment_id: int,
@@ -194,7 +226,15 @@ async def process_payment_refund(
 
 @router.post(
     "/webhooks/payment",
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
+    summary="Payment webhook endpoint",
+    description="""
+    Webhook endpoint for payment gateway callbacks.
+    
+    ### Access Level: Public
+    - No authentication required
+    - Used by payment gateways to send payment status updates
+    """
 )
 async def payment_webhook(
     webhook_request: PaymentWebhookRequest = Body(...),
