@@ -29,9 +29,10 @@ class MMBCClient:
             "password": self.password,
             **payload
         }
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers, verify=False) as client:
             res = await client.post(f"{self.base}{path}", data=body)
             text = res.text.strip()
+            print(f"[MMBC Raw Response] {text[:300]}", flush=True)
             try:
                 return res.json()
             except Exception:
