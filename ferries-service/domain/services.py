@@ -14,14 +14,6 @@ def get_ferry_routes(search: str = None):
     return {"routes": records}
 
 
-# def get_ferry_trips(origin: str, destination: str, date: str):
-#     """
-#     Ambil daftar trip / jadwal ferry dari API Sindo.
-#     """
-#     data = get_sindo_trips(origin, destination, date)
-#     records = data.get("data", {}).get("records", [])
-#     return {"trips": records}
-
 def get_ferry_trips(origin: str, destination: str, date: str):
     """
     Ambil daftar trip / jadwal ferry dari API Sindo.
@@ -50,23 +42,4 @@ def get_ferry_schedules(origin: str = None, destination: str = None, date: str =
     else:
         return get_ferry_routes()
 
-
-
-
-# def handle_ferry_booking(request: FerryBookingRequest):
-#     booking_res = create_sindo_booking(
-#         request.schedule_id,
-#         request.passengers,
-#         request.requirements.dict()
-#     )
-
-#     # simpan di local memory (opsional)
-#     _local_bookings.append(booking_res)
-
-#     return booking_res
-
-
-# def get_all_bookings():
-#     """Return local cache bookings (not official Sindo API)."""
-#     return _local_bookings
 

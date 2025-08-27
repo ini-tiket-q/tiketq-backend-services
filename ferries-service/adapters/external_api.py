@@ -92,26 +92,3 @@ def get_sindo_trips(origin_code: str, destination_code: str, departure_date: str
 
 
 
-
-# # ======================
-# # BOOKING
-# # ======================
-# def create_sindo_booking(schedule_id: str, passengers: list[Passenger], requirements: dict):
-#     """
-#     Create booking ke Sindo Ferry
-#     - passengers: list of Passenger (pydantic model)
-#     - requirements: BookingRequirements dict
-#     """
-#     url = f"{SINDO_CORE_URL}/Order/Booking"
-
-#     payload = {
-#         "scheduleId": schedule_id,
-#         "passengers": [p.dict() for p in passengers],
-#         "contact": requirements
-#     }
-
-#     resp = requests.post(url, headers=_get_headers(), json=payload)
-#     resp.raise_for_status()
-#     return resp.json()
-
-
