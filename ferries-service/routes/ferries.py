@@ -5,22 +5,41 @@ from domain import services
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
 
 
-# ==========================
-# Schedules
-# ==========================
+# # ==========================
+# # Schedules
+# # ==========================
+# @router.get("/schedules")
+# def list_schedules(
+#     origin: str = Query(None, description="Origin port ID"),
+#     destination: str = Query(None, description="Destination port ID"),
+#     date: str = Query(None, description="Departure date (YYYY-MM-DD)")
+# ):
+#     """
+#     Ambil jadwal ferry dari Sindo API.
+#     - Jika hanya `origin` diberikan → return daftar route
+#     - Jika `origin`, `destination`, dan `date` diberikan → return trips
+#     """
+#     try:
+#         return services.get_ferry_schedules(origin, destination, date)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/schedules")
 def list_schedules(
-    origin: str = Query(None, description="Origin port ID"),
-    destination: str = Query(None, description="Destination port ID"),
+    origin: str = Query(None, description="Origin port code (ex: BTC)"),
+    destination: str = Query(None, description="Destination port code (ex: HFC)"),
     date: str = Query(None, description="Departure date (YYYY-MM-DD)")
 ):
     """
-    Ambil jadwal ferry dari Sindo API.
-    - Jika hanya `origin` diberikan → return daftar route
-    - Jika `origin`, `destination`, dan `date` diberikan → return trips
+    Ambil jadwal ferry:
+    - Tanpa query → daftar routes
+    - Dengan query (origin, destination, date) → daftar trips
     """
     try:
-        return services.get_ferry_schedules(origin, destination, date)
+        if origin and destination and date:
+            return services.get_ferry_trips(origin, destination, date)
+        else:
+            return services.get_ferry_routes()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

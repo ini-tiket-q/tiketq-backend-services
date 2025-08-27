@@ -61,6 +61,35 @@ def get_sindo_routes(search: str = None):
     return resp.json()
 
 
+def get_sindo_trips(origin_code: str, destination_code: str, departure_date: str):
+    global _access_token
+    if not _access_token:
+        sindo_login()
+
+    # url = f"{SINDO_CORE_URL}/Trips/GetTripWeb"
+    url = "https://core.test.sindoferry.com.sg/api/Trips/GetTripWeb"
+
+    params = {
+        "embarkation": origin_code,      # ex: BTC
+        "destination": destination_code, # ex: HFC
+        "tripdate": departure_date          # format: YYYY-MM-DD
+    }
+
+    headers = {
+        "Authorization": f"Bearer {_access_token}",
+        "Content-Type": "application/json"
+    }
+
+    resp = requests.get(url, headers=headers, params=params, timeout=15)
+
+    if resp.status_code == 401:
+        sindo_login()
+        headers["Authorization"] = f"Bearer {_access_token}"
+        resp = requests.get(url, headers=headers, params=params, timeout=15)
+
+    resp.raise_for_status()
+    return resp.json()
+
 
 
 
