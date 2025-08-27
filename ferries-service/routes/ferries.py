@@ -5,7 +5,7 @@ from domain import services
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
 
 
-@router.get("/schedules")
+@router.get("/routes")
 def list_schedules(
     origin: str = Query(None, description="Origin port code (ex: BTC)"),
     destination: str = Query(None, description="Destination port code (ex: HFC)"),
