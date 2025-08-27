@@ -1,51 +1,51 @@
-from fastapi import APIRouter, HTTPException
-from domain.models import FerryBookingRequest, FerryBookingResponse
+from fastapi import APIRouter, HTTPException, Query
+from domain.models import FerryBookingRequest
 from domain import services
-from fastapi import APIRouter, Query
-from domain.services import get_ferry_schedules, get_all_bookings
-
 
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
 
+
+# ==========================
+# Schedules
+# ==========================
 @router.get("/schedules")
 def list_schedules(
-    origin: str = Query(None),
-    destination: str = Query(None),
-    date: str = Query(None)
+    origin: str = Query(None, description="Origin port ID"),
+    destination: str = Query(None, description="Destination port ID"),
+    date: str = Query(None, description="Departure date (YYYY-MM-DD)")
 ):
-    return get_ferry_schedules(origin, destination, date)
-
-@router.post("/book", response_model=FerryBookingResponse)
-def book_ferry(req: FerryBookingRequest):
-    return services.handle_ferry_booking(req)
-
-@router.get("/transactions")
-def list_all_transactions():
     """
-    Get all mock transactions (for testing admin dashboard)
-    """
-    return services.get_all_transactions()
-
-
-@router.put("/transactions/{transaction_id}")
-def update_transaction(transaction_id: str, status: str):
-    """
-    Update transaction status (mock).
-    Example: paid, failed, cancelled
+    Ambil jadwal ferry dari Sindo API.
+    - Jika hanya `origin` diberikan → return daftar route
+    - Jika `origin`, `destination`, dan `date` diberikan → return trips
     """
     try:
-        tx = services.update_transaction_status(transaction_id, status)
-        if not tx:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        return tx
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    
-    
-# ✅ Admin endpoints
-@router.get("/bookings")
-def list_all_bookings():
-    """
-    Get all mock ferry bookings (admin view).
-    """
-    return get_all_bookings()
+        return services.get_ferry_schedules(origin, destination, date)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# # ==========================
+# # Booking
+# # ==========================
+# @router.post("/book")
+# def book_ferry(req: FerryBookingRequest):
+#     """
+#     Buat booking ferry di Sindo API.
+#     """
+#     try:
+#         return services.handle_ferry_booking(req)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
+
+# # ==========================
+# # Admin/debug (local cache)
+# # ==========================
+# @router.get("/bookings")
+# def list_all_bookings():
+#     """
+#     Get all cached ferry bookings (local memory).
+#     Hanya untuk debug, bukan data resmi dari Sindo.
+#     """
+#     return services.get_all_bookings()

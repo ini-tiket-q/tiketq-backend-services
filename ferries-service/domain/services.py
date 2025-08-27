@@ -1,57 +1,42 @@
-
 from domain.models import FerryBookingRequest, FerryBookingResponse
-from adapters.external_api import create_ferry_booking
-from adapters.transaction_api import create_transaction, list_transactions
+from adapters.external_api import get_sindo_routes
 
-from adapters.transaction_api import (
-    create_transaction, 
-    list_transactions, 
-    update_transaction_status
-)
-from domain.models import FerryBookingRequest, FerryBookingResponse
-from adapters.external_api import create_ferry_booking, get_mock_schedules, list_bookings
 
-def get_all_bookings():
-    return list_bookings()
+# Booking list local cache (opsional, bisa dipakai untuk debug)
+_local_bookings = []
+
 
 
 def get_ferry_schedules(origin: str = None, destination: str = None, date: str = None):
-    schedules = get_mock_schedules()
+    # Ambil routes dari API Sindo
+    data = get_sindo_routes()
+    records = data.get("data", {}).get("records", [])
 
+    # Filter manual (origin/destination) kalau diperlukan
     if origin:
-        schedules = [s for s in schedules if s["origin"].lower() == origin.lower()]
+        records = [r for r in records if r["name"].lower().startswith(origin.lower())]
     if destination:
-        schedules = [s for s in schedules if s["destination"].lower() == destination.lower()]
-    if date:
-        schedules = [s for s in schedules if s["departure_time"].startswith(date)]
+        records = [r for r in records if r["name"].lower().endswith(destination.lower())]
 
-    return {"schedules": schedules}
+    return {"schedules": records}
 
 
-def handle_ferry_booking(request: FerryBookingRequest) -> FerryBookingResponse:
-    # Step 1: Mock external booking
-    booking_res = create_ferry_booking(request.schedule_id, request.passengers)
-
-    booking_id = booking_res["booking_id"]
-    total = booking_res["total"]
-
-    # Step 2: Mock transaction
-    transaction_res = create_transaction(booking_id, total)
-
-    return FerryBookingResponse(
-        booking_id=booking_id,
-        status="incomplete",
-        subtotal=booking_res["subtotal"],
-        tax=booking_res["tax"],
-        discount=booking_res["discount"],
-        total=total,
-        items=booking_res["items"],
-        metadata=booking_res["metadata"],
-    )
 
 
-def get_all_transactions():
-    return list_transactions()
+# def handle_ferry_booking(request: FerryBookingRequest):
+#     booking_res = create_sindo_booking(
+#         request.schedule_id,
+#         request.passengers,
+#         request.requirements.dict()
+#     )
 
-def change_transaction_status(transaction_id: str, new_status: str):
-    return update_transaction_status(transaction_id, new_status)
+#     # simpan di local memory (opsional)
+#     _local_bookings.append(booking_res)
+
+#     return booking_res
+
+
+# def get_all_bookings():
+#     """Return local cache bookings (not official Sindo API)."""
+#     return _local_bookings
+
