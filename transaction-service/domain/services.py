@@ -218,6 +218,82 @@ class TransactionService:
             logger.error(f"Error retrieving all transactions: {str(e)}")
             return []
     
+    def search_transactions_by_email(
+        self,
+        search_email: str,
+        status_filter: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+        admin_email: str = None
+    ) -> List[TransactionInDB]:
+        """Search transactions by email with validation (admin function).
+        
+        Args:
+            search_email: Email address to search for transactions
+            status_filter: Optional status string to filter by
+            skip: Number of records to skip for pagination
+            limit: Maximum number of records to return
+            admin_email: Email of the admin performing the search (for logging)
+            
+        Returns:
+            List of TransactionInDB objects
+            
+        Raises:
+            ValueError: If validation fails (invalid status, email format, etc.)
+        """
+        try:
+            # Validate email format
+            if not search_email or not search_email.strip():
+                raise ValueError("Search email cannot be empty")
+            
+            # Basic email format validation
+            import re
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, search_email.strip()):
+                raise ValueError(f"Invalid email format: {search_email}")
+            
+            # Validate and convert status filter
+            status_enum = None
+            if status_filter:
+                try:
+                    status_enum = TransactionStatus(status_filter.upper())
+                except ValueError:
+                    valid_statuses = [s.value for s in TransactionStatus]
+                    raise ValueError(f"Invalid status value: {status_filter}. Valid values are: {valid_statuses}")
+            
+            # Validate pagination parameters
+            if skip < 0:
+                raise ValueError("Skip parameter cannot be negative")
+            if limit <= 0 or limit > 1000:  # Set reasonable upper limit
+                raise ValueError("Limit must be between 1 and 1000")
+            
+            # Get transactions using existing service method with validation
+            transactions = self.get_transactions_by_user(
+                email=search_email.strip().lower(),
+                status=status_enum,
+                skip=skip,
+                limit=limit
+            )
+            
+            # Log successful search for audit purposes
+            logger.info(
+                f"Admin search completed - Admin: {admin_email}, "
+                f"Search email: {search_email}, Status: {status_filter}, "
+                f"Results: {len(transactions)}, Skip: {skip}, Limit: {limit}"
+            )
+            
+            return transactions
+            
+        except ValueError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            logger.error(
+                f"Error in admin transaction search - Admin: {admin_email}, "
+                f"Search email: {search_email}, Error: {str(e)}"
+            )
+            raise ValueError(f"Failed to search transactions: {str(e)}")
+    
     def update_transaction(
         self, 
         transaction_id: int, 
