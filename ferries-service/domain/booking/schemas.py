@@ -29,13 +29,13 @@ class PassengerRead(PassengerBase):
 class BookingBase(BaseModel):
     user_id: str
     trip_id: int
-    return_trip_id: Optional[int] = None
+    return_trip_id: Optional[int] = None #nullable FK
     passenger_count: int
     payment_provider: str
     payment_reference: str
     gateway_transaction_id: str
     status: str = "PENDING"
-    metadata: Optional[dict] = None
+    metadata: Optional[dict] = None # optional JSON
 
 
 class BookingCreate(BookingBase):
@@ -48,7 +48,7 @@ class BookingRead(BookingBase):
     agent_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
-    passengers: List[PassengerRead] = []
+    passengers: Optional[List[PassengerRead]] = []
 
     class Config:
         from_attributes = True

@@ -32,12 +32,12 @@ class FerryClass(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    ferry_id: Mapped[int] = mapped_column(ForeignKey("ferries.id"))
+    ferry_id: Mapped[int] = mapped_column(ForeignKey("ferries.id"), nullable=True)
     class_name: Mapped[str] = mapped_column(String, nullable=False)
     seat_capacity: Mapped[int] = mapped_column(Integer, nullable=False)
     price_base: Mapped[float] = mapped_column(DECIMAL(10, 2), nullable=False)
 
-    ferry: Mapped["Ferry"] = relationship("Ferry", back_populates="classes")
+    ferry: Mapped["Ferry"] = relationship("Ferry", back_populates="classes", lazy="joined") #optional
     trips: Mapped[list["Trip"]] = relationship("Trip", back_populates="ferry_class")
     
     def __repr__(self):

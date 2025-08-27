@@ -68,8 +68,8 @@ class Trip(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     route_id: Mapped[int] = mapped_column(ForeignKey("routes.id"), nullable=False)
     ferry_id: Mapped[int] = mapped_column(ForeignKey("ferries.id"), nullable=False)
-    sector_id: Mapped[int] = mapped_column(ForeignKey("sectors.id"), nullable=False)
-    ferry_class_id: Mapped[int] = mapped_column(ForeignKey("ferry_classes.id"), nullable=False)
+    sector_id: Mapped[int] = mapped_column(ForeignKey("sectors.id"), nullable=True)
+    ferry_class_id: Mapped[int] = mapped_column(ForeignKey("ferry_classes.id"), nullable=True)
     departure_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     arrival_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     price_override: Mapped[float | None] = mapped_column(DECIMAL(10, 2))
@@ -80,8 +80,8 @@ class Trip(Base):
 
     route = relationship("Route", back_populates="trips")
     ferry = relationship("Ferry", back_populates="trips")
-    sector = relationship("Sector", back_populates="trips")
-    ferry_class = relationship("FerryClass", back_populates="trips")
+    sector = relationship("Sector", back_populates="trips", lazy="joined") #optional
+    ferry_class = relationship("FerryClass", back_populates="trips", lazy="joined") #optional
     bookings: Mapped[list["Booking"]] = relationship("Booking", back_populates="trip")
 
 

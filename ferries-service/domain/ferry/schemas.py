@@ -11,12 +11,12 @@ class FerryClassBase(BaseModel):
 
 
 class FerryClassCreate(FerryClassBase):
-    ferry_id: int
+    ferry_id: Optional[int] = None  # nullable FK
 
 
 class FerryClassRead(FerryClassBase):
     id: int
-    ferry_id: int
+    ferry_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -35,7 +35,7 @@ class FerryCreate(FerryBase):
 
 class FerryRead(FerryBase):
     id: int
-    classes: List[FerryClassRead] = []
+    classes: Optional[List[FerryClassRead]] = []
 
     class Config:
         from_attributes = True

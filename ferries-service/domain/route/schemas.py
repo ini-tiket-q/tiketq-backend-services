@@ -1,7 +1,7 @@
 rom __future__ import annotations
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date, time
+from datetime import date, datetime, time
 
 
 # ---------- Port ----------
@@ -62,8 +62,8 @@ class SectorRead(SectorBase):
 class TripBase(BaseModel):
     route_id: int
     ferry_id: int
-    sector_id: int
-    ferry_class_id: int
+    sector_id: Optional[int] = None       # nullable FK
+    ferry_class_id: Optional[int] = None  # nullable FK
     departure_datetime: datetime
     arrival_datetime: datetime
     price_override: Optional[float] = None
