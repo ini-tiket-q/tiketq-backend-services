@@ -232,35 +232,43 @@ class DBTransactionRepository(TransactionRepository):
 
     def update_transaction(
         self, transaction_id: int, transaction: TransactionUpdate
-    ) -> Optional[TransactionInDB]:
+    ) -> Optional[TransactionInDB] | None:
         db_transaction = (
             self.db.query(Transaction).filter(Transaction.id == transaction_id).first()
         )
+        try:
+            if not db_transaction:
+                return None
 
-        if not db_transaction:
-            return None
+            update_data = transaction.dict(exclude_unset=True)
+            for field, value in update_data.items():
+                # metadata should be added, not replaced with the new value. or deleted if the value is None
+                if field == "metadata" and value is not None:
+                    if db_transaction.meta_data is None:
+                        db_transaction.meta_data = {}
+                    db_transaction.meta_data.update(value)
+                elif hasattr(db_transaction, field):
+                    setattr(db_transaction, field, value)
 
-        update_data = transaction.dict(exclude_unset=True)
-        for field, value in update_data.items():
-            # metadata should be added, not replaced with the new value. or deleted if the value is None
-            if field == "metadata" and value is not None:
-                if db_transaction.meta_data is None:
-                    db_transaction.meta_data = {}
-                db_transaction.meta_data.update(value)
-            elif hasattr(db_transaction, field):
-                setattr(db_transaction, field, value)
-
-        self.db.commit()
-        self.db.refresh(db_transaction)
-        return self._to_domain_model(db_transaction)
+            self.db.commit()
+            self.db.refresh(db_transaction)
+            return self._to_domain_model(db_transaction)
+        except Exception as e:
+            self.db.rollback()
+            raise e
+        
 
     def delete_transaction(self, transaction_id: int) -> bool:
-        result = (
-            self.db.query(Transaction).filter(Transaction.id == transaction_id).delete()
-        )
-        self.db.commit()
-        # result = 1 if 1 row is deleted
-        return result == 1
+        try:
+            result = (
+                self.db.query(Transaction).filter(Transaction.id == transaction_id).delete()
+            )
+            self.db.commit()
+            # result = 1 if 1 row is deleted
+            return result == 1
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     # Reusable function to convert db model to domain model
     def _to_domain_model(self, db_transaction: Transaction) -> TransactionInDB:
@@ -459,15 +467,19 @@ class DBOrderRepository(OrderRepository):
     def update_order_status(
         self, order_id: int, status: OrderStatus
     ) -> Optional[OrderInDB]:
-        db_order = self.db.query(Order).filter(Order.id == order_id).first()
-        if not db_order:
-            return None
+        try:
+            db_order = self.db.query(Order).filter(Order.id == order_id).first()
+            if not db_order:
+                return None
 
-        db_order.status = status
-        db_order.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_order)
-        return self._to_domain_model(db_order)
+            db_order.status = status
+            db_order.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(db_order)
+            return self._to_domain_model(db_order)
+        except Exception as e:
+            self.db.rollback()
+            raise e
     
     def get_orders(
         self, 
@@ -490,27 +502,32 @@ class DBOrderRepository(OrderRepository):
         order: OrderUpdate
     ) -> Optional[OrderInDB]:
         """Update order with full data"""
-        db_order = self.db.query(Order).filter(Order.id == order_id).first()
-        if not db_order:
-            return None
+        try:
+            db_order = self.db.query(Order).filter(Order.id == order_id).first()
+            if not db_order:
+                return None
 
-        # Update fields that are not None
-        if order.status is not None:
-            db_order.status = order.status.value
-        if order.metadata is not None:
-            db_order.meta_data = order.metadata
-            
-        db_order.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_order)
-        return self._to_domain_model(db_order)
-
+            # Update fields that are not None
+            if order.status is not None:
+                db_order.status = order.status.value
+            if order.metadata is not None:
+                db_order.meta_data = order.metadata
+                
+            db_order.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(db_order)
+            return self._to_domain_model(db_order)
+        except Exception as e:
+            self.db.rollback()
+            raise e
+    
     def get_order_by_order_number(self, order_number: str) -> Optional[OrderInDB]:
         """Find an order by its order number"""
         db_order = self.db.query(Order).filter(Order.order_number == order_number).first()
         if not db_order:
             return None
         return self._to_domain_model(db_order)
+
 
     def _to_domain_model(self, db_order: Order) -> OrderInDB:
         # Ensure updated_at is never None
@@ -550,10 +567,14 @@ class DBPaymentRepository(PaymentRepository):
             gateway_transaction_id=payment.gateway_transaction_id,
             meta_data=payment.metadata,
         )
-        self.db.add(db_payment)
-        self.db.commit()
-        self.db.refresh(db_payment)
-        return self._to_domain_model(db_payment)
+        try:
+            self.db.add(db_payment)
+            self.db.commit()
+            self.db.refresh(db_payment)
+            return self._to_domain_model(db_payment)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_payment(self, payment_id: int) -> Optional[PaymentInDB]:
         db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
@@ -571,17 +592,21 @@ class DBPaymentRepository(PaymentRepository):
         status: TransactionStatus,
         gateway_transaction_id: Optional[str] = None,
     ) -> Optional[PaymentInDB]:
-        db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
-        if not db_payment:
-            return None
+        try:
+            db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
+            if not db_payment:
+                return None
 
-        db_payment.status = status.value
-        if gateway_transaction_id is not None:
-            db_payment.gateway_transaction_id = gateway_transaction_id
-        db_payment.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_payment)
-        return self._to_domain_model(db_payment)
+            db_payment.status = status.value
+            if gateway_transaction_id is not None:
+                db_payment.gateway_transaction_id = gateway_transaction_id
+            db_payment.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(db_payment)
+            return self._to_domain_model(db_payment)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def update_payment(
         self,
@@ -589,27 +614,31 @@ class DBPaymentRepository(PaymentRepository):
         payment_data: dict
     ) -> Optional[PaymentInDB]:
         """Update payment with arbitrary data"""
-        db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
-        if not db_payment:
-            return None
+        try:
+            db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
+            if not db_payment:
+                return None
 
-        # Update fields from payment_data
-        for field, value in payment_data.items():
-            if field == "status" and isinstance(value, str):
-                # Handle status as string value
-                db_payment.status = value
-            elif field == "metadata" and value is not None:
-                # Merge metadata using meta_data column
-                if db_payment.meta_data is None:
-                    db_payment.meta_data = {}
-                db_payment.meta_data.update(value)
-            elif hasattr(db_payment, field):
-                setattr(db_payment, field, value)
+            # Update fields from payment_data
+            for field, value in payment_data.items():
+                if field == "status" and isinstance(value, str):
+                    # Handle status as string value
+                    db_payment.status = value
+                elif field == "metadata" and value is not None:
+                    # Merge metadata using meta_data column
+                    if db_payment.meta_data is None:
+                        db_payment.meta_data = {}
+                    db_payment.meta_data.update(value)
+                elif hasattr(db_payment, field):
+                    setattr(db_payment, field, value)
 
-        db_payment.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_payment)
-        return self._to_domain_model(db_payment)
+            db_payment.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(db_payment)
+            return self._to_domain_model(db_payment)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def _to_domain_model(self, db_payment: Payment) -> PaymentInDB:
         # Ensure metadata is a dict and not SQLAlchemy's MetaData
@@ -650,10 +679,14 @@ class DBRefundRepository(RefundRepository):
             processed_by=refund.processed_by,
             processed_at=refund.processed_at,
         )
-        self.db.add(db_refund)
-        self.db.commit()
-        self.db.refresh(db_refund)
-        return self._to_domain_model(db_refund)
+        try:
+            self.db.add(db_refund)
+            self.db.commit()
+            self.db.refresh(db_refund)
+            return self._to_domain_model(db_refund)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_refund(self, refund_id: int) -> Optional[RefundInDB]:
         db_refund = self.db.query(Refund).filter(Refund.id == refund_id).first()
@@ -672,22 +705,26 @@ class DBRefundRepository(RefundRepository):
         processed_by: Optional[int] = None,
         notes: Optional[str] = None,
     ) -> Optional[RefundInDB]:
-        db_refund = self.db.query(Refund).filter(Refund.id == refund_id).first()
-        if not db_refund:
-            return None
+        try:
+            db_refund = self.db.query(Refund).filter(Refund.id == refund_id).first()
+            if not db_refund:
+                return None
 
-        db_refund.status = status.value
-        if processed_by is not None:
-            db_refund.processed_by = processed_by
-        if notes is not None:
-            db_refund.reason = notes  # Using reason field for notes as per schema
+            db_refund.status = status.value
+            if processed_by is not None:
+                db_refund.processed_by = processed_by
+            if notes is not None:
+                db_refund.reason = notes  # Using reason field for notes as per schema
 
-        if status == RefundStatus.COMPLETED and not db_refund.processed_at:
-            db_refund.processed_at = datetime.now(timezone.utc)
+            if status == RefundStatus.COMPLETED and not db_refund.processed_at:
+                db_refund.processed_at = datetime.now(timezone.utc)
 
-        self.db.commit()
-        self.db.refresh(db_refund)
-        return self._to_domain_model(db_refund)
+            self.db.commit()
+            self.db.refresh(db_refund)
+            return self._to_domain_model(db_refund)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_refunds_for_report(self, start_date, end_date, status_filter=None, 
                                min_amount=None, max_amount=None, reason_filter=None, 

@@ -36,7 +36,7 @@ The service follows the Hexagonal Architecture pattern:
 
 | Endpoint | Method | Access | Description |
 |----------|--------|--------|-------------|
-| `/transactions/` | POST | USER/ADMIN | Create new transaction |
+| `/transactions/` | POST | USER/ADMIN | Create new transaction and order |
 | `/transactions/{id}` | GET | USER/ADMIN | Get transaction details |
 | `/transactions/{id}` | PUT | USER/ADMIN | Update transaction |
 | `/transactions/{id}/cancel` | POST | USER/ADMIN | Cancel transaction |
@@ -47,7 +47,6 @@ The service follows the Hexagonal Architecture pattern:
 
 | Endpoint | Method | Access | Description |
 |----------|--------|--------|-------------|
-| `/orders/` | POST | USER/ADMIN | Create new order |
 | `/orders/{id}` | GET | USER/ADMIN | Get order details |
 | `/orders/{id}/status` | PUT | ADMIN | Update order status |
 | `/orders/` | GET | USER/ADMIN | List orders |
@@ -76,7 +75,7 @@ The service follows the Hexagonal Architecture pattern:
 ```sql
 CREATE TABLE transactions (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
     order_number VARCHAR(255) UNIQUE NOT NULL,
     transaction_type VARCHAR(50) NOT NULL,
     amount DECIMAL(10,2) NOT NULL,
@@ -95,7 +94,7 @@ CREATE TABLE transactions (
 ```sql
 CREATE TABLE orders (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
     order_number VARCHAR(255) UNIQUE NOT NULL,
     service_type VARCHAR(50) NOT NULL,
     service_id VARCHAR(255) NOT NULL,
