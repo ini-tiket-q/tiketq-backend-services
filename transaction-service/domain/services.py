@@ -13,7 +13,7 @@ from domain.models import (
     PaymentInDB, PaymentCreate, PaymentStatus, Currency,
     TransactionItem,
     # Payment request models
-    PaymentCreateRequest, PaymentConfirmRequest, PaymentRefundRequest, PaymentWebhookRequest,
+    PaymentCreateRequest, PaymentConfirmRequest, PaymentWebhookRequest,
     # Order request models
     OrderCreateRequest, OrderStatusUpdateRequest,
     # Transaction request models
@@ -544,9 +544,11 @@ class PaymentService:
         self, 
         transaction_repo: DBTransactionRepository,
         payment_repo: DBPaymentRepository,
+        order_repo: DBOrderRepository,
     ):
         self.transaction_repo = transaction_repo
         self.payment_repo = payment_repo
+        self.order_repo = order_repo
     
     def create_payment(
         self, 
@@ -572,13 +574,21 @@ class PaymentService:
             transaction = self.transaction_repo.get_transaction(transaction_id)
             if not transaction or transaction.email != email:
                 logger.error(f"Transaction {transaction_id} not found or unauthorized")
-                return None
+                raise ValueError("Transaction not found or unauthorized")
+            
+            # Validate payment amount matches transaction amount
+            if payment_data.amount != transaction.amount:
+                logger.error(
+                    f"Payment amount {payment_data.amount} does not match "
+                    f"transaction amount {transaction.amount} for transaction {transaction_id}"
+                )
+                raise ValueError("Payment amount does not match transaction amount")
                 
             # Check if transaction is already completed
             if transaction.status == TransactionStatus.COMPLETED:
                 logger.warning(f"Transaction {transaction_id} is already completed")
                 payments = self.payment_repo.get_payments_by_transaction(transaction_id)
-                return payments[0] if payments else None
+                raise ValueError(f"Transaction is already completed, {payments[0]}")
             
             # Create payment record using validated data
             payment = PaymentCreate(
@@ -619,7 +629,29 @@ class PaymentService:
                     gateway_transaction_id=payment.gateway_transaction_id
                 )
             )
-            
+            logger.info(
+                f"Transaction {transaction_id} status updated to PROCESSING "
+            )
+
+            # Get the order using order_number from transaction
+            order = self.order_repo.get_order_by_order_number(transaction.order_number)
+
+            if order:
+                # Update order status to CONFIRMED
+                self.order_repo.update_order_status(
+                    order.id,
+                    OrderStatus.CONFIRMED
+                )
+                logger.info(
+                    f"Order {order.order_number} status updated to CONFIRMED "
+                    f"after payment creation for transaction {transaction_id}"
+                )
+
+            else:
+                logger.error(
+                    f"Order {transaction.order_number} not found for transaction {transaction_id}"
+                )
+
             return db_payment
             
         except Exception as e:
@@ -650,8 +682,11 @@ class PaymentService:
             # Get payment with transaction
             logger.info(f"Payment {payment_id} found")
             payment = self.payment_repo.get_payment(payment_id)
-            if not payment:
-                logger.error(f"Payment {payment_id} not found")
+            transaction = self.transaction_repo.get_transaction(payment.transaction_id)
+            order = self.order_repo.get_order_by_order_number(transaction.order_number)
+
+            if not payment or not transaction or not order:
+                logger.error(f"Payment {payment_id} not found or transaction not found or order not found")
                 return None
             
             # Update payment status
@@ -692,79 +727,17 @@ class PaymentService:
                 )
             )
             
+            self.order_repo.update_order_status(
+                order_id=order.id,
+                status=OrderStatus.PAID,
+            )
+            
             return updated_payment
             
         except Exception as e:
             logger.error(f"Error confirming payment {payment_id}: {str(e)}", exc_info=True)
             return None
 
-    def process_refund(
-        self,
-        payment_id: int,
-        refund_data: Dict[str, Any],
-        refunded_by: str
-    ) -> Optional[PaymentInDB]:
-        """Process a payment refund with validation.
-        
-        Args:
-            payment_id: ID of the payment to refund
-            refund_data: Dictionary containing refund details
-            refunded_by: Email of the user processing the refund
-            
-        Returns:
-            Updated PaymentInDB if successful, None otherwise
-            
-        Raises:
-            ValueError: If refund data validation fails
-        """
-        # Validate request data using Pydantic model
-        request_dict = {
-            "payment_id": payment_id,
-            "refunded_by": refunded_by,
-            **refund_data
-        }
-        
-        try:
-            validated_request = PaymentRefundRequest(**request_dict)
-        except Exception as e:
-            logger.error(f"Payment refund validation failed: {str(e)}")
-            raise ValueError(f"Payment refund validation failed: {str(e)}")
-        
-        try:
-            # Get the payment first
-            payment = self.payment_repo.get_payment(payment_id)
-            if not payment:
-                logger.error(f"Payment {payment_id} not found")
-                return None
-            
-            # Check if payment can be refunded
-            if payment.status != PaymentStatus.COMPLETED:
-                raise ValueError("Only completed payments can be refunded")
-            
-            # Update payment status to refunded
-            # Note: This is a simplified implementation
-            # In a real system, you'd integrate with payment gateway APIs
-            updated_payment = self.payment_repo.update_payment(
-                payment_id=payment_id,
-                payment_data={
-                    "status": PaymentStatus.REFUNDED.value,
-                    "metadata": {
-                        **payment.metadata,
-                        "refund_reason": validated_request.reason,
-                        "refunded_by": refunded_by,
-                        "refund_amount": validated_request.amount or payment.amount
-                    }
-                }
-            )
-            
-            return updated_payment
-            
-        except ValueError:
-            # Re-raise validation errors
-            raise
-        except Exception as e:
-            logger.error(f"Error processing refund for payment {payment_id}: {str(e)}", exc_info=True)
-            return None
 
     def process_webhook(
         self,
@@ -870,8 +843,6 @@ def create_order_service(db_session: Session) -> OrderService:
     return OrderService(
         order_repo=order_repo
     )
-
-
 
 
 class RefundService:

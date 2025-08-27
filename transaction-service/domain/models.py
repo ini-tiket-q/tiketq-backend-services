@@ -320,25 +320,6 @@ class PaymentConfirmRequest(BaseModel):
     notes: Optional[str] = Field(None, max_length=500)
 
 
-class PaymentRefundRequest(BaseModel):
-    """Request model for processing payment refunds"""
-
-    amount: Optional[float] = Field(
-        None, gt=0, description="Refund amount (defaults to full payment amount)"
-    )
-    reason: str = Field(
-        ..., min_length=1, max_length=255, description="Reason for refund"
-    )
-    notes: Optional[str] = Field(None, max_length=500)
-
-    @field_validator("amount")
-    @classmethod
-    def validate_amount(cls, v):
-        if v is not None and v <= 0:
-            raise ValueError(ValidationMessages.REFUND_AMOUNT_POSITIVE)
-        return v
-
-
 class PaymentWebhookRequest(BaseModel):
     """Request model for payment webhook validation"""
 

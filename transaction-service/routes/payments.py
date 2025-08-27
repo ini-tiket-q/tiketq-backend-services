@@ -4,8 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 
 from domain.models import (
-    PaymentCreateRequest, PaymentInDB, PaymentConfirmRequest,
-    PaymentRefundRequest, PaymentWebhookRequest,
+    PaymentCreateRequest, PaymentInDB, PaymentConfirmRequest, PaymentWebhookRequest,
     UserRole
 )
 from domain.services import (
@@ -15,7 +14,7 @@ from domain.services import (
     require_admin
 )
 from adapters.db import (
-    DBTransactionRepository, DBPaymentRepository
+    DBTransactionRepository, DBPaymentRepository, DBOrderRepository
 )
 
 logger = logging.getLogger(__name__)
@@ -26,7 +25,8 @@ def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentS
     """Dependency injection for PaymentService"""
     transaction_repo = DBTransactionRepository(db)
     payment_repo = DBPaymentRepository(db)
-    return PaymentService(transaction_repo, payment_repo)
+    order_repo = DBOrderRepository(db)
+    return PaymentService(transaction_repo, payment_repo, order_repo)
 
 @router.post(
     "/payments/", 
@@ -178,51 +178,7 @@ async def confirm_payment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to confirm payment"
         )
-
-@router.post(
-    "/payments/{payment_id}/refund",
-    response_model=PaymentInDB,
-    summary="Process a payment refund",
-    description="""
-    Process a refund for a completed payment.
-    
-    ### Access Level: Admin Only
-    - Requires admin privileges
-    - Used for processing refunds for completed payments
-    """
-)
-async def process_payment_refund(
-    payment_id: int,
-    refund_data: PaymentRefundRequest = Body(...),
-    current_user = Depends(require_admin),
-    payment_service: PaymentService = Depends(get_payment_service)
-):
-    try:
-        # For now, use a simplified refund process
-        # In a complete implementation, this would integrate with the refund service
-        payment = payment_service.payment_repo.get_payment(payment_id)
         
-        if not payment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment not found or cannot be refunded"
-            )
-        
-        # Log the refund attempt for audit purposes
-        # Actual refund processing would be handled by the refund service
-        return payment
-        
-    except ValueError as e:
-        # Service layer validation errors
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process payment refund {str(e)}"
-        )
 
 @router.post(
     "/webhooks/payment",
