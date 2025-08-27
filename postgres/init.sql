@@ -1,4 +1,5 @@
 -- Initialize database for TiketQ services
+-- Using default postgres superuser (no additional user creation needed)
 
 -- Create user_profiles table for user-service
 CREATE TABLE IF NOT EXISTS user_profiles (
@@ -28,4 +29,87 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- Create index on role for faster role-based queries
-CREATE INDEX IF NOT EXISTS idx_users_role ON users(role); 
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+-- Create orders table for transaction-service
+CREATE TABLE IF NOT EXISTS orders (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    order_number VARCHAR(255) UNIQUE NOT NULL,
+    service_type VARCHAR(50) NOT NULL,
+    items JSONB NOT NULL,
+    subtotal DECIMAL(10,2) NOT NULL,
+    tax DECIMAL(10,2) DEFAULT 0.0 NOT NULL,
+    discount DECIMAL(10,2) DEFAULT 0.0 NOT NULL,
+    total DECIMAL(10,2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'DRAFT',
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create index on orders
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+
+-- Create transactions table for transaction-service
+CREATE TABLE IF NOT EXISTS transactions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    order_id VARCHAR(255) UNIQUE NOT NULL,
+    transaction_type VARCHAR(50) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'IDR',
+    status VARCHAR(20) DEFAULT 'PENDING',
+    payment_method VARCHAR(50),
+    payment_gateway VARCHAR(50),
+    gateway_transaction_id VARCHAR(255),
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create index on transactions
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_order_id ON transactions(order_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
+
+-- Create payments table for transaction-service
+CREATE TABLE IF NOT EXISTS payments (
+    id SERIAL PRIMARY KEY,
+    transaction_id INTEGER NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'IDR',
+    payment_method VARCHAR(50) NOT NULL,
+    payment_gateway VARCHAR(50) NOT NULL,
+    gateway_transaction_id VARCHAR(255),
+    status VARCHAR(20) DEFAULT 'PENDING',
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
+);
+
+-- Create index on payments
+CREATE INDEX IF NOT EXISTS idx_payments_transaction_id ON payments(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+
+-- Create refunds table for transaction-service
+CREATE TABLE IF NOT EXISTS refunds (
+    id SERIAL PRIMARY KEY,
+    transaction_id INTEGER NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    reason TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    processed_by INTEGER,
+    processed_at TIMESTAMP WITH TIME ZONE,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
+);
+
+-- Create index on refunds
+CREATE INDEX IF NOT EXISTS idx_refunds_transaction_id ON refunds(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
