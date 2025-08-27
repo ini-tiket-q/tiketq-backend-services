@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import Session
 import time
 
@@ -216,6 +216,7 @@ async def list_transactions(
     request: Request,
     skip: int = 0,
     limit: int = 100,
+    email: Optional[str] = None,
     current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
@@ -234,6 +235,43 @@ async def list_transactions(
             user_agent=request_context.get("user_agent")
         )
         
+        # Handle email search (admin only)
+        if email:
+            if current_user.role != UserRole.ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only admins can search transactions by email"
+                )
+            
+            # Use the service layer search method
+            transactions = service.search_transactions_by_email(
+                search_email=email,
+                status_filter=None,
+                skip=skip,
+                limit=limit,
+                admin_email=current_user.email
+            )
+            
+            # Log admin search
+            audit_logger.log_security_event(
+                event_type=AuditEventType.API_REQUEST,
+                email=current_user.email,
+                user_role=current_user.role.value,
+                message=f"Admin searched transactions for email: {email}",
+                details={
+                    "operation": "search_transactions_by_email",
+                    "search_email": email,
+                    "result_count": len(transactions),
+                    "skip": skip,
+                    "limit": limit,
+                    "admin_search": True
+                },
+                request_context=request_context
+            )
+            
+            return transactions
+        
+        # Regular listing behavior
         if current_user.role == UserRole.ADMIN:
             # Admin can see all transactions
             transactions = service.get_all_transactions(
