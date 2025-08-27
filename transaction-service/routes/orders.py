@@ -24,7 +24,16 @@ def get_order_service(db: Session = Depends(get_database_session)) -> OrderServi
 @router.post(
     "/orders/", 
     response_model=OrderInDB,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new order",
+    description="""
+    Create a new order with the provided details.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can create orders for themselves
+    - Admins can create orders for any user
+    """
 )
 async def create_order(
     order_request: OrderCreateRequest = Body(
@@ -93,7 +102,21 @@ async def create_order(
 
 @router.get(
     "/orders/", 
-    response_model=List[OrderInDB]
+    response_model=List[OrderInDB],
+    summary="List orders",
+    description="""
+    Retrieve a list of orders based on filters.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only see their own orders
+    - Admins can see all orders
+    
+    ### Query Parameters:
+    - skip: Number of records to skip (pagination)
+    - limit: Maximum number of records to return (pagination)
+    - status_filter: Optional filter by order status
+    """
 )
 async def list_orders(
     skip: int = 0,
@@ -128,7 +151,16 @@ async def list_orders(
 
 @router.get(
     "/orders/{order_id}", 
-    response_model=OrderInDB
+    response_model=OrderInDB,
+    summary="Get order by ID",
+    description="""
+    Retrieve details of a specific order by its ID.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only view their own orders
+    - Admins can view any order
+    """
 )
 async def get_order(
     order_id: int,
@@ -164,7 +196,18 @@ async def get_order(
             detail=f"Failed to retrieve order {str(e)}"
         )
 
-@router.get("/orders/public/{order_number}", response_model=OrderInDB)
+@router.get(
+    "/orders/public/{order_number}", 
+    response_model=OrderInDB,
+    summary="Get order by order number (public)",
+    description="""
+    Retrieve order details by order number.
+    
+    ### Access Level: Public
+    - No authentication required
+    - Limited information may be shown for public access
+    """
+)
 async def get_order_by_number(
     order_number: str,
     service: OrderService = Depends(get_order_service),
@@ -190,7 +233,15 @@ async def get_order_by_number(
 
 @router.put(
     "/orders/{order_id}/status", 
-    response_model=OrderInDB
+    response_model=OrderInDB,
+    summary="Update order status",
+    description="""
+    Update the status of an existing order.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Used for order status management
+    """
 )
 async def update_order_status(
     order_id: int,
