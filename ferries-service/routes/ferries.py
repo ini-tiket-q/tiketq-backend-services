@@ -38,3 +38,15 @@ def create_booking(booking_data: dict = Body(...)):
         return services.create_ferry_booking(booking_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bookings/{booking_id}/details")
+def add_booking_detail(booking_id: str, passenger_data: dict = Body(...)):
+    """
+    Tambah detail penumpang ke booking (berdasarkan booking_id).
+    """
+    try:
+        return services.add_ferry_booking_detail(booking_id, passenger_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
