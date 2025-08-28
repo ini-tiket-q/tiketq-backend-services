@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 
 from routes.ferries import router as ferries_router
+from routes.ferries_mock import router_mock as ferries_router_mock
 
 # Load .env variables
 load_dotenv()
@@ -25,6 +26,7 @@ def health_check():
     }
 
 app.include_router(ferries_router)
+app.include_router(ferries_router_mock)
 
 
 
