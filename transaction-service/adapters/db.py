@@ -79,8 +79,8 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
-    order_id = Column(String(255), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    order_number = Column(String(255), unique=True, nullable=False, index=True)
     transaction_type = Column(Enum(TransactionType), nullable=False)
     amount = Column(Float, nullable=False)
     currency = Column(Enum(Currency), default=Currency.IDR, nullable=False)
@@ -105,7 +105,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
     order_number = Column(String(255), unique=True, nullable=False, index=True)
     service_type = Column(Enum(ServiceType), nullable=False)
     items = Column(JSON, nullable=False)
@@ -150,7 +150,7 @@ class Refund(Base):
     amount = Column(Float, nullable=False)
     reason = Column(Text, nullable=False)
     status = Column(Enum(RefundStatus), default=RefundStatus.PENDING, nullable=False)
-    processed_by = Column(Integer, nullable=True)
+    processed_by = Column(String(255), nullable=True)
     processed_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -172,8 +172,8 @@ class DBTransactionRepository(TransactionRepository):
         now = datetime.now(timezone.utc)
         
         db_transaction = Transaction(
-            user_id=transaction.user_id,
-            order_id=transaction.order_id,
+            email=transaction.email,  
+            order_number=transaction.order_number,
             transaction_type=transaction.transaction_type.value,
             amount=float(transaction.amount),
             currency=transaction.currency,
@@ -206,18 +206,15 @@ class DBTransactionRepository(TransactionRepository):
         return self._to_domain_model(db_transaction) if db_transaction else None
 
     def get_transactions_by_user(
-        self, user_id: int, skip: int = 0, limit: int = 100, status: Optional[TransactionStatus] = None
+        self, email: str, skip: int = 0, limit: int = 100, status: Optional[TransactionStatus] = None
     ) -> List[TransactionInDB]:
-        db_transactions = (
-            self.db.query(Transaction)
-            .filter(Transaction.user_id == user_id)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+        query = self.db.query(Transaction).filter(Transaction.email == email)
+        
         if status:
-            db_transactions = db_transactions.filter(Transaction.status == status.value)
-        return [self._to_domain_model(t) for t in db_transactions]
+            query = query.filter(Transaction.status == status.value)
+            
+        transactions = query.offset(skip).limit(limit).all()
+        return [self._to_domain_model(t) for t in transactions]
     
     def get_transactions(
         self, skip: int = 0, limit: int = 100
@@ -235,35 +232,43 @@ class DBTransactionRepository(TransactionRepository):
 
     def update_transaction(
         self, transaction_id: int, transaction: TransactionUpdate
-    ) -> Optional[TransactionInDB]:
+    ) -> Optional[TransactionInDB] | None:
         db_transaction = (
             self.db.query(Transaction).filter(Transaction.id == transaction_id).first()
         )
+        try:
+            if not db_transaction:
+                return None
 
-        if not db_transaction:
-            return None
+            update_data = transaction.dict(exclude_unset=True)
+            for field, value in update_data.items():
+                # metadata should be added, not replaced with the new value. or deleted if the value is None
+                if field == "metadata" and value is not None:
+                    if db_transaction.meta_data is None:
+                        db_transaction.meta_data = {}
+                    db_transaction.meta_data.update(value)
+                elif hasattr(db_transaction, field):
+                    setattr(db_transaction, field, value)
 
-        update_data = transaction.dict(exclude_unset=True)
-        for field, value in update_data.items():
-            # metadata should be added, not replaced with the new value. or deleted if the value is None
-            if field == "metadata" and value is not None:
-                if db_transaction.meta_data is None:
-                    db_transaction.meta_data = {}
-                db_transaction.meta_data.update(value)
-            elif hasattr(db_transaction, field):
-                setattr(db_transaction, field, value)
-
-        self.db.commit()
-        self.db.refresh(db_transaction)
-        return self._to_domain_model(db_transaction)
+            self.db.commit()
+            self.db.refresh(db_transaction)
+            return self._to_domain_model(db_transaction)
+        except Exception as e:
+            self.db.rollback()
+            raise e
+        
 
     def delete_transaction(self, transaction_id: int) -> bool:
-        result = (
-            self.db.query(Transaction).filter(Transaction.id == transaction_id).delete()
-        )
-        self.db.commit()
-        # result = 1 if 1 row is deleted
-        return result == 1
+        try:
+            result = (
+                self.db.query(Transaction).filter(Transaction.id == transaction_id).delete()
+            )
+            self.db.commit()
+            # result = 1 if 1 row is deleted
+            return result == 1
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     # Reusable function to convert db model to domain model
     def _to_domain_model(self, db_transaction: Transaction) -> TransactionInDB:
@@ -288,8 +293,8 @@ class DBTransactionRepository(TransactionRepository):
             
         return TransactionInDB(
             id=db_transaction.id,
-            user_id=db_transaction.user_id,
-            order_id=db_transaction.order_id,
+            email=db_transaction.email,  
+            order_number=db_transaction.order_number,
             transaction_type=TransactionType(db_transaction.transaction_type),
             amount=db_transaction.amount,
             currency=db_transaction.currency,
@@ -312,7 +317,7 @@ class DBTransactionRepository(TransactionRepository):
 
     def get_transactions_for_report(self, start_date, end_date, status_filter=None, 
                                    transaction_type_filter=None, min_amount=None, 
-                                   max_amount=None, user_id=None, currency=None):
+                                   max_amount=None, email=None, currency=None):
         """Get transactions for reporting with filters"""
         query = self.db.query(Transaction).filter(
             Transaction.created_at >= start_date,
@@ -343,8 +348,8 @@ class DBTransactionRepository(TransactionRepository):
         if max_amount is not None:
             query = query.filter(Transaction.amount <= max_amount)
         
-        if user_id is not None:
-            query = query.filter(Transaction.user_id == user_id)
+        if email is not None:
+            query = query.filter(Transaction.email == email)
         
         if currency:
             query = query.filter(Transaction.currency == currency)
@@ -415,15 +420,15 @@ class DBOrderRepository(OrderRepository):
             # Create the order with current timestamps
             now = datetime.now(timezone.utc)
             db_order = Order(
-                user_id=order.user_id,
+                email=order.email,  
                 order_number=order.order_number,
-                service_type=order.service_type,
+                service_type=order.service_type.value,
                 items=items_as_dicts,
                 subtotal=order.subtotal,
                 tax=order.tax,
                 discount=order.discount,
                 total=order.total,
-                status=order.status,
+                status=order.status.value,
                 meta_data=order.metadata,
                 created_at=now,
                 updated_at=now,
@@ -446,12 +451,12 @@ class DBOrderRepository(OrderRepository):
 
     def get_orders_by_user(
         self,
-        user_id: int,
+        email: str,
         status: Optional[OrderStatus] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> List[OrderInDB]:
-        query = self.db.query(Order).filter(Order.user_id == user_id)
+        query = self.db.query(Order).filter(Order.email == email)
         
         if status is not None:
             query = query.filter(Order.status == status)
@@ -462,15 +467,19 @@ class DBOrderRepository(OrderRepository):
     def update_order_status(
         self, order_id: int, status: OrderStatus
     ) -> Optional[OrderInDB]:
-        db_order = self.db.query(Order).filter(Order.id == order_id).first()
-        if not db_order:
-            return None
+        try:
+            db_order = self.db.query(Order).filter(Order.id == order_id).first()
+            if not db_order:
+                return None
 
-        db_order.status = status
-        db_order.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_order)
-        return self._to_domain_model(db_order)
+            db_order.status = status
+            db_order.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(db_order)
+            return self._to_domain_model(db_order)
+        except Exception as e:
+            self.db.rollback()
+            raise e
     
     def get_orders(
         self, 
@@ -493,20 +502,32 @@ class DBOrderRepository(OrderRepository):
         order: OrderUpdate
     ) -> Optional[OrderInDB]:
         """Update order with full data"""
-        db_order = self.db.query(Order).filter(Order.id == order_id).first()
+        try:
+            db_order = self.db.query(Order).filter(Order.id == order_id).first()
+            if not db_order:
+                return None
+
+            # Update fields that are not None
+            if order.status is not None:
+                db_order.status = order.status.value
+            if order.metadata is not None:
+                db_order.meta_data = order.metadata
+                
+            db_order.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(db_order)
+            return self._to_domain_model(db_order)
+        except Exception as e:
+            self.db.rollback()
+            raise e
+    
+    def get_order_by_order_number(self, order_number: str) -> Optional[OrderInDB]:
+        """Find an order by its order number"""
+        db_order = self.db.query(Order).filter(Order.order_number == order_number).first()
         if not db_order:
             return None
-
-        # Update fields that are not None
-        if order.status is not None:
-            db_order.status = order.status.value
-        if order.metadata is not None:
-            db_order.meta_data = order.metadata
-            
-        db_order.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_order)
         return self._to_domain_model(db_order)
+
 
     def _to_domain_model(self, db_order: Order) -> OrderInDB:
         # Ensure updated_at is never None
@@ -514,7 +535,7 @@ class DBOrderRepository(OrderRepository):
         
         return OrderInDB(
             id=db_order.id,
-            user_id=db_order.user_id,
+            email=db_order.email,  
             order_number=db_order.order_number,
             service_type=db_order.service_type,
             items=db_order.items,
@@ -546,10 +567,14 @@ class DBPaymentRepository(PaymentRepository):
             gateway_transaction_id=payment.gateway_transaction_id,
             meta_data=payment.metadata,
         )
-        self.db.add(db_payment)
-        self.db.commit()
-        self.db.refresh(db_payment)
-        return self._to_domain_model(db_payment)
+        try:
+            self.db.add(db_payment)
+            self.db.commit()
+            self.db.refresh(db_payment)
+            return self._to_domain_model(db_payment)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_payment(self, payment_id: int) -> Optional[PaymentInDB]:
         db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
@@ -567,17 +592,21 @@ class DBPaymentRepository(PaymentRepository):
         status: TransactionStatus,
         gateway_transaction_id: Optional[str] = None,
     ) -> Optional[PaymentInDB]:
-        db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
-        if not db_payment:
-            return None
+        try:
+            db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
+            if not db_payment:
+                return None
 
-        db_payment.status = status.value
-        if gateway_transaction_id is not None:
-            db_payment.gateway_transaction_id = gateway_transaction_id
-        db_payment.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_payment)
-        return self._to_domain_model(db_payment)
+            db_payment.status = status.value
+            if gateway_transaction_id is not None:
+                db_payment.gateway_transaction_id = gateway_transaction_id
+            db_payment.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(db_payment)
+            return self._to_domain_model(db_payment)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def update_payment(
         self,
@@ -585,27 +614,31 @@ class DBPaymentRepository(PaymentRepository):
         payment_data: dict
     ) -> Optional[PaymentInDB]:
         """Update payment with arbitrary data"""
-        db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
-        if not db_payment:
-            return None
+        try:
+            db_payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
+            if not db_payment:
+                return None
 
-        # Update fields from payment_data
-        for field, value in payment_data.items():
-            if field == "status" and isinstance(value, str):
-                # Handle status as string value
-                db_payment.status = value
-            elif field == "metadata" and value is not None:
-                # Merge metadata using meta_data column
-                if db_payment.meta_data is None:
-                    db_payment.meta_data = {}
-                db_payment.meta_data.update(value)
-            elif hasattr(db_payment, field):
-                setattr(db_payment, field, value)
+            # Update fields from payment_data
+            for field, value in payment_data.items():
+                if field == "status" and isinstance(value, str):
+                    # Handle status as string value
+                    db_payment.status = value
+                elif field == "metadata" and value is not None:
+                    # Merge metadata using meta_data column
+                    if db_payment.meta_data is None:
+                        db_payment.meta_data = {}
+                    db_payment.meta_data.update(value)
+                elif hasattr(db_payment, field):
+                    setattr(db_payment, field, value)
 
-        db_payment.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_payment)
-        return self._to_domain_model(db_payment)
+            db_payment.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(db_payment)
+            return self._to_domain_model(db_payment)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def _to_domain_model(self, db_payment: Payment) -> PaymentInDB:
         # Ensure metadata is a dict and not SQLAlchemy's MetaData
@@ -646,10 +679,14 @@ class DBRefundRepository(RefundRepository):
             processed_by=refund.processed_by,
             processed_at=refund.processed_at,
         )
-        self.db.add(db_refund)
-        self.db.commit()
-        self.db.refresh(db_refund)
-        return self._to_domain_model(db_refund)
+        try:
+            self.db.add(db_refund)
+            self.db.commit()
+            self.db.refresh(db_refund)
+            return self._to_domain_model(db_refund)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_refund(self, refund_id: int) -> Optional[RefundInDB]:
         db_refund = self.db.query(Refund).filter(Refund.id == refund_id).first()
@@ -668,22 +705,26 @@ class DBRefundRepository(RefundRepository):
         processed_by: Optional[int] = None,
         notes: Optional[str] = None,
     ) -> Optional[RefundInDB]:
-        db_refund = self.db.query(Refund).filter(Refund.id == refund_id).first()
-        if not db_refund:
-            return None
+        try:
+            db_refund = self.db.query(Refund).filter(Refund.id == refund_id).first()
+            if not db_refund:
+                return None
 
-        db_refund.status = status.value
-        if processed_by is not None:
-            db_refund.processed_by = processed_by
-        if notes is not None:
-            db_refund.reason = notes  # Using reason field for notes as per schema
+            db_refund.status = status.value
+            if processed_by is not None:
+                db_refund.processed_by = processed_by
+            if notes is not None:
+                db_refund.reason = notes  # Using reason field for notes as per schema
 
-        if status == RefundStatus.COMPLETED and not db_refund.processed_at:
-            db_refund.processed_at = datetime.now(timezone.utc)
+            if status == RefundStatus.COMPLETED and not db_refund.processed_at:
+                db_refund.processed_at = datetime.now(timezone.utc)
 
-        self.db.commit()
-        self.db.refresh(db_refund)
-        return self._to_domain_model(db_refund)
+            self.db.commit()
+            self.db.refresh(db_refund)
+            return self._to_domain_model(db_refund)
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_refunds_for_report(self, start_date, end_date, status_filter=None, 
                                min_amount=None, max_amount=None, reason_filter=None, 

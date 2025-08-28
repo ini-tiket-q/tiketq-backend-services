@@ -51,7 +51,7 @@ async def get_transaction_report(
     - **status_filter**: Filter by transaction status
     - **transaction_type_filter**: Filter by transaction type
     - **min_amount** / **max_amount**: Amount range filter
-    - **user_id**: Filter by specific user
+    - **email**: Filter by specific user
     - **currency**: Currency filter (default: IDR)
     
     **Returns:**

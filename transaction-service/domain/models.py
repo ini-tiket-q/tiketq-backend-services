@@ -86,6 +86,7 @@ class TransactionItem(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "email": "customer@example.com",
                 "name": "Jakarta to Bali Flight",
                 "price": 850000,
                 "quantity": 1,
@@ -127,8 +128,8 @@ class TransactionItem(BaseModel):
 
 
 class TransactionBase(BaseModel):
-    user_id: int
-    order_id: str = Field(default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}")
+    email: str = Field(..., description="Email of the user who made the transaction", max_length=255)
+    order_number: str = Field(default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}")
     transaction_type: TransactionType
     amount: float
     currency: Currency = Currency.IDR
@@ -136,7 +137,6 @@ class TransactionBase(BaseModel):
     payment_method: Optional[PaymentMethod] = None
     payment_gateway: Optional[PaymentGateway] = None
     gateway_transaction_id: Optional[str] = None
-    # Additional transaction data
     metadata: Dict[str, Any] = {}
 
 
@@ -162,7 +162,7 @@ class TransactionInDB(TransactionBase):
 
 
 class OrderBase(BaseModel):
-    user_id: int = Field(..., description="ID of the user who placed the order")
+    email: str = Field(..., description="Email of the user who placed the order", max_length=255)
     order_number: str = Field(
         default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}",
         description="Unique order number"
@@ -284,6 +284,11 @@ class RefundInDB(RefundBase):
 class PaymentCreateRequest(BaseModel):
     """Request model for creating payments with validation"""
 
+    email: str = Field(
+        ...,
+        max_length=255,
+        description="Email of the user making the payment"
+    )
     transaction_id: int = Field(
         ..., gt=0, description="Transaction ID must be positive"
     )
@@ -313,25 +318,6 @@ class PaymentConfirmRequest(BaseModel):
 
     gateway_response: Dict[str, Any] = Field(default_factory=dict)
     notes: Optional[str] = Field(None, max_length=500)
-
-
-class PaymentRefundRequest(BaseModel):
-    """Request model for processing payment refunds"""
-
-    amount: Optional[float] = Field(
-        None, gt=0, description="Refund amount (defaults to full payment amount)"
-    )
-    reason: str = Field(
-        ..., min_length=1, max_length=255, description="Reason for refund"
-    )
-    notes: Optional[str] = Field(None, max_length=500)
-
-    @field_validator("amount")
-    @classmethod
-    def validate_amount(cls, v):
-        if v is not None and v <= 0:
-            raise ValueError(ValidationMessages.REFUND_AMOUNT_POSITIVE)
-        return v
 
 
 class PaymentWebhookRequest(BaseModel):
@@ -372,13 +358,11 @@ class OrderCreateRequest(BaseModel):
                 "metadata": {
                     "passenger_name": "John Doe",
                     "booking_reference": "TQ-FL-001",
-                    "contact_email": "john.doe@example.com",
                     "special_requests": "Window seat preferred"
                 }
             }
         }
     )
-
     service_type: ServiceType = Field(
         ..., 
         description="Type of service being ordered"
@@ -440,6 +424,7 @@ class TransactionCreateRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "email": "customer@example.com",
                 "transaction_type": "BOOKING",
                 "amount": 885000,
                 "currency": "IDR",
@@ -473,7 +458,11 @@ class TransactionCreateRequest(BaseModel):
             }
         }
     )
-
+    email: str = Field(
+        ...,
+        max_length=255,
+        description="Email of the user making the transaction"
+    )
     transaction_type: TransactionType = Field(
         ..., 
         description="Type of transaction"
@@ -659,7 +648,7 @@ class TransactionReportRequest(BaseModel):
     max_amount: Optional[float] = Field(
         None, ge=0, description="Maximum transaction amount"
     )
-    user_id: Optional[int] = Field(None, gt=0, description="Filter by specific user ID")
+    email: Optional[str] = Field(None, description="Filter by specific user's email address")
     currency: Optional[str] = Field("IDR", max_length=3, description="Currency filter")
 
     @field_validator("currency")
@@ -716,8 +705,8 @@ class RefundReportRequest(BaseModel):
     reason_filter: Optional[str] = Field(
         None, max_length=100, description="Filter by refund reason keyword"
     )
-    processed_by: Optional[int] = Field(
-        None, gt=0, description="Filter by admin who processed refund"
+    processed_by: Optional[str] = Field(
+        None, description="Email of admin who processed refund"
     )
 
     @model_validator(mode="after")
@@ -737,7 +726,7 @@ class TransactionReportData(BaseModel):
     """Transaction report data model"""
 
     transaction_id: int
-    user_id: int
+    email: str
     order_id: str
     transaction_type: TransactionType
     amount: float
@@ -788,7 +777,7 @@ class RefundReportData(BaseModel):
 
     refund_id: int
     transaction_id: int
-    user_id: int
+    email: str
     amount: float
     reason: str
     status: RefundStatus

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import Session
 import time
 
@@ -19,8 +19,7 @@ from adapters.db import (
 )
 
 from adapters.audit_logger import (
-    audit_logger, AuditEventType, extract_request_context, 
-    audit_transaction_operation
+    audit_logger, AuditEventType, extract_request_context
 )
 
 router = APIRouter(tags=["transactions"])
@@ -41,15 +40,22 @@ def get_refund_service(db: Session = Depends(get_database_session)) -> RefundSer
 @router.post(
     "/transactions/", 
     response_model=TransactionInDB,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new transaction",
+    description="""
+    Create a new transaction.
+    
+    ### Access Level: Public
+    - No authentication required
+    """
 )
 async def create_transaction(
     request: Request,
-    current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service),
     transaction_request: TransactionCreateRequest = Body(
         ...,
         example={
+            "email": "john.doe@example.com",
             "transaction_type": "BOOKING",
             "amount": 885000,
             "currency": "IDR",
@@ -92,8 +98,7 @@ async def create_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=0,  # Will be updated after creation
-            user_id=current_user.id,
-            user_role=current_user.role.value,
+            email=transaction_request.email,
             amount=transaction_request.amount,
             currency=transaction_request.currency,
             details={
@@ -111,7 +116,7 @@ async def create_transaction(
         
         transaction = service.create_transaction(
             transaction_request=transaction_request,
-            user_id=current_user.id
+            email=transaction_request.email
         )
         
         if not transaction:
@@ -119,8 +124,7 @@ async def create_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=0,
-                user_id=current_user.id,
-                user_role=current_user.role.value,
+                email=transaction_request.email,
                 amount=transaction_request.amount,
                 currency=transaction_request.currency,
                 details={"error": "Failed to create transaction in service layer"},
@@ -137,11 +141,10 @@ async def create_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=transaction.id,
-            user_id=current_user.id,
-            user_role=current_user.role.value,
+            email=transaction_request.email,
             amount=transaction.amount,
             currency=transaction.currency,
-            order_id=transaction.order_id,
+            order_number=transaction.order_number,
             status=transaction.status.value,
             details={
                 "transaction_type": transaction.transaction_type.value,
@@ -167,10 +170,10 @@ async def create_transaction(
             context={
                 "operation": "create_transaction",
                 "validation_error": True,
-                "user_id": current_user.id,
+                "email": transaction_request.email,
                 "amount": transaction_request.amount
             },
-            user_id=current_user.id,
+            email=transaction_request.email,
             endpoint="/transactions/"
         )
         
@@ -184,11 +187,11 @@ async def create_transaction(
             error=e,
             context={
                 "operation": "create_transaction",
-                "user_id": current_user.id,
+                "email": transaction_request.email,
                 "amount": transaction_request.amount,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=transaction_request.email,
             endpoint="/transactions/"
         )
         
@@ -199,12 +202,21 @@ async def create_transaction(
 
 @router.get(
     "/transactions/", 
-    response_model=List[TransactionInDB]
+    response_model=List[TransactionInDB],
+    summary="List all transactions",
+    description="""
+    Retrieve a list of transactions.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Regular users cannot access this endpoint
+    """
 )
 async def list_transactions(
     request: Request,
     skip: int = 0,
     limit: int = 100,
+    email: Optional[str] = None,
     current_user: dict = Depends(require_user_or_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
@@ -217,12 +229,49 @@ async def list_transactions(
         audit_logger.log_api_request(
             method="GET",
             endpoint="/transactions/",
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             ip_address=request_context.get("ip_address"),
             user_agent=request_context.get("user_agent")
         )
         
+        # Handle email search (admin only)
+        if email:
+            if current_user.role != UserRole.ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only admins can search transactions by email"
+                )
+            
+            # Use the service layer search method
+            transactions = service.search_transactions_by_email(
+                search_email=email,
+                status_filter=None,
+                skip=skip,
+                limit=limit,
+                admin_email=current_user.email
+            )
+            
+            # Log admin search
+            audit_logger.log_security_event(
+                event_type=AuditEventType.API_REQUEST,
+                email=current_user.email,
+                user_role=current_user.role.value,
+                message=f"Admin searched transactions for email: {email}",
+                details={
+                    "operation": "search_transactions_by_email",
+                    "search_email": email,
+                    "result_count": len(transactions),
+                    "skip": skip,
+                    "limit": limit,
+                    "admin_search": True
+                },
+                request_context=request_context
+            )
+            
+            return transactions
+        
+        # Regular listing behavior
         if current_user.role == UserRole.ADMIN:
             # Admin can see all transactions
             transactions = service.get_all_transactions(
@@ -233,7 +282,7 @@ async def list_transactions(
             # Log admin access to all transactions
             audit_logger.log_security_event(
                 event_type=AuditEventType.API_REQUEST,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Admin accessed all transactions (count: {len(transactions)})",
                 details={
@@ -247,7 +296,7 @@ async def list_transactions(
         else:
             # Regular users can only see their own transactions
             transactions = service.get_transactions_by_user(
-                user_id=current_user.id,
+                email=current_user.email,
                 skip=skip,
                 limit=limit
             )
@@ -256,7 +305,7 @@ async def list_transactions(
             audit_logger.log_api_request(
                 method="GET",
                 endpoint="/transactions/",
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 duration_ms=(time.time() - start_time) * 1000,
                 status_code=200,
@@ -272,12 +321,12 @@ async def list_transactions(
             error=e,
             context={
                 "operation": "list_transactions",
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "skip": skip,
                 "limit": limit,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             endpoint="/transactions/"
         )
         
@@ -288,7 +337,16 @@ async def list_transactions(
 
 @router.get(
     "/transactions/{transaction_id}", 
-    response_model=TransactionInDB
+    response_model=TransactionInDB,
+    summary="Get transaction details by ID",
+    description="""
+    Retrieve details of a specific transaction by its ID.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only access their own transactions
+    - Admins can access any transaction
+    """
 )
 async def get_transaction(
     transaction_id: int,
@@ -305,7 +363,7 @@ async def get_transaction(
         audit_logger.log_api_request(
             method="GET",
             endpoint=f"/transactions/{transaction_id}",
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             ip_address=request_context.get("ip_address"),
             user_agent=request_context.get("user_agent")
@@ -313,14 +371,14 @@ async def get_transaction(
         
         transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not transaction:
             # Log unauthorized access attempt
             audit_logger.log_security_event(
                 event_type=AuditEventType.UNAUTHORIZED_ACCESS,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Unauthorized access to transaction {transaction_id}",
                 details={
@@ -340,11 +398,11 @@ async def get_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.API_REQUEST,
             transaction_id=transaction.id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=transaction.amount,
             currency=transaction.currency,
-            order_id=transaction.order_id,
+            order_number=transaction.order_number,
             status=transaction.status.value,
             details={
                 "operation": "get_transaction",
@@ -365,10 +423,10 @@ async def get_transaction(
             context={
                 "operation": "get_transaction",
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}"
         )
@@ -380,13 +438,21 @@ async def get_transaction(
 
 @router.put(
     "/transactions/{transaction_id}", 
-    response_model=TransactionInDB
+    response_model=TransactionInDB,
+    summary="Update transaction details",
+    description="""
+    Update an existing transaction's details.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Used for administrative updates to transactions
+    """
 )
 async def update_transaction(
     transaction_id: int,
     update_request: TransactionUpdateRequest,
     request: Request,
-    current_user: dict = Depends(require_user_or_admin),
+    current_user: dict = Depends(require_admin),
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Update transaction - USER/ADMIN access"""
@@ -398,7 +464,7 @@ async def update_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_UPDATED,
             transaction_id=transaction_id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             details={
                 "operation": "update_transaction",
@@ -414,14 +480,14 @@ async def update_transaction(
         # First check if transaction exists and user has access
         existing_transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not existing_transaction:
             # Log unauthorized access
             audit_logger.log_security_event(
                 event_type=AuditEventType.UNAUTHORIZED_ACCESS,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Unauthorized update attempt on transaction {transaction_id}",
                 details={
@@ -437,32 +503,11 @@ async def update_transaction(
                 detail="Transaction not found"
             )
         
-        # Check access rights
-        if current_user.role != UserRole.ADMIN and existing_transaction.user_id != current_user.id:
-            # Log permission denied
-            audit_logger.log_security_event(
-                event_type=AuditEventType.PERMISSION_DENIED,
-                user_id=current_user.id,
-                user_role=current_user.role.value,
-                message=f"Permission denied for transaction {transaction_id} update",
-                details={
-                    "transaction_id": transaction_id,
-                    "transaction_owner": existing_transaction.user_id,
-                    "requesting_user": current_user.id
-                },
-                request_context=request_context
-            )
-            
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this transaction"
-            )
-        
         # Update transaction using validated request model
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=update_request,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not updated_transaction:
@@ -470,7 +515,7 @@ async def update_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=transaction_id,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 details={
                     "operation": "update_transaction",
@@ -489,11 +534,11 @@ async def update_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_UPDATED,
             transaction_id=updated_transaction.id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=updated_transaction.amount,
             currency=updated_transaction.currency,
-            order_id=updated_transaction.order_id,
+            order_number=updated_transaction.order_number,
             status=updated_transaction.status.value,
             details={
                 "operation": "update_transaction",
@@ -521,9 +566,9 @@ async def update_transaction(
                 "operation": "update_transaction",
                 "validation_error": True,
                 "transaction_id": transaction_id,
-                "user_id": current_user.id
+                "email": current_user.email,
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}"
         )
@@ -539,10 +584,10 @@ async def update_transaction(
             context={
                 "operation": "update_transaction",
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}"
         )
@@ -554,7 +599,17 @@ async def update_transaction(
 
 @router.post(
     "/transactions/{transaction_id}/cancel", 
-    response_model=TransactionInDB
+    response_model=TransactionInDB,
+    summary="Cancel a transaction",
+    description="""
+    Cancel an existing transaction.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only cancel their own transactions
+    - Admins can cancel any transaction
+    - Only PENDING or PROCESSING transactions can be cancelled
+    """
 )
 async def cancel_transaction(
     transaction_id: int,
@@ -571,7 +626,7 @@ async def cancel_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CANCELLED,
             transaction_id=transaction_id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             details={
                 "operation": "cancel_transaction",
@@ -583,14 +638,14 @@ async def cancel_transaction(
         # First check if transaction exists and user has access
         existing_transaction = service.get_transaction(
             transaction_id=transaction_id,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not existing_transaction:
             # Log unauthorized cancellation attempt
             audit_logger.log_security_event(
                 event_type=AuditEventType.UNAUTHORIZED_ACCESS,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Unauthorized cancellation attempt on transaction {transaction_id}",
                 details={
@@ -607,17 +662,17 @@ async def cancel_transaction(
             )
         
         # Check access rights
-        if current_user.role != UserRole.ADMIN and existing_transaction.user_id != current_user.id:
+        if current_user.role != UserRole.ADMIN and existing_transaction.email != current_user.email:
             # Log permission denied
             audit_logger.log_security_event(
                 event_type=AuditEventType.PERMISSION_DENIED,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 message=f"Permission denied for transaction {transaction_id} cancellation",
                 details={
                     "transaction_id": transaction_id,
-                    "transaction_owner": existing_transaction.user_id,
-                    "requesting_user": current_user.id
+                    "transaction_owner": existing_transaction.email,
+                    "requesting_user": current_user.email
                 },
                 request_context=request_context
             )
@@ -633,7 +688,7 @@ async def cancel_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=transaction_id,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 amount=existing_transaction.amount,
                 currency=existing_transaction.currency,
@@ -657,7 +712,7 @@ async def cancel_transaction(
         cancelled_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=cancel_request,
-            user_id=current_user.id
+            email=current_user.email
         )
         
         if not cancelled_transaction:
@@ -665,7 +720,7 @@ async def cancel_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=transaction_id,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 details={
                     "operation": "cancel_transaction",
@@ -684,11 +739,11 @@ async def cancel_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_CANCELLED,
             transaction_id=cancelled_transaction.id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=cancelled_transaction.amount,
             currency=cancelled_transaction.currency,
-            order_id=cancelled_transaction.order_id,
+            order_number=cancelled_transaction.order_number,
             status=cancelled_transaction.status.value,
             details={
                 "operation": "cancel_transaction",
@@ -711,10 +766,10 @@ async def cancel_transaction(
             context={
                 "operation": "cancel_transaction",
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}/cancel"
         )
@@ -727,7 +782,21 @@ async def cancel_transaction(
 @router.post(
     "/transactions/{transaction_id}/refund", 
     response_model=dict,
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
+    summary="Process a refund for a transaction",
+    description="""
+    Process a refund for a completed transaction.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Used for processing refunds for completed transactions
+    
+    ### Parameters:
+    - **transaction_id**: ID of the transaction to refund
+    - **amount**: Optional amount to refund (defaults to full amount)
+    - **reason**: Reason for the refund (required)
+    - **notes**: Additional notes about the refund (optional)
+    """
 )
 async def refund_transaction(
     transaction_id: int,
@@ -752,7 +821,7 @@ async def refund_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_REFUNDED,
             transaction_id=transaction_id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=refund_request.amount,
             details={
@@ -777,7 +846,7 @@ async def refund_transaction(
             audit_logger.log_transaction_event(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=transaction_id,
-                user_id=current_user.id,
+                email=current_user.email,
                 user_role=current_user.role.value,
                 details={
                     "operation": "process_refund",
@@ -796,7 +865,7 @@ async def refund_transaction(
         audit_logger.log_transaction_event(
             event_type=AuditEventType.TRANSACTION_REFUNDED,
             transaction_id=transaction_id,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             amount=refund["amount"],
             details={
@@ -816,7 +885,7 @@ async def refund_transaction(
         # Also log business event for compliance
         audit_logger.log_security_event(
             event_type=AuditEventType.BUSINESS_EVENT if hasattr(AuditEventType, 'BUSINESS_EVENT') else AuditEventType.API_REQUEST,
-            user_id=current_user.id,
+            email=current_user.email,
             user_role=current_user.role.value,
             message=f"Refund processed: {refund['amount']:.2f} IDR for transaction {transaction_id}",
             details={
@@ -847,10 +916,10 @@ async def refund_transaction(
                 "operation": "process_refund",
                 "validation_error": True,
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "refund_amount": refund_request.amount
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}/refund"
         )
@@ -868,11 +937,11 @@ async def refund_transaction(
             context={
                 "operation": "process_refund",
                 "transaction_id": transaction_id,
-                "user_id": current_user.id,
+                "email": current_user.email,
                 "refund_amount": refund_request.amount,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
-            user_id=current_user.id,
+            email=current_user.email,
             transaction_id=transaction_id,
             endpoint=f"/transactions/{transaction_id}/refund"
         )
