@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
 from domain.models import FerryBookingRequest
 from domain import services
+
+
 
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
 
@@ -24,3 +26,15 @@ def list_schedules(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ... existing schedules endpoint ...
+
+@router.post("/bookings")
+def create_booking(booking_data: dict = Body(...)):
+    """
+    Buat booking baru ke Sindo API.
+    """
+    try:
+        return services.create_ferry_booking(booking_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

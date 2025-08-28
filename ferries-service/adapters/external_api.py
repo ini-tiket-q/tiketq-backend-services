@@ -89,4 +89,24 @@ def get_sindo_trips(origin: str, destination: str, date: str):
     return resp.json()
 
 
+def create_sindo_booking(booking_data: dict):
+    global _access_token
+    if not _access_token:
+        sindo_login()
 
+    url = "https://api.test.sindoferry.com.sg/Agent/Booking/Bookings"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {_access_token}"
+    }
+
+    resp = requests.post(url, headers=headers, json=booking_data, timeout=15)
+
+    if resp.status_code == 401:
+        sindo_login()
+        headers["Authorization"] = f"Bearer {_access_token}"
+        resp = requests.post(url, headers=headers, json=booking_data, timeout=15)
+
+    resp.raise_for_status()
+    return resp.json()

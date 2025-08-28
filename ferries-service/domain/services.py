@@ -1,5 +1,5 @@
 from domain.models import FerryBookingRequest, FerryBookingResponse
-from adapters.external_api import get_sindo_routes, get_sindo_trips
+from adapters.external_api import get_sindo_routes, get_sindo_trips, create_sindo_booking
 
 # Booking list local cache (opsional, bisa dipakai untuk debug)
 _local_bookings = []
@@ -43,3 +43,10 @@ def get_ferry_schedules(origin: str = None, destination: str = None, date: str =
         return get_ferry_routes()
 
 
+
+def create_ferry_booking(booking_data: dict):
+    """
+    Kirim booking ke API Sindo.
+    """
+    data = create_sindo_booking(booking_data)
+    return data

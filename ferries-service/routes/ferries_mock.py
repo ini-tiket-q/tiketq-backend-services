@@ -22,12 +22,12 @@ def list_schedules(
 ## Bookings
 
 # create booking for user/guest
-@router_mock.post("/book", response_model=FerryBookingResponse)
+@router_mock.post("/bookMock", response_model=FerryBookingResponse)
 def book_ferry(req: FerryBookingRequest):
     return services_mock.handle_ferry_booking(req)
 
 # get all bookings (admin)
-@router_mock.get("/bookings")
+@router_mock.get("/bookingsMock")
 def list_all_bookings():
     """
     Get all mock ferry bookings (admin view).
