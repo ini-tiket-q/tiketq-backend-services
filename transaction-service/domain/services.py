@@ -147,7 +147,7 @@ class TransactionService:
             logger.error(f"Error creating transaction: {str(e)}", exc_info=True)
             return None
     
-    def get_transaction(self, transaction_id: int, email: str) -> Optional[TransactionInDB]:
+    def get_transaction(self, transaction_id: int, email: str, role: UserRole) -> Optional[TransactionInDB]:
         """Get a transaction by ID with authorization check.
         
         Args:
@@ -159,9 +159,12 @@ class TransactionService:
         """
         try:
             transaction = self.transaction_repo.get_transaction(transaction_id)
-            if not transaction or transaction.email != email:
-                return None
-            return transaction
+            if role == UserRole.ADMIN and transaction:
+                return transaction
+            else:
+                if not transaction or transaction.email != email:
+                    return None
+                return transaction
         except Exception as e:
             logger.error(f"Error retrieving transaction {transaction_id}: {str(e)}")
             return None
