@@ -2,10 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Body
 from domain.models import FerryBookingRequest
 from domain import services
 
-
-
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
-
 
 @router.get("/routes")
 def list_schedules(
@@ -50,3 +47,14 @@ def add_booking_detail(booking_id: str, passenger_data: dict = Body(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/bookings/{booking_id}/details")
+def list_booking_details(booking_id: str, search: str = Query(None, description="Cari nama penumpang")):
+    """
+    Ambil detail penumpang dari booking tertentu.
+    Bisa difilter pakai `?search=Nama`.
+    """
+    try:
+        return services.get_ferry_booking_details(booking_id, search)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

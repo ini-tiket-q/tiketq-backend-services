@@ -1,6 +1,7 @@
 import os
 import requests
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -134,3 +135,36 @@ def add_sindo_booking_detail(booking_id: str, passenger_data: dict):
     resp.raise_for_status()
     return resp.json()
 
+
+def get_sindo_booking_details(booking_id: str, search: str = None):
+    global _access_token
+    if not _access_token:
+        sindo_login()
+
+    url = f"https://api.test.sindoferry.com.sg/Agent/Booking/Bookings/{booking_id}/Details"
+
+    params = {
+        "filter": json.dumps({
+            "searchString": search if search else None,
+            "sort": 2  # Name ASC
+        }),
+        "pagination": json.dumps({
+            "pageIndex": 0,
+            "pageSize": 0
+        })
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {_access_token}"
+    }
+
+    resp = requests.get(url, headers=headers, params=params, timeout=15)
+
+    if resp.status_code == 401:
+        sindo_login()
+        headers["Authorization"] = f"Bearer {_access_token}"
+        resp = requests.get(url, headers=headers, params=params, timeout=15)
+
+    resp.raise_for_status()
+    return resp.json()
