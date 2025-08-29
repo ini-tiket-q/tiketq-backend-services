@@ -32,6 +32,17 @@ def get_flight_service() -> FlightService:
 @router.post(
     "/ceksaldo",
     summary="Check balance with username & password",
+    description="""
+    Validates user credentials (username & password) and returns the agent's MMBC balance if login is successful.
+
+    **Form Data**:
+    - `username`: MMBC login username (e.g. `Paris`)
+    - `password`: MMBC login password (e.g. `xxxxxxxxx`)
+
+    **Returns**:
+    - On success: `{ "result": "ok", "saldo": "1,000,000" }`
+    - On failure: `401 Unauthorized` with reason `"invalid login"`
+    """,
     responses={
         200: {"description": "Success"},
         401: {"description": "Invalid login"},
@@ -70,6 +81,14 @@ def check_balance(
 @router.get(
     "/getcodearea-json",
     summary="Get airport code and city",
+    description="""
+    Returns a list of supported airport codes along with the associated city names.
+
+    No parameters required.
+
+    **Returns**:
+    - List of airport codes, e.g. `CGK` (Jakarta), `DPS` (Denpasar)
+    """,
     response_model=CodeAreaResponse,
     responses={
         200: {"description": "Success"},
@@ -94,6 +113,14 @@ def get_code_area(service: FlightService = Depends(get_flight_service)):
 @router.get(
     "/getcodeflights-json",
     summary="Get airline code and name",
+    description="""
+    Returns a list of available airline codes, names, and their logos.
+
+    No parameters required.
+
+    **Returns**:
+    - Example: `[{ "code": "GA", "name": "Garuda Indonesia", "logo": "..." }]`
+    """,
     response_model=List[AirlineSchema],
     responses={
         200: {"description": "Success"},
@@ -115,11 +142,36 @@ def get_code_flights(service: FlightService = Depends(get_flight_service)):
 # -------------------------------
 # Search Available Flights
 # -------------------------------
-from fastapi import Request  # Add this at the top
+# from fastapi import Request  # Add this at the top
 
 
 @router.post(
     "/getflights-json",
+    summary="Search available flights",
+    description="""
+    Search available flights based on origin, destination, and travel date. Supports optional filters like airline, transit, baggage, class, and pagination.
+
+    Login is optional but recommended to fetch pricing and availability tied to agent account.
+
+    **Request Body**:
+    - `flight_from`: Departure airport code (e.g. `CGK`)
+    - `flight_to`: Arrival airport code (e.g. `DPS`)
+    - `date`: Date of travel in format `dd-mm-yyyy` (e.g. `01-09-2025`)
+    - `airline`: Airline code filter (optional)
+    - `transit`: Whether to include transit flights (`true`/`false`) (optional)
+    - `baggage`: Filter by baggage allowance (optional)
+    - `flight_class`: Economy / Business / First (optional)
+    - `sort_by`: Sorting option: `cheapest`, `fastest`, etc. (optional)
+    - `page`: Page number for pagination (default: 1)
+    - `per_page`: Number of results per page (default: 10)
+    - `username`: MMBC login username (optional)
+    - `password`: MMBC login password (optional)
+
+    **Returns**:
+    - A list of matching flight options.
+    - `401 Unauthorized`: If login provided but invalid.
+    - `404 Not Found`: If no flights match the search.
+    """,
     response_model=List[FlightResultSchema],
     responses={
         200: {"description": "Success"},
