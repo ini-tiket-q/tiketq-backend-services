@@ -75,3 +75,13 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
     return data
 
 
+from adapters.external_api import get_sindo_routes, get_sindo_trips, get_sindo_countries
+
+def get_ferry_countries(search: str = None):
+    """
+    Ambil daftar negara dari API Sindo.
+    """
+    data = get_sindo_countries(search)
+    records = data.get("data", {}).get("records", [])
+    return {"countries": records}
+

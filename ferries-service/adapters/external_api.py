@@ -168,3 +168,36 @@ def get_sindo_booking_details(booking_id: str, search: str = None):
 
     resp.raise_for_status()
     return resp.json()
+
+def get_sindo_countries(search: str = None):
+    global _access_token
+    if not _access_token:
+        sindo_login()
+
+    url = f"{SINDO_CORE_URL}/Master/Countries"
+
+    params = {
+        "filter": json.dumps({
+            "searchString": search if search else None,
+            "sort": 0
+        }),
+        "pagination": json.dumps({
+            "pageIndex": 0,
+            "pageSize": 0
+        })
+    }
+
+    headers = {
+        "Authorization": f"Bearer {_access_token}",
+        "Content-Type": "application/json"
+    }
+
+    resp = requests.get(url, headers=headers, params=params, timeout=15)
+
+    if resp.status_code == 401:
+        sindo_login()
+        headers["Authorization"] = f"Bearer {_access_token}"
+        resp = requests.get(url, headers=headers, params=params, timeout=15)
+
+    resp.raise_for_status()
+    return resp.json()

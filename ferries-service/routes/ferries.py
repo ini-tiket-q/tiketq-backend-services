@@ -85,3 +85,15 @@ def list_booking_details(booking_id: str, search: str = Query(None, description=
         return services.get_ferry_booking_details(booking_id, search)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/countries")
+def list_countries(search: str = Query(None, description="Search country by code or name")):
+    """
+    Ambil daftar negara dari Sindo API.
+    - Bisa pakai query param ?search=INDONESIA atau ?search=ID
+    """
+    try:
+        return services.get_ferry_countries(search)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
