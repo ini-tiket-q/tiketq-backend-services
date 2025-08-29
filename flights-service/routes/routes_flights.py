@@ -129,13 +129,12 @@ from fastapi import Request  # Add this at the top
     },
 )
 def get_flights(
-    request: Request,  # ✅ Move this line before default arguments
-    username: str = Query(...),
-    password: str = Query(...),
+    request: Request,
+    username: Optional[str] = Query(None),
+    password: Optional[str] = Query(None),
     origin: AirportCode = Query(..., alias="flight_from"),
     destination: AirportCode = Query(..., alias="flight_to"),
     date: str = Query(...),
-    # Extra filters
     airline: Optional[str] = Query(None),
     transit: Optional[str] = Query(None),
     baggage: Optional[str] = Query(None),
@@ -146,6 +145,7 @@ def get_flights(
     service: FlightService = Depends(get_flight_service),
 ):
     try:
+        # Validasi tanggal
         try:
             parsed_date = datetime.strptime(date, "%d-%m-%Y").date()
         except ValueError:
@@ -154,26 +154,33 @@ def get_flights(
                 detail="Date must be in format dd-mm-yyyy",
             )
 
+        # Buat search params
         params = FlightSearchParams(
             origin=origin,
             destination=destination,
             date=parsed_date,
-            airline=request.query_params.get("airline"),
-            transit=request.query_params.get("transit"),
-            baggage=request.query_params.get("baggage"),
-            flight_class=request.query_params.get("flight_class"),
-            sort_by=request.query_params.get("sort_by"),
-            page=int(request.query_params.get("page", 1)),
-            per_page=int(request.query_params.get("per_page", 10)),
+            airline=airline,
+            transit=transit,
+            baggage=baggage,
+            flight_class=flight_class,
+            sort_by=sort_by,
+            page=page,
+            per_page=per_page,
         )
 
-        if not service.validate_login(username, password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"result": "no", "reason": "invalid login"},
-            )
+        # Validasi login jika username & password dikirim
+        if username and password:
+            if not service.validate_login(username, password):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail={"result": "no", "reason": "invalid login"},
+                )
+        else:
+            print("⚠️ Skipping login validation (username/password not provided)")
 
-        results = service.get_flights(params)
+        # Ambil flight
+        results = service.get_flights(params, username=username, password=password)
+
         if not results:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
