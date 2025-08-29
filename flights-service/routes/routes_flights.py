@@ -8,6 +8,7 @@ from domain.schemas_flights import (
     CodeAreaResponse,
     AirlineSchema,
     AirportCode,
+    FlightSearchRequest,
 )
 from domain.services_flights import FlightService
 from domain.repository_flights import FlightRepository
@@ -117,7 +118,7 @@ def get_code_flights(service: FlightService = Depends(get_flight_service)):
 from fastapi import Request  # Add this at the top
 
 
-@router.get(
+@router.post(
     "/getflights-json",
     response_model=List[FlightResultSchema],
     responses={
@@ -129,57 +130,46 @@ from fastapi import Request  # Add this at the top
     },
 )
 def get_flights(
-    request: Request,
-    username: Optional[str] = Query(None),
-    password: Optional[str] = Query(None),
-    origin: AirportCode = Query(..., alias="flight_from"),
-    destination: AirportCode = Query(..., alias="flight_to"),
-    date: str = Query(...),
-    airline: Optional[str] = Query(None),
-    transit: Optional[str] = Query(None),
-    baggage: Optional[str] = Query(None),
-    flight_class: Optional[str] = Query(None),
-    sort_by: Optional[str] = Query(None),
-    page: Optional[int] = Query(1),
-    per_page: Optional[int] = Query(10),
+    request_data: FlightSearchRequest,
     service: FlightService = Depends(get_flight_service),
 ):
     try:
-        # Validasi tanggal
+        # Validasi format tanggal
         try:
-            parsed_date = datetime.strptime(date, "%d-%m-%Y").date()
+            parsed_date = datetime.strptime(request_data.date, "%d-%m-%Y").date()
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Date must be in format dd-mm-yyyy",
             )
 
-        # Buat search params
+        # Buat params
         params = FlightSearchParams(
-            origin=origin,
-            destination=destination,
+            origin=request_data.flight_from,
+            destination=request_data.flight_to,
             date=parsed_date,
-            airline=airline,
-            transit=transit,
-            baggage=baggage,
-            flight_class=flight_class,
-            sort_by=sort_by,
-            page=page,
-            per_page=per_page,
+            airline=request_data.airline,
+            transit=request_data.transit,
+            baggage=request_data.baggage,
+            flight_class=request_data.flight_class,
+            sort_by=request_data.sort_by,
+            page=request_data.page,
+            per_page=request_data.per_page,
         )
 
-        # Validasi login jika username & password dikirim
-        if username and password:
-            if not service.validate_login(username, password):
+        # Login opsional
+        if request_data.username and request_data.password:
+            if not service.validate_login(request_data.username, request_data.password):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail={"result": "no", "reason": "invalid login"},
                 )
-        else:
-            print("⚠️ Skipping login validation (username/password not provided)")
 
-        # Ambil flight
-        results = service.get_flights(params, username=username, password=password)
+        results = service.get_flights(
+            params,
+            username=request_data.username,
+            password=request_data.password,
+        )
 
         if not results:
             raise HTTPException(

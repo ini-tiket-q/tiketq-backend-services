@@ -46,6 +46,7 @@ class CodeAreaResponse(BaseModel):
 # --------------------------------
 from typing import Literal, Optional
 
+
 class FlightSearchParams(BaseModel):
     origin: AirportCode = Field(..., alias="flight_from")
     destination: AirportCode = Field(..., alias="flight_to")
@@ -54,7 +55,9 @@ class FlightSearchParams(BaseModel):
     transit: Optional[str] = None
     baggage: Optional[str] = None
     flight_class: Optional[Literal["economy", "business", "first"]] = None
-    sort_by: Optional[Literal["harga_tertinggi", "harga_terendah", "waktu_terbaik"]] = None
+    sort_by: Optional[Literal["harga_tertinggi", "harga_terendah", "waktu_terbaik"]] = (
+        None
+    )
     page: int = 1
     per_page: int = 10
 
@@ -69,7 +72,6 @@ class FlightSearchParams(BaseModel):
         return v
 
     model_config = {"validate_by_name": True}
-
 
 
 # --------------------------------
@@ -92,6 +94,24 @@ class FlightResultSchema(BaseModel):
     flight_seatavail: str
     flight_baggage: Optional[str]
     flight_facilities: Optional[str]
+
+
+# --------------------------------
+# Flight Search Request (for body request)
+# --------------------------------
+class FlightSearchRequest(BaseModel):
+    username: Optional[str]
+    password: Optional[str]
+    flight_from: AirportCode
+    flight_to: AirportCode
+    date: str
+    airline: Optional[str] = None
+    transit: Optional[str] = None
+    baggage: Optional[str] = None
+    flight_class: Optional[str] = None
+    sort_by: Optional[str] = None
+    page: Optional[int] = 1
+    per_page: Optional[int] = 10
 
 
 __all__ = [
