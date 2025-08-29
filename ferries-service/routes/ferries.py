@@ -4,25 +4,52 @@ from domain import services
 
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
 
+# @router.get("/routes")
+# def list_schedules(
+#     origin: str = Query(None, description="Origin port code (ex: BTC)"),
+#     destination: str = Query(None, description="Destination port code (ex: HFC)"),
+#     date: str = Query(None, description="Departure date (YYYY-MM-DD)")
+# ):
+#     """
+#     Ambil jadwal ferry:
+#     - Tanpa query → daftar routes
+#     - Dengan query (origin, destination, date) → daftar trips
+#     """
+#     try:
+#         if origin and destination and date:
+#             return services.get_ferry_trips(origin, destination, date)
+#         else:
+#             return services.get_ferry_routes()
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 @router.get("/routes")
-def list_schedules(
-    origin: str = Query(None, description="Origin port code (ex: BTC)"),
-    destination: str = Query(None, description="Destination port code (ex: HFC)"),
-    date: str = Query(None, description="Departure date (YYYY-MM-DD)")
-):
+def list_routes(search: str = Query(None, description="Search route by name or code")):
     """
-    Ambil jadwal ferry:
-    - Tanpa query → daftar routes
-    - Dengan query (origin, destination, date) → daftar trips
+    Ambil daftar rute ferry (origin → destination).
     """
     try:
-        if origin and destination and date:
-            return services.get_ferry_trips(origin, destination, date)
-        else:
-            return services.get_ferry_routes()
+        return services.get_ferry_routes(search)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ==========================
+# Trips
+# ==========================
+@router.get("/trips")
+def list_trips(
+    origin: str = Query(..., description="Origin port code (ex: BTC)"),
+    destination: str = Query(..., description="Destination port code (ex: HFC)"),
+    date: str = Query(..., description="Departure date (YYYY-MM-DD)")
+):
+    """
+    Ambil daftar trip / jadwal ferry untuk route tertentu.
+    - Wajib isi origin, destination, dan date.
+    """
+    try:
+        return services.get_ferry_trips(origin, destination, date)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ... existing schedules endpoint ...
 
