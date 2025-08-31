@@ -27,20 +27,10 @@ cp .env.example .env
 ### 1️⃣ Run with Docker Compose (Recommended)
 
 This service is already integrated into the root docker-compose.yml.
-To start only the ferries service:
+To start the containers:
 
 ```bash
-docker build -t ferries-service ./ferries-service
-```
-
-run the ferries-service container:
-```bash
-docker run -p 5001:8000 --env-file ./ferries-service/.env.example ferries-service
-```
-
-run postgres container:
-```bash
-docker-compose up -d postgres
+docker-compose up -d --build
 ```
 
 
@@ -80,111 +70,340 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 Once the ferries-service is running, you can check the health check endpoint:
 
 ```bash
-curl http://localhost:5001/health
+curl http://localhost:8003/health
 ```
 Sample response:
 
 ```json
 {
 "status": "ok",
-"port": 5001,
+"port": 8003,
 "db_url_present": true,
 "api_key_present": true
 }
 ```
 ## 🔍 Basic Endpoints
 
-Since the project doesn't have a real API yet, we'll use a mock API to simulate API calls.
+This project use real APIs provided by Sindo Ferry to create, display, update, and delete data
 
-
-### Post booking
-
+### Agen Login (Mandatory)
 ```bash
-POST http://localhost:5001/ferries/book
+POST https://api.test.sindoferry.com.sg/agent/Agent/Login
+```
+Request Body:
+```json
+{
+  "agentCode": "T900T63",
+  "username": "testparistvl",
+  "password": "j&o99?Pm2#Uj",
+  "rememberMe": "true"
+}
+```
+Response:
+```json
+{
+    "status": "Ok",
+    "data": {
+        "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjExMzU5MjkzRjZBQzkyODk3QkI4NjhENEQ5MTI2N0ZBQjczRTcyNUIiLCJ0eXAiOiJhdCtqd3QiLCJ4NXQiOiJFVFdTa19hc2tvbDd1R2pVMlJKbi1yYy1jbHMifQ.eyJuYmYiOjE3NTY2MTQ0OTAsImV4cCI6MTc1NzgyNDA5MCwiaXNzIjoiaHR0cDovL2FnZW50LWFwaSIsImF1ZCI6WyJhZ2VudCIsImJvb2tpbmciLCJjcmVkaXRtb25pdG9yaW5nIiwiZWFnbGUiLCJnbG9iYWwiLCJtYXN0ZXIiLCJvcmRlciIsInRyYXZlbGFnZW50Il0sImNsaWVudF9pZCI6InJvLmNsaWVudC4xNGQiLCJzdWIiOiI2YWNhYzJmNC00YzM4LTRlZTgtNWM0NS0wOGRkY2YzY2JlZDUiLCJhdXRoX3RpbWUiOjE3NTY2MTQ0OTAsImlkcCI6ImxvY2FsIiwiaWQiOiJ0ZXN0cGFyaXN0dmwiLCJhaWQiOiIwZTQ4MTRmZi1kYzdkLTQ0NzgtNGQ0ZS0wOGRkY2YzYjk3NTUiLCJpc19zdXBlcl9hZG1pbiI6IlRydWUiLCJpc19hZG1pbiI6IlRydWUiLCJlbWFpbCI6Im11bHlhZGlfcGFyaXNAeWFob28uY29tIiwic2NvcGUiOlsib3BlbmlkIiwiYWdlbnQiLCJib29raW5nIiwiY3JlZGl0bW9uaXRvcmluZyIsImVhZ2xlIiwiZ2xvYmFsIiwibWFzdGVyIiwib3JkZXIiLCJ0cmF2ZWxhZ2VudCJdLCJhbXIiOlsicHdkIl19.LYt9FfZiJqIuutYE_KhXgUWzC3DSbsFeUqwQiHcum9U3UFhYJFybuOTi_JwaX1-pAnNQOLBlLMWpt4F_8aKVL-D3wYULcQrlkQYDjB-370R2_sxYq_Z_MaoQUSklg_V7Ea8nizFJTL6OcZVRHQ0SIAlhYrkzs-N5-vTUClzAN-chniI0Y_QJq-g-g2KOs5wS6rgwRGENDrGh-vEAaoWgetDPlrySYltTSljdQt0qKfr_drZbWyFZKkpDjMV2ioWCKBh9lj21luVWjLPwJIBhaF5UuV5UxS3SJCu9QyMEmXmhCRua6PLyzManT6Iwhhu13MTxpLvt4tuqah5rT3sXuQ",
+        "expires_in": 1209600,
+        "token_type": "Bearer",
+        "scope": "agent booking creditmonitoring eagle global master openid order travelagent"
+    }
+}
 ```
 
-Example:
+### Get Routes
+
 ```bash
-curl --location 'http://localhost:5001/ferries/book' \
---header 'Content-Type: application/json' \
---data-raw '{
-    "schedule_id": "SCH003",
-    "passengers": [
+GET http://localhost:8003/ferries/routes
+```
+
+Response:
+```json
+{
+    "routes": [
         {
-        "type": "Adult",
-        "title": "Mr",
-        "name": "Yusuf Johan",
-        "passport_no": "A1234565",
-        "nationality": "ID",
-        "issuing_country": "Indonesia",
-        "dob": "1999-05-21",
-        "passport_expiry": "2030-05-21",
-        "passport_issue": "2020-05-21"
+            "id": "07adda23-56e2-475d-15ac-08d7934ea487",
+            "code": "BTC - HFC",
+            "name": "Batam Centre Terminal - HarbourFront Centre Terminal",
+            "embarkationPort": {
+                "id": "00ec55cd-f45b-47af-faad-08d7934cf062",
+                "code": "BTC",
+                "name": "Batam Center Terminal"
+            },
+            "destinationPort": {
+                "id": "ecc4544a-10de-4b20-faaa-08d7934cf062",
+                "code": "HFC",
+                "name": "HarbourFront Centre Terminal"
+            },
+            "sector": {
+                "id": "dbea62f3-a27d-4a20-aa68-b3704c42dfab",
+                "code": "BTM - SG",
+                "name": "Batam - Singapore"
+            }
         },
         {
-        "type": "Adult",
-        "title": "Miss",
-        "name": "Siti",
-        "passport_no": "B7654321",
-        "nationality": "ID",
-        "issuing_country": "Indonesia",
-        "dob": "2015-02-10",
-        "passport_expiry": "2030-02-10",
-        "passport_issue": "2020-02-10"
+            "id": "70695ec6-b859-4074-15ad-08d7934ea487",
+            "code": "SKP - HFC",
+            "name": "Sekupang Terminal - HarbourFront Centre Terminal",
+            "embarkationPort": {
+                "id": "66e453b2-a85e-40a7-faa9-08d7934cf062",
+                "code": "SKP",
+                "name": "Sekupang"
+            },
+            "destinationPort": {
+                "id": "ecc4544a-10de-4b20-faaa-08d7934cf062",
+                "code": "HFC",
+                "name": "HarbourFront Centre Terminal"
+            },
+            "sector": {
+                "id": "dbea62f3-a27d-4a20-aa68-b3704c42dfab",
+                "code": "BTM - SG",
+                "name": "Batam - Singapore"
+            }
         }
-        
-    ],
-    "requirements": {
-        "email": "yusuf@mail.com",
-        "confirm_email": "yusuf@mail.com",
-        "mobile_phone": "08123456666",
-        "whatsapp_no": "628123456666"
-    }
-}'
+    ]
+}
+```
+
+### Get Trips (Schedule Search)
+Description: searching available schdules for user to choose
+```bash
+GET http://localhost:8003/ferries/transactionshttp://localhost:8003/ferries/trips?origin={origin}&destination={destination}&date={date}
+```
+Example
+```bash
+GET http://localhost:8003/ferries/transactionshttp://localhost:8003/ferries/trips?origin=HFC&destination=BTC&date=20250830
+```
+Response:
+```json
+{
+    "trips": [
+        {
+            "departureTime": "08:25",
+            "arrivalTime": "09:35",
+            "status": "OPEN",
+            "tripID": "RFPE0825",
+            "remarks": "",
+            "tripSchedID": 21137,
+            "usedSeat": 262,
+            "gateOpen": "07:40",
+            "gateClose": "08:10"
+        },
+        {
+            "departureTime": "15:40",
+            "arrivalTime": "16:50",
+            "status": "OPEN",
+            "tripID": "RFPE1540",
+            "remarks": "",
+            "tripSchedID": 21138,
+            "usedSeat": 265,
+            "gateOpen": "12:55",
+            "gateClose": "15:25"
+        }
+    ]
+}
+```
+
+### Post Booking
+```bash
+POST http://localhost:8003/ferries/bookings
+```
+Request Body:
+```json
+{
+  "isRoundTrip": false,
+  "isReturnTripOpen": true,
+  "departureCoreApiTrip": {
+    "date": "2025-09-01",
+    "routeID": "07adda23-56e2-475d-15ac-08d7934ea487",
+    "id": "398",
+    "time": "0825",
+    "gateOpen": "0740",
+    "gateClose": "0810"
+  },
+  "returnCoreApiTrip": null
+}
+
 ```
 Response:
 ```bash
 {
-    "booking_id": "587dde66-c892-47a9-ab71-f6b8540a98c8",
-    "status": "incomplete",
-    "total_price": 340000.0,
-    "message": "Booking created. Transaction ID: 357885ed-d81e-420a-9b70-b461c444a390"
+    "status": "Ok",
+    "data": "a78b4872-4a54-469e-8f98-08dde6d79212"
 }
 ```
 
-### Get Transactions
+### Add Booking Details
 ```bash
-GET http://localhost:5001/ferries/transactions
-```
-Response:
-```bash
-[
-    {
-        "transaction_id": "357885ed-d81e-420a-9b70-b461c444a390",
-        "booking_id": "587dde66-c892-47a9-ab71-f6b8540a98c8",
-        "amount": 340000,
-        "status": "pending"
-    }
-]
-```
-
-### Update Transaction Status
-```bash
-PUT http://localhost:5001/ferries/transactions/{transaction_id}?status=<new_status>
+POST http://localhost:8003/ferries/bookings/{booking_id}/details
 ```
 Example:
 ```bash
-http://localhost:5001/ferries/transactions/699b87e1-ac15-495c-99b0-8fcf572eb3d0?status=paid
+POST http://localhost:8003/ferries/bookings/a78b4872-4a54-469e-8f98-08dde6d79212/details
+```
+Request Body:
+```json
+{
+  "isRoundTrip": false,
+  "isReturnTripOpen": true,
+  "departureCoreApiTrip": {
+    "date": "2025-09-01",
+    "routeID": "07adda23-56e2-475d-15ac-08d7934ea487",
+    "id": "398",
+    "time": "0825",
+    "gateOpen": "0740",
+    "gateClose": "0810"
+  },
+  "returnCoreApiTrip": null
+}
+
 ```
 Response:
 ```bash
 {
-    "transaction_id": "357885ed-d81e-420a-9b70-b461c444a390",
-    "booking_id": "587dde66-c892-47a9-ab71-f6b8540a98c8",
-    "amount": 340000,
-    "status": "paid"
+    "status": "Ok",
+    "data": "bbd01c46-6f10-4b1e-f3b3-08dde6d799be"
 }
 ```
+
+### GET Booking Details
+```bash
+GET http://localhost:8003/ferries/bookings/{booking_id}/details
+```
+Example:
+```bash
+GET http://localhost:8003/ferries/bookings/a78b4872-4a54-469e-8f98-08dde6d79212/details
+```
+
+Response:
+```json
+
+{
+    "status": "Ok",
+    "data": {
+        "totalRecords": 1,
+        "records": [
+            {
+                "id": "8ce09e8a-ee1b-46ee-f3b4-08dde6d799be",
+                "identification": {
+                    "type": 0,
+                    "no": "A321123",
+                    "fullName": "ANDI",
+                    "gender": 0,
+                    "dateOfBirth": "1991-01-01T00:00:00",
+                    "placeOfBirth": null,
+                    "issueDate": "2020-09-01T00:00:00",
+                    "expiryDate": "2027-09-01T00:00:00",
+                    "nationality": {
+                        "id": "0dbe8cd6-cb51-4e34-ff90-08d7934c8bf2",
+                        "code": "ID",
+                        "code2": "INA",
+                        "name": "INDONESIA",
+                        "nationality": "INDONESIAN",
+                        "isSingaporeRequireVisa": false,
+                        "isIndonesiaRequireVisa": false
+                    },
+                    "issuanceCountry": {
+                        "id": "0dbe8cd6-cb51-4e34-ff90-08d7934c8bf2",
+                        "code": "ID",
+                        "code2": "INA",
+                        "name": "INDONESIA",
+                        "nationality": "INDONESIAN",
+                        "isSingaporeRequireVisa": false,
+                        "isIndonesiaRequireVisa": false
+                    }
+                },
+                "isCancelled": false,
+                "bookingType": {
+                    "id": "cce8e162-8fdf-4183-c766-08dbb4d0fd32",
+                    "code": "BTM1IDATEST",
+                    "name": "BATAM - SINGAPORE 1WAY INDONESIAN PASSPORT ADULT TEST TICKET (ALL IN)",
+                    "isRoundTrip": false,
+                    "isVTL": false,
+                    "hasDayGroupRestriction": false,
+                    "hasNationalityRestriction": true,
+                    "hasPaxTypeRestriction": false,
+                    "additionalCriteriaString": null,
+                    "departureSector": {
+                        "id": "dbea62f3-a27d-4a20-aa68-b3704c42dfab",
+                        "code": "BTM - SG",
+                        "name": "Batam - Singapore",
+                        "nextSector": {
+                            "id": "26ac1736-8822-4b90-a50a-eeaf1a190578",
+                            "code": "SG - BTM",
+                            "name": "Singapore - Batam",
+                            "hasGST": false
+                        },
+                        "hasGST": false
+                    },
+                    "allowedDayGroup": null,
+                    "allowedNationality": {
+                        "id": "0dbe8cd6-cb51-4e34-ff90-08d7934c8bf2",
+                        "code": "ID",
+                        "code2": "INA",
+                        "name": "INDONESIA",
+                        "nationality": "INDONESIAN",
+                        "isSingaporeRequireVisa": false,
+                        "isIndonesiaRequireVisa": false
+                    },
+                    "allowedPaxType": null
+                },
+                "departureVoucherCode": null,
+                "returnVoucherCode": null
+            }
+        ]
+    }
+}
+
+```
+
+### Get Countries
+
+```bash
+GET http://localhost:8003/ferries/countries
+```
+
+Response:
+```json
+{
+    "countries": [
+        {
+            "id": "bfec3e93-7ea4-4252-906d-cd3a7b3b4a02",
+            "code": "AD",
+            "code2": "AND",
+            "name": "ANDORRA",
+            "nationality": "ANDORRA"
+        },
+        {
+            "id": "a14d6e9f-a9a0-4b50-be88-c64c03214756",
+            "code": "AE",
+            "code2": "ARE",
+            "name": "UNITED ARAB EMIRATES",
+            "nationality": "UNITED ARAB EMIRATES"
+        },
+        {
+            "id": "4f18cede-f88f-4870-a2b9-06cbaef785ec",
+            "code": "AF",
+            "code2": "AFG",
+            "name": "AFGHANISTAN",
+            "nationality": "AFGHANISTAN"
+        },
+        {
+            "id": "8742d507-8b72-4d5f-949e-ef986c776d08",
+            "code": "AG",
+            "code2": "ATG",
+            "name": "ANTIGUA AND BARBUDA",
+            "nationality": "ANTIGUA AND BARBUDA"
+        }
+
+        
+        
+    ]
+}
+```
+
+
 
 ## 🗂 Folder Structure
 ```graphql
