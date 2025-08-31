@@ -1,3 +1,4 @@
+
 # version: '3.9'
 
 services:
@@ -56,6 +57,10 @@ services:
     build:
       context: ./ferries-service
     container_name: ferries-service
+    ports:
+      - "8003:8000" # temporary expose e.g. localhost:8003/docs
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -138,3 +143,4 @@ networks:
 
 volumes:
   postgres_data:
+
