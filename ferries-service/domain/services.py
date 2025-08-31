@@ -4,13 +4,14 @@ from adapters.external_api import (
     get_sindo_trips, 
     create_sindo_booking, 
     add_sindo_booking_detail,
-    get_sindo_booking_details
+    get_sindo_booking_details,
+    get_sindo_countries
     )
 
 # Booking list local cache (opsional, bisa dipakai untuk debug)
 _local_bookings = []
 
-
+# Get All Routes Provided
 def get_ferry_routes(search: str = None):
     """
     Ambil daftar rute ferry (origin → destination).
@@ -19,7 +20,7 @@ def get_ferry_routes(search: str = None):
     records = data.get("data", {}).get("records", [])
     return {"routes": records}
 
-
+# Get All Trips for users to choose
 def get_ferry_trips(origin: str, destination: str, date: str):
     """
     Ambil daftar trip / jadwal ferry dari API Sindo.
@@ -37,19 +38,7 @@ def get_ferry_trips(origin: str, destination: str, date: str):
 
 
 
-def get_ferry_schedules(origin: str = None, destination: str = None, date: str = None):
-    """
-    Wrapper:
-    - Tanpa origin/destination/date → return routes
-    - Dengan origin+destination+date → return trips
-    """
-    if origin and destination and date:
-        return get_ferry_trips(origin, destination, date)
-    else:
-        return get_ferry_routes()
-
-
-
+# Create Booking
 def create_ferry_booking(booking_data: dict):
     """
     Kirim booking ke API Sindo.
@@ -58,6 +47,7 @@ def create_ferry_booking(booking_data: dict):
     return data
 
 
+# Add booking details
 def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
     """
     Tambahkan detail penumpang ke booking Sindo.
@@ -66,7 +56,7 @@ def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
     return data
 
 
-
+# Get Booking details 
 def get_ferry_booking_details(booking_id: str, search: str = None):
     """
     Ambil detail penumpang dari sebuah booking.
@@ -74,9 +64,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
     data = get_sindo_booking_details(booking_id, search=search)
     return data
 
-
-from adapters.external_api import get_sindo_routes, get_sindo_trips, get_sindo_countries
-
+# Get countries
 def get_ferry_countries(search: str = None):
     """
     Ambil daftar negara dari API Sindo.

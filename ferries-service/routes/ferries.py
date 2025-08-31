@@ -4,24 +4,7 @@ from domain import services
 
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
 
-# @router.get("/routes")
-# def list_schedules(
-#     origin: str = Query(None, description="Origin port code (ex: BTC)"),
-#     destination: str = Query(None, description="Destination port code (ex: HFC)"),
-#     date: str = Query(None, description="Departure date (YYYY-MM-DD)")
-# ):
-#     """
-#     Ambil jadwal ferry:
-#     - Tanpa query → daftar routes
-#     - Dengan query (origin, destination, date) → daftar trips
-#     """
-#     try:
-#         if origin and destination and date:
-#             return services.get_ferry_trips(origin, destination, date)
-#         else:
-#             return services.get_ferry_routes()
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
+# Routes
 @router.get("/routes")
 def list_routes(search: str = Query(None, description="Search route by name or code")):
     """
@@ -33,9 +16,8 @@ def list_routes(search: str = Query(None, description="Search route by name or c
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==========================
+
 # Trips
-# ==========================
 @router.get("/trips")
 def list_trips(
     origin: str = Query(..., description="Origin port code (ex: BTC)"),
@@ -51,8 +33,7 @@ def list_trips(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ... existing schedules endpoint ...
-
+# Create booking
 @router.post("/bookings")
 def create_booking(booking_data: dict = Body(...)):
     """
@@ -64,6 +45,7 @@ def create_booking(booking_data: dict = Body(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Add booking details
 @router.post("/bookings/{booking_id}/details")
 def add_booking_detail(booking_id: str, passenger_data: dict = Body(...)):
     """
@@ -75,6 +57,7 @@ def add_booking_detail(booking_id: str, passenger_data: dict = Body(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# get booking details
 @router.get("/bookings/{booking_id}/details")
 def list_booking_details(booking_id: str, search: str = Query(None, description="Cari nama penumpang")):
     """
@@ -86,7 +69,7 @@ def list_booking_details(booking_id: str, search: str = Query(None, description=
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
+# get coutries
 @router.get("/countries")
 def list_countries(search: str = Query(None, description="Search country by code or name")):
     """

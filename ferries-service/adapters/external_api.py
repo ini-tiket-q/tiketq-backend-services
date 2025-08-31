@@ -15,7 +15,7 @@ PASSWORD = os.getenv("SINDO_PASSWORD", "j&o99?Pm2#Uj")
 
 _access_token = None  # cache sementara
 
-
+# Agen Login (Mandatory)
 def sindo_login():
     global _access_token
     url = f"{SINDO_BASE_URL}/Agent/Login"
@@ -34,7 +34,7 @@ def sindo_login():
         return _access_token
     raise Exception(f"Login gagal: {data}")
 
-
+# Display all routes
 def get_sindo_routes(search: str = None):
     global _access_token
     if not _access_token:
@@ -62,6 +62,7 @@ def get_sindo_routes(search: str = None):
     return resp.json()
 
 
+# Display Trips/Schedules for user to choose
 def get_sindo_trips(origin: str, destination: str, date: str):
     
 
@@ -89,7 +90,7 @@ def get_sindo_trips(origin: str, destination: str, date: str):
     resp.raise_for_status()
     return resp.json()
 
-
+# Create Booking
 def create_sindo_booking(booking_data: dict):
     global _access_token
     if not _access_token:
@@ -112,7 +113,7 @@ def create_sindo_booking(booking_data: dict):
     resp.raise_for_status()
     return resp.json()
 
-
+# Add Booking details
 def add_sindo_booking_detail(booking_id: str, passenger_data: dict):
     global _access_token
     if not _access_token:
@@ -135,7 +136,7 @@ def add_sindo_booking_detail(booking_id: str, passenger_data: dict):
     resp.raise_for_status()
     return resp.json()
 
-
+# Get booking details
 def get_sindo_booking_details(booking_id: str, search: str = None):
     global _access_token
     if not _access_token:
@@ -169,6 +170,7 @@ def get_sindo_booking_details(booking_id: str, search: str = None):
     resp.raise_for_status()
     return resp.json()
 
+# Display All Countries
 def get_sindo_countries(search: str = None):
     global _access_token
     if not _access_token:
