@@ -36,8 +36,8 @@ def get_flight_service() -> FlightService:
     Validates user credentials (username & password) and returns the agent's MMBC balance if login is successful.
 
     **Form Data**:
-    - `username`: MMBC login username (e.g. `Paris`)
-    - `password`: MMBC login password (e.g. `xxxxxxxxx`)
+    - `username`: MMBC login username (e.g. `dummy`)
+    - `password`: MMBC login password (e.g. `dummy123`)
 
     **Returns**:
     - On success: `{ "result": "ok", "saldo": "1,000,000" }`
