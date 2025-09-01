@@ -11,6 +11,16 @@ class ExternalFlightAPI:
         self.agent_code = os.getenv("MMBC_AGENT_CODE")
         self.timeout = int(os.getenv("MMBC_TIMEOUT_SECONDS", 15))
 
+        self.default_headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/116.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json,text/html",
+            "Referer": "http://klikmbc.co.id/",
+        }
+
     def check_balance(self, username: str, password: str) -> Dict[str, Any]:
         """
         Mengambil saldo user dari external API.
@@ -26,12 +36,20 @@ class ExternalFlightAPI:
             }
 
             print(f"🔁 [MMBC] POST {url} | payload={payload}")
-            response = requests.post(url, data=payload, timeout=self.timeout)
+            response = requests.post(
+                url,
+                data=payload,
+                headers={
+                    **self.default_headers,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                timeout=self.timeout,
+            )
 
             print(f"🔎 [MMBC] Status Code: {response.status_code}")
             print(f"📄 [MMBC] Raw Response: {response.text}")
 
-            response.raise_for_status()  # Raises an HTTPError for bad responses
+            response.raise_for_status()
 
             try:
                 data = response.json()
@@ -54,7 +72,9 @@ class ExternalFlightAPI:
         try:
             url = f"{self.base_url}/getcodearea-json"
             print(f"🌍 [MMBC] GET {url}")
-            response = requests.get(url, timeout=self.timeout)
+            response = requests.get(
+                url, headers=self.default_headers, timeout=self.timeout
+            )
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -65,10 +85,14 @@ class ExternalFlightAPI:
         try:
             url = f"{self.base_url}/getcodeflights-json"
             print(f"✈️ [MMBC] GET {url}")
-            response = requests.get(url, timeout=self.timeout)
+
+            response = requests.get(
+                url, headers=self.default_headers, timeout=self.timeout
+            )
             response.raise_for_status()
             data = response.json()
-            print(f"✅ [MMBC] Flights JSON received: {data}")
+            # print(f"✅ [MMBC] Flights JSON received: {data}")
+            print(f"✅ [MMBC] Flights JSON received: OK")
             return data
         except Exception as e:
             print(f"❌ [MMBC] Error in get_code_flights: {e}")
@@ -76,7 +100,7 @@ class ExternalFlightAPI:
 
     def search_flights(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Panggil GET /getflights-json dengan query parameters:
+        Panggil POST /getflights-json dengan form data:
         username, password, from, to, date (dd-mm-yyyy)
 
         params harus minimal punya key:
@@ -97,7 +121,7 @@ class ExternalFlightAPI:
             )
             return []
 
-        query_params = {
+        payload = {
             "username": params["username"],
             "password": params["password"],
             "from": params["from"],
@@ -106,19 +130,25 @@ class ExternalFlightAPI:
         }
 
         try:
-            print(f"✈️ [MMBC] GET {url} with params {query_params}")
-            response = requests.get(url, params=query_params, timeout=self.timeout)
+            print(f"✈️ [MMBC] POST {url} with data {payload}")
+            response = requests.post(
+                url,
+                data=payload,
+                headers={
+                    **self.default_headers,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                timeout=self.timeout,
+            )
             response.raise_for_status()
 
             data = response.json()
-            print(f"✅ [MMBC] Response data: {data}")
+            # print(f"✅ [MMBC] Response data: {data}")
 
-            # Jika gagal, biasanya response dict dengan key result = no
             if isinstance(data, dict) and data.get("result") == "no":
                 print(f"⚠️ [MMBC] Search flights failed: {data.get('reason')}")
                 return []
 
-            # Jika berhasil, data berupa list of dict
             if isinstance(data, list):
                 return data
 

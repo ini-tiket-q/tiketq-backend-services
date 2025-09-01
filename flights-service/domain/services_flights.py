@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from domain.schemas_flights import (
     BalanceResponse,
     CodeAreaResponse,
@@ -45,101 +45,87 @@ class FlightService:
         data = self.repo.get_code_flights()
         return [AirlineSchema(**item) for item in data]
 
-    def get_flights(self, params: FlightSearchParams) -> List[FlightResultSchema]:
+    def get_flights(
+        self,
+        params: FlightSearchParams,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> List[FlightResultSchema]:
         """
-        Cari penerbangan berdasarkan parameter.
-        (Temporarily using mock data for filtering + pagination test)
+        Ambil data penerbangan dari MMBC jika username & password diberikan.
+        Kalau tidak ada kredensial, return list kosong.
         """
+        flights_data = []
 
-        mock_data = [
-        {
-            "flight_id": "1",
-            "flight": "Lion Air",
-            "flight_code": "JT-101",
-            "flight_image": "https://example.com/logo.png",
-            "flight_from": "CGK",
-            "flight_to": "SUB",
-            "flight_route": "CGK-SUB",
-            "flight_date": "22-08-2025",
-            "flight_transit": "Direct",
-            "flight_infotransit": "-",
-            "flight_datetime": "2025-08-22 06:00:00",
-            "flight_price": "900000",
-            "flight_publishfare": "1000000",
-            "flight_seatavail": "10",
-            "flight_baggage": "20kg",
-            "flight_facilities": "Meal, Wifi",
-            "airline": "Lion Air",
-            "transit_type": "Direct",
-            "baggage_option": "20kg",
-            "class": "Economy",
-            "price": 900000,
-            "score": 80,
-        },
-        {
-            "flight_id": "2",
-            "flight": "Garuda",
-            "flight_code": "GA-202",
-            "flight_image": "https://example.com/logo2.png",
-            "flight_from": "CGK",
-            "flight_to": "SUB",
-            "flight_route": "CGK-SUB",
-            "flight_date": "22-08-2025",
-            "flight_transit": "Transit",
-            "flight_infotransit": "Transit in DPS",
-            "flight_datetime": "2025-08-22 08:00:00",
-            "flight_price": "1500000",
-            "flight_publishfare": "1700000",
-            "flight_seatavail": "5",
-            "flight_baggage": "25kg",
-            "flight_facilities": "Meal, Lounge",
-            "airline": "Garuda",
-            "transit_type": "Transit",
-            "baggage_option": "25kg",
-            "class": "Business",
-            "price": 1500000,
-            "score": 95,
-        }
-    ]
+        if username and password:
+            raw_data = self.repo.get_flights(
+                origin=params.origin,
+                destination=params.destination,
+                date=params.date.strftime("%d-%m-%Y"),
+                username=username,
+                password=password,
+            )
+            flights_data = raw_data or []
+        else:
+            print("⚠️ Username/password not provided. Skipping MMBC fetch.")
 
-
-        #raw_flights = self.repo.get_flights(params.dict())
-
-
-    # 🔍 Apply filters
-        filtered = self.filter_flights(mock_data, params)
-
-        # 📄 Apply pagination
+        # Filter dan paginate
+        filtered = self.filter_flights(flights_data, params)
         start = (params.page - 1) * params.per_page
         end = start + params.per_page
         paginated = filtered[start:end]
 
-        # ✅ Return in schema
-        return [FlightResultSchema(**flight) for flight in paginated]
+        sanitized = []
+        for f in paginated:
+            sanitized.append(
+                {
+                    **f,
+                    "flight_price": str(f.get("flight_price", "0")),
+                    "flight_publishfare": str(f.get("flight_publishfare", "0")),
+                    "flight_seatavail": str(f.get("flight_seatavail", "0")),
+                }
+            )
 
+        return [FlightResultSchema(**item) for item in sanitized]
 
-    
-    def filter_flights(self, flights: list[dict], params: FlightSearchParams) -> list[dict]:
+    def filter_flights(
+        self, flights: List[dict], params: FlightSearchParams
+    ) -> List[dict]:
         result = flights
 
         if params.airline:
-            result = [f for f in result if f["airline"].lower() == params.airline.lower()]
+            result = [
+                f
+                for f in result
+                if f.get("flight", "").lower() == params.airline.lower()
+            ]
 
         if params.transit:
-            result = [f for f in result if f["transit_type"].lower() == params.transit.lower()]
+            result = [
+                f
+                for f in result
+                if f.get("flight_transit", "").lower() == params.transit.lower()
+            ]
 
         if params.baggage:
-            result = [f for f in result if f["baggage_option"].lower() == params.baggage.lower()]
+            result = [
+                f
+                for f in result
+                if f.get("flight_baggage", "").lower() == params.baggage.lower()
+            ]
 
         if params.flight_class:
-            result = [f for f in result if f["class"].lower() == params.flight_class.lower()]
+            result = [
+                f
+                for f in result
+                if f.get("class", "").lower() == params.flight_class.lower()
+            ]
 
         if params.sort_by == "harga_tertinggi":
-            result.sort(key=lambda x: x["price"], reverse=True)
+            result.sort(key=lambda x: int(x.get("flight_price", "0")), reverse=True)
         elif params.sort_by == "harga_terendah":
-            result.sort(key=lambda x: x["price"])
+            result.sort(key=lambda x: int(x.get("flight_price", "0")))
         elif params.sort_by == "waktu_terbaik":
             result.sort(key=lambda x: x.get("score", 0), reverse=True)
 
         return result
-
