@@ -91,7 +91,8 @@ class ExternalFlightAPI:
             )
             response.raise_for_status()
             data = response.json()
-            print(f"✅ [MMBC] Flights JSON received: {data}")
+            # print(f"✅ [MMBC] Flights JSON received: {data}")
+            print(f"✅ [MMBC] Flights JSON received: OK")
             return data
         except Exception as e:
             print(f"❌ [MMBC] Error in get_code_flights: {e}")
@@ -142,7 +143,7 @@ class ExternalFlightAPI:
             response.raise_for_status()
 
             data = response.json()
-            print(f"✅ [MMBC] Response data: {data}")
+            # print(f"✅ [MMBC] Response data: {data}")
 
             if isinstance(data, dict) and data.get("result") == "no":
                 print(f"⚠️ [MMBC] Search flights failed: {data.get('reason')}")

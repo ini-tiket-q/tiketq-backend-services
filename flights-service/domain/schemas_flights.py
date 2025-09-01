@@ -100,8 +100,8 @@ class FlightResultSchema(BaseModel):
 # Flight Search Request (for body request)
 # --------------------------------
 class FlightSearchRequest(BaseModel):
-    username: Optional[str]
-    password: Optional[str]
+    username: str
+    password: str
     flight_from: AirportCode
     flight_to: AirportCode
     date: str

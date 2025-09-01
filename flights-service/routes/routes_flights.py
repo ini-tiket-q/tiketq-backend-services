@@ -154,6 +154,8 @@ def get_code_flights(service: FlightService = Depends(get_flight_service)):
     Login is optional but recommended to fetch pricing and availability tied to agent account.
 
     **Request Body**:
+    - `username`: MMBC login username (e.g. `dummy`) 
+    - `password`: MMBC login password (e.g. `dummy123`)
     - `flight_from`: Departure airport code (e.g. `CGK`)
     - `flight_to`: Arrival airport code (e.g. `DPS`)
     - `date`: Date of travel in format `dd-mm-yyyy` (e.g. `01-09-2025`)
@@ -164,8 +166,7 @@ def get_code_flights(service: FlightService = Depends(get_flight_service)):
     - `sort_by`: Sorting option: `cheapest`, `fastest`, etc. (optional)
     - `page`: Page number for pagination (default: 1)
     - `per_page`: Number of results per page (default: 10)
-    - `username`: MMBC login username (optional)
-    - `password`: MMBC login password (optional)
+
 
     **Returns**:
     - A list of matching flight options.
@@ -209,13 +210,12 @@ def get_flights(
             per_page=request_data.per_page,
         )
 
-        # Login opsional
-        if request_data.username and request_data.password:
-            if not service.validate_login(request_data.username, request_data.password):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail={"result": "no", "reason": "invalid login"},
-                )
+        # Validasi login (wajib karena username/password sekarang required)
+        if not service.validate_login(request_data.username, request_data.password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"result": "no", "reason": "invalid login"},
+            )
 
         results = service.get_flights(
             params,
