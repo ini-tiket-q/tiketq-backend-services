@@ -75,7 +75,18 @@ class FlightService:
         end = start + params.per_page
         paginated = filtered[start:end]
 
-        return [FlightResultSchema(**f) for f in paginated]
+        sanitized = []
+        for f in paginated:
+            sanitized.append(
+                {
+                    **f,
+                    "flight_price": str(f.get("flight_price", "0")),
+                    "flight_publishfare": str(f.get("flight_publishfare", "0")),
+                    "flight_seatavail": str(f.get("flight_seatavail", "0")),
+                }
+            )
+
+        return [FlightResultSchema(**item) for item in sanitized]
 
     def filter_flights(
         self, flights: List[dict], params: FlightSearchParams
