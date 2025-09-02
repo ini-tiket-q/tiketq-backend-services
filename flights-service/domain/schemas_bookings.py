@@ -144,13 +144,29 @@ class GetPriceRequest(BaseModel):
 
 class GetPriceResponse(BaseModel):
     result: str
-    flight: Optional[str]
-    publish: Optional[int]
-    tax: Optional[int]
-    totalfare: Optional[int]
-    flight_shownta: Optional[int]
-    flight_realnta: Optional[int]
-    flight_availableseat: Optional[int]
+    flight_id: str
+    flight: str
+    flight_code: str
+    flight_image: str
+    flight_availableseat: str
+    flight_from: str
+    flight_to: str
+    flight_date: str
+    flight_transit: str
+    flight_infotransit: str
+    flight_time: str
+    flight_duration: Optional[str]
+    adult: int
+    child: int
+    infant: int
+    publish: int
+    tax: int
+    totalfare: int
+
+    # These were causing 500 errors – make them optional
+    flight_shownta: Optional[int] = None
+    flight_realnta: Optional[int] = None
+
 
 
 # ===  Post Booking ===

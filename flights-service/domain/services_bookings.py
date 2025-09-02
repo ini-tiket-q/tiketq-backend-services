@@ -1,3 +1,4 @@
+import os
 from adapters.mmbc_factory import mmbc
 from domain.schemas_bookings import (
     GetPriceRequest, GetPriceResponse,
@@ -32,12 +33,21 @@ class ETicketError(Exception):
 
 
 async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
-    result = await mmbc.get_price(**req.dict(by_alias=True))
+    result = mmbc.get_price(
+    flight=req.flight,
+    from_=req.from_,
+    to=req.to,
+    date=req.date,
+    adult=req.adult,
+    child=req.child,
+    infant=req.infant,
+)
 
     if result.get("result") == "no":
         raise PriceError(result.get("reason", "No result"))
 
     return result
+
 
 async def post_booking_service(req: PostBookingRequest) -> PostBookingResponse:
     result = await mmbc.post_booking(**req.dict(by_alias=True))
