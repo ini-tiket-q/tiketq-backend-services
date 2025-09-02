@@ -41,8 +41,21 @@ class MMBCClient:
             return {"result": "no", "reason": "upstream error"}
 
     # The following endpoints still need async _post method, or migrate them to requests too
-    def post_booking(self, **body):
-        return self._sync_post("/json/postbooking-json", body)
+    def post_booking(self, **body: dict):
+        url = f"{self.base}/postbooking-json"
+        print(f"📡 [MMBC] POST {url} | payload={body}")
+
+        try:
+            r = requests.post(url, data=body, headers=self.headers, timeout=self.timeout)
+            print(f"🔁 Status: {r.status_code}")
+            print(f"📄 Raw response: {r.text}")
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            print(f"❌ [MMBC] Error: {e}")
+            return {"result": "no", "reason": "upstream error"}
+
+
 
     def get_issued(self, *, kodebooking):
         return self._sync_post("/json/getissued-json", {"kodebooking": kodebooking})

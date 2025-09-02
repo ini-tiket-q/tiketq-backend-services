@@ -49,8 +49,8 @@ async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
     return result
 
 
-async def post_booking_service(req: PostBookingRequest) -> PostBookingResponse:
-    result = await mmbc.post_booking(**req.dict(by_alias=True))
+def post_booking_service(req: PostBookingRequest) -> PostBookingResponse:
+    result = mmbc.post_booking(**req.dict(by_alias=True))
 
     if result.get("result") == "no":
         raise BookingError(

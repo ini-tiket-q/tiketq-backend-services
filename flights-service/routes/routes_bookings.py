@@ -98,13 +98,13 @@ responses={
     400: {"description": "Booking failed", "model": MMBCErrorResponse},
     500: {"description": "Internal server error"},
 })
-async def post_booking(req: PostBookingRequest):
+def post_booking(req: PostBookingRequest):
     try:
-        result = await post_booking_service(req)
+        result = post_booking_service(req)
 
-        if result.get("result") != "no":
-            kodebooking = result.get("kodebooking")
-        if kodebooking:
+        kodebooking = result.get("kodebooking")
+
+        if result.get("result") != "no" and kodebooking:
             booking_repo.set_status(kodebooking, "incomplete")
 
 

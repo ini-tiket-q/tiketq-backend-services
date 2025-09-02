@@ -171,54 +171,44 @@ class GetPriceResponse(BaseModel):
 
 # ===  Post Booking ===
 class PostBookingRequest(BaseModel):
-    username: Optional[str] = None
-    password: Optional[str] = None
-    flight: str = Field(..., example="JT-792")
-    from_: str = Field(..., alias="from", example="CGK")
-    to: str = Field(..., example="DPS")
-    date: str = Field(..., example="2025-09-01")
-    adult: int = Field(..., example=1)
-    child: int = Field(..., example=0)
-    infant: int = Field(..., example=0)
-    email: EmailStr = Field(..., example="johndoe@example.com")
-    phone: str = Field(..., example="+628123456789")
-    passengername: str = Field(..., example="John Doe")
-    dateofbirth: str = Field(..., example="1990-01-01")
-    baggagevolume: Optional[str] = Field(None, example="20kg")
+    username: str
+    password: str
+    flight: str
+    from_: str
+    to: str
+    date: str  # dd-mm-yyyy
+
+    adult: int
+    child: int
+    infant: int
+
+    email: str
+    phone: str
+
+    passengername: str  # "Mr. Dodi Alfayed:Mrs. Lady Diana"
+    dateofbirth: str    # "02-09-1987:02-01-1985"
+
+    # Optional fields (only for certain routes/airlines)
+    baggagevolume: Optional[str] = None
+    passportnumber: Optional[str] = None
+    passportexpired: Optional[str] = None
 
 
 class PostBookingResponse(BaseModel):
     result: str
-    tid: str
-    tanggal: str
-    flight: str
-    flight_code: str
-    kodebooking: str
-    flight_route: str
-    flight_departure: str
-    flight_time: str
-    flight_transit: str
-    flight_infotransit: str
-    flight_class: str
-    flight_totalpassenger: str
-    flight_datapassengers_json: str
-    flight_contactdetails_json: str
-    flight_currency: str
-    flight_publishfare: str
-    flight_tax: str
-    flight_totalfare: str
-    flight_realnta: str
-    flight_shownta: str
-    flight_bonus_agen: str
-    flight_timelimit: str
-    flight_bookingby: str
-    flight_bookingby_kodeagen: str
-    flight_issued_date: str
-    flight_issued_ticketnumber: str
-    flight_issuedby: str
-    flight_issuedby_kodeagen: str
-    flight_statusbooking: str
-    reason: Optional[str] = ""
+    kodebooking: Optional[str] = None
+    message: Optional[str] = None
+    flight: Optional[str] = None
+    flight_code: Optional[str] = None
+    flight_totalfare: Optional[int] = None
+    flight_datapassengers_json: Optional[str] = None
+    flight_contactdetails_json: Optional[str] = None
+    flight_timelimit: Optional[str] = None
+    flight_statusbooking: Optional[str] = None
+    flight_realnta: Optional[int] = None
+    flight_shownta: Optional[int] = None
+
+
 
 
 
