@@ -5,7 +5,8 @@ from adapters.external_api import (
     create_sindo_booking, 
     add_sindo_booking_detail,
     get_sindo_booking_details,
-    get_sindo_countries
+    get_sindo_countries,
+    delete_sindo_booking_detail
     )
 
 # Booking list local cache (opsional, bisa dipakai untuk debug)
@@ -73,3 +74,9 @@ def get_ferry_countries(search: str = None):
     records = data.get("data", {}).get("records", [])
     return {"countries": records}
 
+# Delete Booking
+def delete_booking_detail(booking_id: str, booking_detail_id: str):
+    """
+    Service untuk hapus booking detail.
+    """
+    return delete_sindo_booking_detail(booking_id, booking_detail_id)

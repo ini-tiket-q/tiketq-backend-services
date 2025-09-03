@@ -80,3 +80,15 @@ def list_countries(search: str = Query(None, description="Search country by code
         return services.get_ferry_countries(search)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Delete Booking
+@router.delete("/bookings/{booking_id}/details/{booking_detail_id}")
+def remove_booking_detail(booking_id: str, booking_detail_id: str):
+    """
+    Hapus booking detail (penumpang) dari booking.
+    """
+    try:
+        return services.delete_booking_detail(booking_id, booking_detail_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

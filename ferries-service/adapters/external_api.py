@@ -203,3 +203,30 @@ def get_sindo_countries(search: str = None):
 
     resp.raise_for_status()
     return resp.json()
+
+
+# Delete Booking
+def delete_sindo_booking_detail(booking_id: str, booking_detail_id: str):
+    """
+    Hapus booking detail (penumpang) dari booking tertentu.
+    """
+    global _access_token
+    if not _access_token:
+        sindo_login()
+
+    url = f"{SINDO_CORE_URL}/Booking/Bookings/{booking_id}/Details/{booking_detail_id}"
+
+    headers = {
+        "Authorization": f"Bearer {_access_token}",
+        "Content-Type": "application/json"
+    }
+
+    resp = requests.delete(url, headers=headers, timeout=10)
+
+    if resp.status_code == 401:
+        sindo_login()
+        headers["Authorization"] = f"Bearer {_access_token}"
+        resp = requests.delete(url, headers=headers, timeout=10)
+
+    resp.raise_for_status()
+    return resp.json()
