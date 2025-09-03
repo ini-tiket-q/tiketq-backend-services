@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from adapters.store import BOOKING_STATUS
 from domain.repository_bookings import BookingRepository
+from adapters.fake_mmbc import FakeMMBCClient
 
 
 booking_repo = BookingRepository()
@@ -98,9 +99,9 @@ responses={
     400: {"description": "Booking failed", "model": MMBCErrorResponse},
     500: {"description": "Internal server error"},
 })
-def post_booking(req: PostBookingRequest):
+async def post_booking(req: PostBookingRequest):
     try:
-        result = post_booking_service(req)
+        result = await post_booking_service(req)
 
         kodebooking = result.get("kodebooking")
 

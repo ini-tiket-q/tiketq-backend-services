@@ -174,7 +174,7 @@ class PostBookingRequest(BaseModel):
     username: str
     password: str
     flight: str
-    from_: str
+    from_: str = Field(..., alias="from")  
     to: str
     date: str  # dd-mm-yyyy
 
@@ -185,13 +185,14 @@ class PostBookingRequest(BaseModel):
     email: str
     phone: str
 
-    passengername: str  # "Mr. Dodi Alfayed:Mrs. Lady Diana"
-    dateofbirth: str    # "02-09-1987:02-01-1985"
+    passengername: str  # "02-09-1987:02-01-1985"
 
-    # Optional fields (only for certain routes/airlines)
     baggagevolume: Optional[str] = None
     passportnumber: Optional[str] = None
     passportexpired: Optional[str] = None
+
+    class Config:
+        populate_by_name = True  
 
 
 class PostBookingResponse(BaseModel):

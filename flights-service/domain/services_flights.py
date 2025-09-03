@@ -7,6 +7,7 @@ from domain.schemas_flights import (
     FlightResultSchema,
 )
 from domain.repository_flights import FlightRepository
+from config import MOCK_REMOTE
 
 
 class FlightService:
@@ -129,3 +130,8 @@ class FlightService:
             result.sort(key=lambda x: x.get("score", 0), reverse=True)
 
         return result
+    
+    if MOCK_REMOTE:
+        from adapters.fake_mmbc_flights import ExternalFlightAPI
+    else:
+        from adapters.external_api_flights import ExternalFlightAPI
