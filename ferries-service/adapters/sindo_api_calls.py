@@ -1,7 +1,7 @@
 # Only responsible for raw HTTP calls
 import json
 import requests
-from config import settings
+from config.settings import settings
 
 _access_token = None  # cache sementara
 
@@ -106,6 +106,14 @@ class SindoClient:
     ):
         self._ensure_token()
         url = f"{self.base_url}/Trips/GetRoundTripWeb"
+        params = {
+            "embarkation": origin,
+            "destination": destination,
+            "departdate": depart_date,
+            "returndate": return_date,
+            "pax": pax
+        }
+        
         resp = self.session.get(url, params=params, timeout=15)
         if resp.status_code == 401:
             self._login()

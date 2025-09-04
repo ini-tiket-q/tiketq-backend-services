@@ -8,8 +8,8 @@ load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 
 class Settings:
-    SINDO_BASE_URL: str = os.getenv("SINDO_BASE_URL") or "https://api.test.sindoferry.com.sg/agent")
-    SINDO_CORE_URL: str = os.getenv("SINDO_CORE_URL") or "https://core.test.sindoferry.com.sg/Agent")
+    SINDO_BASE_URL: str = os.getenv("SINDO_BASE_URL") or "https://api.test.sindoferry.com.sg/agent"
+    SINDO_CORE_URL: str = os.getenv("SINDO_CORE_URL") or "https://core.test.sindoferry.com.sg/Agent"
     SINDO_AGENT_CODE: str = os.getenv("SINDO_AGENT_CODE", "")
     SINDO_USERNAME: str = os.getenv("SINDO_USERNAME", "")
     SINDO_PASSWORD: str = os.getenv("SINDO_PASSWORD", "")

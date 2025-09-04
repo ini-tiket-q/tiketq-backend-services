@@ -1,5 +1,5 @@
 from adapters.sindo_api_calls import SindoClient
-
+from utils.date_formatter import format_date_for_sindo
 
 sindo_client = SindoClient() 
 
@@ -41,36 +41,61 @@ def get_routes_dashboard(search: str = None):
         "data": routes
     }
 
-
-def get_trips_dashboard(origin: str, destination: str, date: str):
-    raw_data = sindo_client.get_trips(origin, destination, date)
+#oneway
+def get_trips_dashboard(
+    origin: str, 
+    destination: str, 
+    date: str,
+    pax: int, 
+    ferry_class: str
+):
+    sindo_date = format_date_for_sindo(date)
+    
+    raw_data = sindo_client.get_sindo_trips(
+        origin, destination, sindo_date
+    )
     trips = []
-    for item in raw_data.get("data", []):  # cek sesuai response Sindo
+    for item in raw_data:  # list response
         trips.append({
-            "embarkation": item.get("embarkation"),
-            "destination": item.get("destination"),
-            "depart_time": item.get("departureTime"),
+            "trip_id": item.get("tripID"),
+            "departure_time": item.get("departureTime"),
             "arrival_time": item.get("arrivalTime"),
-            "price": item.get("price"),
+            "status": item.get("status"),
+            "available_seats": item.get("usedSeat"),  
+            "gate_open": item.get("gateOpen"),
+            "gate_close": item.get("gateClose"),
+            "route": f"{origin}-{destination}",  # Added route info
+            "pax": pax,  # Include passenger count in response
+            "ferry_class": ferry_class,
         })
     return {"status": "success", "data": trips}
 
-
-def get_roundtrip_dashboard(params: dict):
-    api_params = {
-        "embarkation": params["origin"],
-        "destination": params["destination"],
-        "departdate": params["depart_date"],   # sesuai dokumen Sindo
-        "returndate": params["return_date"]
-    }
-    raw_data = sindo_client.get_sindo_roundtrip(api_params)
-    # Normalisasi / transform data
+#roundtrip
+def get_roundtrip_dashboard(
+    origin: str, 
+    destination: str, 
+    depart_date: str, 
+    return_date: str, 
+    pax: int,
+    ferry_class: str
+):
+    sindo_depart_date = format_date_for_sindo(depart_date)
+    sindo_return_date = format_date_for_sindo(return_date)
+    
+    raw_data = sindo_client.get_sindo_roundtrip(
+        origin, destination, sindo_depart_date, sindo_return_date, pax
+    )
+    # Normalize here -adjust based on actual response structure
     normalized = []
-    for item in raw_data.get("trips", []):
+    for item in raw_data:
         normalized.append({
-            "route": item.get("routeName"),
-            "depart_time": item.get("departureTime"),
+            "route": f"{origin}-{destination}",
+            "departure_time": item.get("departureTime"),
             "return_time": item.get("returnTime"),
-            "price": item.get("price"),
+            "status": item.get("status"),
+            "available_seats": item.get("usedSeat"),
+            "pax": pax,  # Include passenger count in response
+            "ferry_class": ferry_class,
+            # Add other necessary fields
         })
     return {"status": "success", "data": normalized}

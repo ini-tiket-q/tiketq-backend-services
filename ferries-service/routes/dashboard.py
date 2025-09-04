@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Query
 from domain.dashboard.services import (
-    get_oneway_dashboard,
     get_roundtrip_dashboard,
     get_routes_dashboard,
     get_trips_dashboard
@@ -14,28 +13,24 @@ def routes(search: str = Query(None)):
     return get_routes_dashboard(search)
 
 
-@router.get("/trips")
-def trips(origin: str = Query(...), destination: str = Query(...), date: str = Query(...)):
+@router.get("/oneway")
+def trips(
+    origin: str = Query(..., description="Departure port code"), 
+    destination: str = Query(..., description="Arrival port code"), 
+    date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
+    # pax: int = Query(1, description="Number of passengers")
+):
     return get_trips_dashboard(origin, destination, date)
 
 
-# @router.get("/oneway")
-# def oneway(origin: str = Query(...), destination: str = Query(...), date: str = Query(...)):
-#     # Map ke nama param sesuai dokumentasi API eksternal
-#     params = {
-#         "embarkation": origin,
-#         "destination": destination,
-#         "tripdate": date
-#     }
-#     return get_oneway_dashboard(params)
 
 @router.get("/roundtrip")
-def roundtrip(origin: str = Query(...), destination: str = Query(...), depart_date: str = Query(...), return_date: str = Query(...)):
-    params = {
-        "embarkation": origin,
-        "destination": destination,
-        "depart_date": depart_date,   
-        "return_date": return_date
-    }
-    return get_roundtrip_dashboard(params)
+def roundtrip(
+    origin: str = Query(..., description="Departure port code"), 
+    destination: str = Query(..., description="Arrival port code"), 
+    depart_date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
+    return_date: str = Query(..., description="Return date in YYYY-MM-DD format"),
+    pax: int = Query(1, description="Number of passengers")
+):
+    return get_roundtrip_dashboard(origin, destination, depart_date, return_date, pax)
 
