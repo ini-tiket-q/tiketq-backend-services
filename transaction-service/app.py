@@ -106,7 +106,12 @@ app.openapi = custom_openapi
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=[
+        "http://localhost:3000",  # Next.js frontend
+        "http://127.0.0.1:3000",  # Alternative localhost
+        "https://localhost:3000",  # HTTPS version
+        "https://127.0.0.1:3000",  # HTTPS alternative
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

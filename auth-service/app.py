@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
 from routes.auth_routes import router
@@ -22,6 +23,20 @@ app = FastAPI(
             "description": "Admin-only user management operations"
         }
     ]
+)
+
+# Add CORS middleware to allow frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # Next.js frontend
+        "http://127.0.0.1:3000",  # Alternative localhost
+        "https://localhost:3000",  # HTTPS version
+        "https://127.0.0.1:3000",  # HTTPS alternative
+    ],
+    allow_credentials=True,  # Allow cookies/auth headers
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
 )
 
 app.include_router(router, prefix="/auth", tags=["Authentication", "User Management"])
