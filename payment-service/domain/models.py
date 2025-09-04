@@ -32,7 +32,7 @@ class PaymentRequest(BaseModel):
     customer_details: Dict[str, Any]
     item_details: List[Dict[str, Any]]
     description: Optional[str] = None
-    expiry_duration: int = 24  # hours
+    expiry_duration: int = 1  # hours
 
 
 class PaymentResponse(BaseModel):
@@ -75,6 +75,14 @@ class WebhookNotification(BaseModel):
     fraud_status: Optional[str] = None
     signature_key: Optional[str] = None
     transaction_time: Optional[str] = None
+    va_numbers: Optional[List[Dict[str, str]]] = None
+    settlement_time: Optional[str] = None
+    payment_amounts: Optional[List[Dict[str, Any]]] = None
+    merchant_id: Optional[str] = None
+    expiry_time: Optional[str] = None
+    currency: Optional[str] = None
+    status_message: Optional[str] = None
+    status_code: Optional[str] = None
 
 
 class PaymentNotification(BaseModel):

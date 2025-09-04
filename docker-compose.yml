@@ -8,7 +8,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env               # Your app configs (no secrets here)
+      - .env # Your app configs (no secrets here)
     depends_on:
       - auth-service
       - user-service
@@ -80,9 +80,24 @@ services:
     build:
       context: ./payment-service
     container_name: payment-service
+    ports:
+      - "8003:8000" # temporary expose e.g. localhost:8003/docs
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=tiketq_db
+      - SERVICE_NAME=payment-service
+    depends_on:
+      - postgres
     networks:
       - tiketq-net
+    secrets:
+      - db_user
+      - db_password
     restart: unless-stopped
+    volumes:
+      - ./payment-service:/app # For development hot reload
 
   transaction-service:
     build:
