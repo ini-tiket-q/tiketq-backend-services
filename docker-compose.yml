@@ -55,6 +55,8 @@ services:
     container_name: ferries-service
     networks:
       - tiketq-net
+    ports:
+      - "8003:8000" 
     restart: unless-stopped
 
   hotels-service:
