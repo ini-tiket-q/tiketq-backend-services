@@ -70,7 +70,7 @@ async def health_check(payment_service: PaymentService = Depends(get_payment_ser
             "status": "healthy" if db_healthy else "unhealthy",
             "database": "connected" if db_healthy else "disconnected",
             "service": "payment-service",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -112,7 +112,7 @@ async def create_payment(
 
 @router.get("/{payment_id}",
     response_model=PaymentResponse,
-    summary="Get payment details with auto status update",
+    summary="Get payment details",
     description="Retrieves payment details from database and auto-updates status from Midtrans")
 async def get_payment(
     payment_id: str = Path(..., description="Payment ID"),
@@ -130,6 +130,13 @@ async def get_payment(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Payment not found"
             )
+
+        # Clean up metadata - remove any duplicated fields
+        if payment.metadata:
+            # Remove fields that are already in main PaymentResponse
+            cleaned_metadata = {k: v for k, v in payment.metadata.items()
+                             if k not in ['payment_url', 'amount', 'order_id', 'transaction_id', 'status']}
+            payment.metadata = cleaned_metadata
 
         logger.info(f"Payment retrieved with status: {payment.status}")
         return payment
@@ -157,6 +164,15 @@ async def cancel_payment(
         logger.info(f"Canceling payment: {payment_id}")
 
         payment_response = await payment_service.cancel_payment(payment_id)
+
+        # Clean metadata to avoid duplication
+        if payment_response.metadata:
+            cleaned_metadata = {k: v for k, v in payment_response.metadata.items()
+                             if k not in ['payment_url', 'amount', 'order_id', 'transaction_id', 'status']}
+            # Add cancellation specific info
+            cleaned_metadata['cancellation_reason'] = request.reason
+            cleaned_metadata['cancelled_at'] = datetime.now().isoformat()
+            payment_response.metadata = cleaned_metadata
 
         logger.info(f"Payment canceled successfully: {payment_id}")
         return payment_response
@@ -189,6 +205,16 @@ async def refund_payment(
 
         payment_response = await payment_service.refund_payment(payment_id, request.amount)
 
+        # Clean metadata to avoid duplication
+        if payment_response.metadata:
+            cleaned_metadata = {k: v for k, v in payment_response.metadata.items()
+                             if k not in ['payment_url', 'amount', 'order_id', 'transaction_id', 'status']}
+            # Add refund specific info
+            cleaned_metadata['refund_reason'] = request.reason
+            cleaned_metadata['refund_amount'] = request.amount
+            cleaned_metadata['refunded_at'] = datetime.now().isoformat()
+            payment_response.metadata = cleaned_metadata
+
         logger.info(f"Payment refunded successfully: {payment_id}")
         return payment_response
 
@@ -218,6 +244,13 @@ async def get_payments_by_order(
         logger.info(f"Getting payments for order: {order_id}")
 
         payments = await payment_service.get_payments_by_order_id(order_id)
+
+        # Clean metadata for all payments to avoid duplication
+        for payment in payments:
+            if payment.metadata:
+                cleaned_metadata = {k: v for k, v in payment.metadata.items()
+                                 if k not in ['payment_url', 'amount', 'order_id', 'transaction_id', 'status']}
+                payment.metadata = cleaned_metadata
 
         return payments
 
