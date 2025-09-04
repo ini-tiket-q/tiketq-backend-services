@@ -7,7 +7,7 @@ _access_token = None  # cache sementara
 
 class SindoClient:
     def __init__(self):
-        self.base_url = settings.SINDO_BASE_URL
+        self.agent_url = settings.SINDO_AGENT_URL
         self.core_url = settings.SINDO_CORE_URL
         self.agent_code = settings.SINDO_AGENT_CODE
         self.username = settings.SINDO_USERNAME
@@ -24,7 +24,7 @@ class SindoClient:
     # ---------------------------
         
     def _login(self):
-        url = f"{self.base_url}/Agent/Login"
+        url = f"{self.agent_url}/Agent/Login"
         payload = {
             "agentCode": self.agent_code,
             "username": self.username,
@@ -33,6 +33,7 @@ class SindoClient:
         resp = self.session.post(url, json=payload, timeout=10)
         resp.raise_for_status()
         data = resp.json()
+        print(f"Login response: {data}")  # Debug print
         if data.get("status") == "Ok":
             self._access_token = data["data"]["access_token"]
             # update session headers dengan token
@@ -72,7 +73,7 @@ class SindoClient:
             ),
             "pagination": f'{{"pageIndex":{page_index},"pageSize":{page_size}}}'
         }
-        url = f"{self.base_url}/Route"
+        url = f"{self.agent_url}/Master/Routes"
         return self._request("GET", url, params=params)
 
     #oneway
@@ -95,28 +96,4 @@ class SindoClient:
         resp.raise_for_status()
         return resp.json()
 
-    #roundtrip
-    def get_sindo_roundtrip(
-        self, 
-        origin: str, 
-        destination: str, 
-        depart_date: str, 
-        return_date: str, 
-        pax: int=1
-    ):
-        self._ensure_token()
-        url = f"{self.base_url}/Trips/GetRoundTripWeb"
-        params = {
-            "embarkation": origin,
-            "destination": destination,
-            "departdate": depart_date,
-            "returndate": return_date,
-            "pax": pax
-        }
-        
-        resp = self.session.get(url, params=params, timeout=15)
-        if resp.status_code == 401:
-            self._login()
-            resp = self.session.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
+
