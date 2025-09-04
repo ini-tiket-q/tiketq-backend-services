@@ -138,6 +138,7 @@ class TransactionBase(BaseModel):
     payment_gateway: Optional[PaymentGateway] = None
     gateway_transaction_id: Optional[str] = None
     metadata: Dict[str, Any] = {}
+    payment_url: Optional[str] = None
 
 
 class TransactionCreate(TransactionBase):
@@ -283,22 +284,12 @@ class RefundInDB(RefundBase):
 
 class PaymentCreateRequest(BaseModel):
     """Request model for creating payments with validation"""
-
-    email: str = Field(
-        ...,
-        max_length=255,
-        description="Email of the user making the payment"
-    )
-    transaction_id: int = Field(
-        ..., gt=0, description="Transaction ID must be positive"
-    )
     amount: float = Field(..., gt=0, description="Amount must be greater than 0")
     currency: Currency = Currency.IDR
     payment_method: PaymentMethod = Field(..., description="Payment method is required")
     payment_gateway: PaymentGateway = Field(
         ..., description="Payment gateway is required"
     )
-    gateway_transaction_id: Optional[str] = Field(None, max_length=255)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = ModelConfigs.payment_create_config()
@@ -426,7 +417,6 @@ class TransactionCreateRequest(BaseModel):
             "example": {
                 "email": "customer@example.com",
                 "transaction_type": "BOOKING",
-                "amount": 885000,
                 "currency": "IDR",
                 "service_type": "FLIGHTS",
                 "items": [
@@ -449,11 +439,16 @@ class TransactionCreateRequest(BaseModel):
                 "total": 885000,
                 "payment_method": "CREDIT_CARD",
                 "payment_gateway": "MIDTRANS",
-                "metadata": {
+                "transaction_metadata": {
                     "order_id": "ORD-79AFA780",
                     "passenger_name": "John Doe",
                     "booking_reference": "TQ-FL-001",
                     "ip_address": "192.168.1.100"
+                },
+                "payment_metadata": {
+                    "bank_name": "BCA",
+                    "card_last_digits": "1234",
+                    "card_type": "visa"
                 }
             }
         }
@@ -466,11 +461,6 @@ class TransactionCreateRequest(BaseModel):
     transaction_type: TransactionType = Field(
         ..., 
         description="Type of transaction"
-    )
-    amount: float = Field(
-        ..., 
-        gt=0, 
-        description="Transaction amount"
     )
     currency: Currency = Field(
         Currency.IDR, 
@@ -513,9 +503,13 @@ class TransactionCreateRequest(BaseModel):
         None, 
         description="Payment gateway"
     )
-    metadata: Dict[str, Any] = Field(
+    transaction_metadata: Dict[str, Any] = Field(
         default_factory=dict, 
         description="Additional transaction metadata"
+    )
+    payment_metadata: Dict[str, Any] = Field(
+        default_factory=dict, 
+        description="Additional payment metadata"
     )
 
     model_config = ModelConfigs.transaction_create_config()

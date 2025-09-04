@@ -29,7 +29,8 @@ def get_transaction_service(db: Session = Depends(get_database_session)) -> Tran
     """Dependency injection for TransactionService"""
     transaction_repo = DBTransactionRepository(db)
     order_repo = DBOrderRepository(db)
-    return TransactionService(transaction_repo, order_repo)
+    payment_repo = DBPaymentRepository(db)
+    return TransactionService(transaction_repo, order_repo, payment_repo)
 
 def get_refund_service(db: Session = Depends(get_database_session)) -> RefundService:
     """Dependency injection for RefundService"""
@@ -71,8 +72,8 @@ async def create_transaction(
                         "departure_date": "2025-09-15",
                         "flight_number": "GA-123",
                         "airline": "Garuda Indonesia",
-                        "class": "Economy"
-                    }
+                        "class": "Economy",
+                    },
                 }
             ],
             "subtotal": 850000,
@@ -81,14 +82,19 @@ async def create_transaction(
             "total": 885000,
             "payment_method": "CREDIT_CARD",
             "payment_gateway": "MIDTRANS",
-            "metadata": {
+            "transaction_metadata": {
                 "order_id": "ORD-79AFA780",
                 "passenger_name": "John Doe",
                 "booking_reference": "TQ-FL-001",
-                "ip_address": "192.168.1.100"
-            }
-        }
-    )
+                "ip_address": "192.168.1.100",
+            },
+            "payment_metadata": {
+                "bank_name": "BCA",
+                "card_last_digits": "1234",
+                "card_type": "visa",
+            },
+        },
+    ),
 ):
     """Create a new transaction - USER/ADMIN access"""
     start_time = time.time()

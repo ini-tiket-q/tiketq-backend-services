@@ -13,3 +13,13 @@ def get_user_info(user_token):
         return user_data
     else:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+
+def create_payment_url(payment_body):
+    PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8000")
+    response = requests.post(f"{PAYMENT_SERVICE_URL}/payments", json=payment_body)
+    if response.status_code == 200:
+        payment_data = response.json()
+        return payment_data
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create payment")
