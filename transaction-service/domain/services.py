@@ -122,8 +122,13 @@ class TransactionService:
                 "customer_details": {
                     "email": email,
                 },
-                "item_details": items_as_dicts,
-                "description": "Payment for order " + order.order_number
+                "item_details": {
+                    "id": order.id,
+                    "price": total,
+                    "quantity": transaction_request.quantity,
+                    "name": transaction_request.items[0].name,
+                },
+                "description": "Payment for order " + order.order_number,
             }
 
             payment_url_body = create_payment_url(payment_body)
@@ -137,7 +142,7 @@ class TransactionService:
                 email=email,
                 order_number=order.order_number,
                 transaction_type=transaction_request.transaction_type,
-                amount=transaction_request.amount,
+                amount=total,
                 currency=transaction_request.currency,
                 status=TransactionStatus.PROCESSING,
                 payment_method=transaction_request.payment_method,

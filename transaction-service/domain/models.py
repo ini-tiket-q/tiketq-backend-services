@@ -417,7 +417,6 @@ class TransactionCreateRequest(BaseModel):
             "example": {
                 "email": "customer@example.com",
                 "transaction_type": "BOOKING",
-                "amount": 885000,
                 "currency": "IDR",
                 "service_type": "FLIGHTS",
                 "items": [
@@ -462,11 +461,6 @@ class TransactionCreateRequest(BaseModel):
     transaction_type: TransactionType = Field(
         ..., 
         description="Type of transaction"
-    )
-    amount: float = Field(
-        ..., 
-        gt=0, 
-        description="Transaction amount"
     )
     currency: Currency = Field(
         Currency.IDR, 
