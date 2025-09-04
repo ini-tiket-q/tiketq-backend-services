@@ -5,7 +5,7 @@ import logging
 from sqlalchemy.orm import Session
 import os
 from fastapi import HTTPException, status, Depends, Header
-from adapters.external_api import get_user_info
+from adapters.external_api import (get_user_info, create_payment_url)
 
 from domain.models import (
     TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus,
@@ -55,9 +55,11 @@ class TransactionService:
         self, 
         transaction_repo: DBTransactionRepository,
         order_repo: DBOrderRepository,
+        payment_repo: DBPaymentRepository,
     ):
         self.transaction_repo = transaction_repo
         self.order_repo = order_repo
+        self.payment_repo = payment_repo
     
     def create_transaction(self, transaction_request: TransactionCreateRequest, email: str) -> Optional[TransactionInDB]:
         """Create a new transaction with validated request model.
@@ -102,7 +104,7 @@ class TransactionService:
                 'tax': tax,
                 'discount': discount,
                 'total': total,
-                'status': OrderStatus.DRAFT,
+                'status': OrderStatus.CONFIRMED,
                 'metadata': transaction_request.metadata
             }
             
@@ -110,7 +112,26 @@ class TransactionService:
             if not order:
                 logger.error("Failed to create order")
                 return None
-            
+
+
+            # create payment gateway url from payment service
+            payment_body = {
+                "order_id": order_number,
+                "amount": total,
+                "payment_method": transaction_request.payment_method,
+                "customer_details": {
+                    "email": email,
+                },
+                "item_details": items_as_dicts,
+                "description": "Payment for order " + order.order_number
+            }
+
+            payment_url_body = create_payment_url(payment_body)
+            if not payment_url_body:
+                logger.error("Failed to create payment")
+                return None
+
+
             # Create transaction using validated request data
             transaction = TransactionCreate(
                 email=email,
@@ -118,18 +139,37 @@ class TransactionService:
                 transaction_type=transaction_request.transaction_type,
                 amount=transaction_request.amount,
                 currency=transaction_request.currency,
-                status=TransactionStatus.PENDING,
+                status=TransactionStatus.PROCESSING,
                 payment_method=transaction_request.payment_method,
                 payment_gateway=transaction_request.payment_gateway,
-                gateway_transaction_id=None,  # Set later during payment processing
-                metadata=transaction_request.metadata
+                gateway_transaction_id= payment_url_body.get("transaction_id"),
+                metadata=transaction_request.transaction_metadata
             )
             
             db_transaction = self.transaction_repo.create_transaction(transaction)
             if not db_transaction:
                 logger.error("Failed to create transaction")
                 return None
-            
+
+
+            # create payment in db
+            payment = PaymentCreate(
+                transaction_id=db_transaction.id,
+                amount=transaction_request.amount,
+                currency=transaction_request.currency,
+                payment_method=transaction_request.payment_method,
+                payment_gateway=transaction_request.payment_gateway,
+                gateway_transaction_id=payment_url_body.get("transaction_id"),
+                status=PaymentStatus.PENDING,
+                meta_data=transaction_request.payment_metadata
+            )
+
+            db_payment = self.payment_repo.create_payment(payment)
+            if not db_payment:
+                logger.error("Failed to create payment")
+                return None
+
+
             # Log successful transaction creation
             logger.info(
                 f"Transaction created successfully - ID: {db_transaction.id}, "
@@ -140,6 +180,9 @@ class TransactionService:
                 f"Gateway: {transaction_request.payment_gateway.value if transaction_request.payment_gateway else 'Not set'}, "
                 f"Items: {len(transaction_request.items)}"
             )
+
+            # add payment url to transaction
+            db_transaction.payment_url = payment_url_body.get("payment_url")
                 
             return db_transaction
             

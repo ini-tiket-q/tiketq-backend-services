@@ -80,6 +80,10 @@ services:
     build:
       context: ./payment-service
     container_name: payment-service
+    ports:
+      - "8003:8000" # temporary expose e.g. localhost:8003/docs
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped
