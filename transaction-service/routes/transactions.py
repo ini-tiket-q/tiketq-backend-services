@@ -1,3 +1,4 @@
+from math import log
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
 from typing import List, Optional
 from sqlalchemy.orm import Session
@@ -371,7 +372,8 @@ async def get_transaction(
         
         transaction = service.get_transaction(
             transaction_id=transaction_id,
-            email=current_user.email
+            email=current_user.email,
+            role=current_user.role
         )
         
         if not transaction:
