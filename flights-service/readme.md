@@ -66,7 +66,7 @@ MOCK_REMOTE=true
 - **uvicorn** — used as the app server
 - **uv** — Python package manager to run the app and install dependencies
 - **Docker** — container setup (optional)
-- **Swagger Docs** — available at `http://localhost:5001/docs`
+
 
 To run locally with `uv`:
 
@@ -79,18 +79,16 @@ uv run uvicorn --app-dir flights-service app:app --reload --port 5001
 
 ### 1. Build the container:
 ```bash
-docker build -t flights-service ./flights-service
+docker compose build api-gateway flights-service
 ```
 
 ### 2. Run the container:
 ```bash
-docker run -p 5001:8000 --env-file ./flights-service/.env.example flights-service
+docker compose up api-gateway flights-service
 ```
 
-The service will be accessible at:  
-`http://localhost:5001/health`
 
----
+
 <br><br><br>
 
 # 🔌 Endpoints Overview
@@ -112,6 +110,15 @@ GET /health
 }
 ```
 <br><br>
+
+## 📬 Postman API Collection
+
+You can test the API endpoints using the following Postman collection:
+
+🔗 [Click here to open in Postman](https://rifqisaleh113-727111.postman.co/workspace/Rifqi-Saleh's-Workspace~470e69f4-ec50-477f-8294-6963e5d01d87/collection/47257166-1289c916-b8ef-430e-9beb-39850e7d7999?action=share&creator=47257166&active-environment=47257166-39b94003-3b89-450a-8513-23c5ef963bca)
+
+> Make sure to set the correct environment variables if you're using environment-based configurations.
+
 
 ## 🛫 Flight Service Endpoints
 

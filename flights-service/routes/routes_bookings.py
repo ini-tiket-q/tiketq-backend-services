@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from adapters.store import BOOKING_STATUS
 from domain.repository_bookings import BookingRepository
+from adapters.fake_mmbc import FakeMMBCClient
 
 
 booking_repo = BookingRepository()
@@ -102,9 +103,9 @@ async def post_booking(req: PostBookingRequest):
     try:
         result = await post_booking_service(req)
 
-        if result.get("result") != "no":
-            kodebooking = result.get("kodebooking")
-        if kodebooking:
+        kodebooking = result.get("kodebooking")
+
+        if result.get("result") != "no" and kodebooking:
             booking_repo.set_status(kodebooking, "incomplete")
 
 

@@ -1,5 +1,5 @@
 import os
-from adapters.external_api import MMBCClient
+from adapters.external_api_bookings import MMBCClient
 from adapters.fake_mmbc import FakeMMBCClient
 
 def get_mmbc_client():

@@ -35,23 +35,24 @@ async def verify_token(token: str) -> bool:
         except httpx.RequestError:
             return False
 
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    path = request.url.path.lower()
+# @app.middleware("http")
+# async def auth_middleware(request: Request, call_next):
+#     path = request.url.path.lower()
+# 
+#     # Check if request path starts with any public route prefix
+#     if any(path.startswith(route) for route in PUBLIC_ROUTES):
+#         return await call_next(request)
+# 
+#     auth_header = request.headers.get("Authorization")
+#     token = None
+#     if auth_header and auth_header.lower().startswith("bearer "):
+#         token = auth_header.split(" ", 1)[1].strip()
+# 
+#     if not token or not await verify_token(token):
+#         return Response(content="Unauthorized", status_code=401)
+# 
+#     return await call_next(request)
 
-    # Check if request path starts with any public route prefix
-    if any(path.startswith(route) for route in PUBLIC_ROUTES):
-        return await call_next(request)
-
-    auth_header = request.headers.get("Authorization")
-    token = None
-    if auth_header and auth_header.lower().startswith("bearer "):
-        token = auth_header.split(" ", 1)[1].strip()
-
-    if not token or not await verify_token(token):
-        return Response(content="Unauthorized", status_code=401)
-
-    return await call_next(request)
 
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy(full_path: str, request: Request):
