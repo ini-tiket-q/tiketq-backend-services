@@ -55,7 +55,7 @@ MMBC_USER_ID=your_user_id_here
 MMBC_PASSWORD=your_password_here
 MMBC_AGENT_CODE=your_agent_code_here
 MMBC_TIMEOUT_SECONDS=15
-MOCK_REMOTE=true
+MOCK_REMOTE=true or false (to connect mmbc)
 ```
 
 
@@ -68,11 +68,7 @@ MOCK_REMOTE=true
 - **Docker** — container setup (optional)
 
 
-To run locally with `uv`:
 
-```bash
-uv run uvicorn --app-dir flights-service app:app --reload --port 5001
-```
 
 
 ## 🚀 Running Locally (Docker)
@@ -87,7 +83,20 @@ docker compose build api-gateway flights-service
 docker compose up api-gateway flights-service
 ```
 
+<br> <br>
 
+<i><b>If you prefer to test with swagger</i></b>:
+
+### 1. Build the container:
+```bash
+docker build -t flights-service ./flights-service
+```
+### 2. Run the container:
+```bash
+docker run -p 8001:8000 --env-file ./flights-service/.env.example flights-service
+```
+### 3. Accessing Swagger:
+To access swagger, access it via http://localhost:8001/docs
 
 <br><br><br>
 
