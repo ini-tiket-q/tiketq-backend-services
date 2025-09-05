@@ -58,6 +58,7 @@ def get_routes_dashboard(search: str = None):
 
     #oneway
 def get_trips_dashboard(
+        nationality: str,
         origin: str, 
         destination: str, 
         date: str,
@@ -81,6 +82,7 @@ def get_trips_dashboard(
                     "gate_open": item.get("gateOpen"),
                     "gate_close": item.get("gateClose"),
                     "route": f"{origin}-{destination}",  # Added route info
+                    "nationality": nationality,
                     "pax": pax,  # Include passenger count in response
                     "ferry_class": ferry_class,
                 })
@@ -94,6 +96,7 @@ def get_trips_dashboard(
 
     #roundtrip
 def get_roundtrip_dashboard(
+        nationality: str,
         origin: str, 
         destination: str, 
         depart_date: str, 
@@ -103,10 +106,10 @@ def get_roundtrip_dashboard(
     ):
         try:
             # Get departure trips (origin → destination)
-            depart_trips = get_trips_dashboard(origin, destination, depart_date, pax, ferry_class)
+            depart_trips = get_trips_dashboard(nationality, origin, destination, depart_date, pax, ferry_class)
             
             # Get return trips (destination → origin) 
-            return_trips = get_trips_dashboard(destination, origin, return_date, pax, ferry_class)
+            return_trips = get_trips_dashboard(nationality, destination, origin, return_date, pax, ferry_class)
             
             # Check if either request failed
             if depart_trips.get("status") == "error":
@@ -117,6 +120,9 @@ def get_roundtrip_dashboard(
             # Combine the results
             return {
                 "status": "success",
+                "nationality": nationality,
+                "pax": pax,
+                "ferry_class": ferry_class,
                 "data": {
                     "departure_trips": depart_trips.get("data", []),
                     "return_trips": return_trips.get("data", [])
