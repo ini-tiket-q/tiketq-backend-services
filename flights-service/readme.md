@@ -16,19 +16,34 @@ These endpoints are defined under `routes/payments.py`, using FastAPI with `serv
 
 ```
 flights-service/
-├── app.py                     # Entry point for the service
-├── Dockerfile                 # Container config
-├── requirements.txt           # Python dependencies
-├── .env.example               # Environment variable template
-├── domain/
-│   ├── models.py              # Domain models for flights and payments
-│   ├── services.py            # Business logic layer (ports)
-│   └── repository.py          # Data access interfaces (DB or cache)
-├── adapters/
-│   └── external_api.py        # External flight provider client (adapter)
-└── routes/
-│    └── flights.py             # Inbound API (FastAPI route handler)
-│    └── payments.py           #  Innound API (FastAPI route handler)
+├── app.py                           # 🚀 Main FastAPI app entry point — wires routes & health check
+├── config.py                        # ⚙️ Loads .env file, controls env config like MOCK_REMOTE
+├── Dockerfile                       # 🐳 Docker container build config for the service
+├── requirements.txt                 # 📦 Python dependencies list
+├── .env.example                     # 🧪 Sample environment variable template
+
+├── domain/                          # 💡 Business logic + domain models (Clean/Hexagonal "Core")
+│   ├── models.py                    # SQLAlchemy (or Pydantic) data models (if used)
+│   ├── schemas_flights.py          # ✈️ Pydantic schemas for flight-related endpoints
+│   ├── schemas_bookings.py         # 🧾 Pydantic schemas for booking-related endpoints
+│   ├── repository_flights.py       # 📤 Interface to store/retrieve flight data (e.g., DB/cache)
+│   ├── repository_bookings.py      # 🧾 Interface to manage booking data (futureproofing DB)
+│   ├── services_flights.py         # 🧠 Flight business logic (domain service layer)
+│   ├── services_bookings.py        # 💼 Booking business logic (e.g., transform before save/send)
+│   └── mmbc_services.py            # 🌐 MMBC API service for booking & pricing (non-adapter logic)
+
+├── adapters/                        # 🔌 I/O Layer (implements ports from domain layer)
+│   ├── external_api_flights.py     # 🌐 Real MMBC API client for flight endpoints
+│   ├── external_api_bookings.py    # 📩 Real MMBC API client for booking endpoints
+│   ├── fake_mmbc.py                # 🧪 Fake unified MMBC mock adapter (flights + bookings)
+│   ├── fake_mmbc_flights.py        # 🧪 Mocked flight MMBC implementation (legacy)
+│   ├── mmbc_factory.py             # 🏭 Factory: returns either real or mock MMBC client
+│   └── store.py                    # 💾 Shared storage logic (e.g., in-memory cache/store)
+
+├── routes/                          # 🌐 Inbound HTTP interface (FastAPI routers)
+│   ├── routes_flights.py           # ✈️ `/api/v1/flights/*` endpoints (search, airports, etc.)
+│   └── routes_bookings.py          # 📩 `/api/v1/bookings/*` endpoints (price, book, issue)
+
 ```
 
 
