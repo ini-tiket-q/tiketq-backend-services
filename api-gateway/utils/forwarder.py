@@ -1,9 +1,9 @@
 import os
 import httpx
-
 from fastapi import Request, Response
+from urllib.parse import urljoin
 
-# Load service URLs from env
+# Load service URLs from env (or default to Docker hostnames)
 SERVICES = {
     "auth": os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000"),
     "user": os.getenv("USER_SERVICE_URL", "http://user-service:8000"),
@@ -14,30 +14,54 @@ SERVICES = {
     "payment": os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8000"),
 }
 
+# Map prefixes to service keys
 ROUTE_SERVICE_MAP = {
-    "/auth": "auth",
-    "/users": "user",
-    "/flights": "flights",
-    "/ferries": "ferries",
-    "/hotels": "hotels",
-    "/ppob": "ppob",
-    "/payments": "payment",
+    "api/v1/flights": "flights",
+    "api/v1/bookings": "flights",
+    "api/v1/auth": "auth",
+    "api/v1/users": "user",
+    "api/v1/ferries": "ferries",
+    "api/v1/hotels": "hotels",
+    "api/v1/ppob": "ppob",
+    "api/v1/payments": "payment",
 }
 
-
 def resolve_target_url(path: str) -> str | None:
-    """
-    Match the route to a service and build the full URL.
-    """
-    for prefix, service in ROUTE_SERVICE_MAP.items():
-        if path.startswith(prefix.lstrip("/")):
-            return f"{SERVICES[service]}/{path}"
+    for prefix, service_key in ROUTE_SERVICE_MAP.items():
+        if path.startswith(prefix):
+            return urljoin(SERVICES[service_key] + "/", path)
     return None
-
 
 async def forward_request(request: Request, full_path: str) -> Response:
     """
-    Forward the request to the matched service.
+    Forwards a request from API Gateway to the target microservice.
     """
     target_url = resolve_target_url(full_path)
-    if not target_url_
+    
+    if not target_url:
+        print(f"❌ No route matched for path: /{full_path}")
+        return Response(content="Service route not found", status_code=404)
+
+    print(f"📦 FORWARDING {request.method} → {target_url}")
+
+    async with httpx.AsyncClient() as client:
+        method = request.method
+        headers = dict(request.headers)
+        body = await request.body()
+
+        try:
+            response = await client.request(
+                method=method,
+                url=target_url,
+                headers=headers,
+                content=body,
+                timeout=10
+            )
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+        except httpx.RequestError as e:
+            print(f"❌ Request failed: {e}")
+            return Response(content="Upstream service error", status_code=502)

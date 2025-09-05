@@ -1,4 +1,5 @@
 import os
+import inspect
 from adapters.mmbc_factory import mmbc
 from domain.schemas_bookings import (
     GetPriceRequest, GetPriceResponse,
@@ -9,6 +10,7 @@ from domain.schemas_bookings import (
     GetStatusBookingResponse
 )
 from fastapi import HTTPException
+
 
 class PriceError(Exception):
     def __init__(self, reason: str):
@@ -33,15 +35,21 @@ class ETicketError(Exception):
 
 
 async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
-    result = mmbc.get_price(
-    flight=req.flight,
-    from_=req.from_,
-    to=req.to,
-    date=req.date,
-    adult=req.adult,
-    child=req.child,
-    infant=req.infant,
-)
+    call_args = dict(
+        flight=req.flight,
+        from_=req.from_,
+        to=req.to,
+        date=req.date,
+        adult=req.adult,
+        child=req.child,
+        infant=req.infant,
+    )
+
+    # If the method is a coroutine (async), await it
+    if inspect.iscoroutinefunction(mmbc.get_price):
+        result = await mmbc.get_price(**call_args)
+    else:
+        result = mmbc.get_price(**call_args)
 
     if result.get("result") == "no":
         raise PriceError(result.get("reason", "No result"))
@@ -49,15 +57,16 @@ async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
     return result
 
 
-async def post_booking_service(req: PostBookingRequest) -> PostBookingResponse:
-    result = await mmbc.post_booking(**req.dict(by_alias=True))
+async def post_booking_service(req: PostBookingRequest):
+    kwargs = req.dict(by_alias=True)
+
+    if inspect.iscoroutinefunction(mmbc.post_booking):
+        result = await mmbc.post_booking(**kwargs)
+    else:
+        result = mmbc.post_booking(**kwargs)
 
     if result.get("result") == "no":
-        print("📦 MMBC FULL ERROR:", result)
-        raise BookingError(
-            reason=result.get("reason") or result.get("message") or "Booking failed",
-            full_body=result
-        )
+        raise BookingError(result.get("reason", "Booking failed"), result)
 
     return result
 

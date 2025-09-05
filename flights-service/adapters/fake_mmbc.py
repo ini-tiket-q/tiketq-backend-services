@@ -9,8 +9,10 @@ class FakeMMBCClient:
     async def get_price(self, **kwargs):
         return {
             "result": "ok",
+            "flight_id": "01",  # ✅ ADDED
             "flight": "Citilink",
             "flight_code": "QG-724",
+            "flight_image": "https://klikmbc.biz/v2/images/airlines/icon_citilink.png",  # ✅ ADDED
             "flight_from": "CGK",
             "flight_to": "SUB",
             "flight_route": "CGK-SUB",
@@ -19,8 +21,9 @@ class FakeMMBCClient:
             "flight_transit": "Nonstop",
             "flight_infotransit": "Jakarta(CGK) 18:40 - Surabaya(SUB) 20:20",
             "flight_time": "18:40 - 20:20",
+            "flight_duration": "1j 40mnt",  # ✅ ADDED
             "flight_class": "O",
-            "flight_availableseat": 5,
+            "flight_availableseat": "5",  # ✅ CHANGED to str
             "flight_baggage": "20kg",
             "flight_facilities": "-",
             "publish": 425000,
