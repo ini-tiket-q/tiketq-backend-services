@@ -33,7 +33,9 @@ class SindoClient:
         resp = self.session.post(url, json=payload, timeout=10)
         resp.raise_for_status()
         data = resp.json()
+        
         print(f"Login response: {data}")  # Debug print
+        print(f"Token received: {self._access_token}")
         if data.get("status") == "Ok":
             self._access_token = data["data"]["access_token"]
             # update session headers dengan token
@@ -49,17 +51,42 @@ class SindoClient:
             self._login()
     
     
+    def test_login(self):
+        try:
+            token = self._login()
+            print(f"Login successful, token: {token}")
+            return True
+        except Exception as e:
+            print(f"Login failed: {str(e)}")
+            return False
+    
+    
     def _request(self, method, url, **kwargs):
         """Wrapper request dengan auto relogin jika 401"""
-        self._ensure_token()
-        resp = self.session.request(method, url, **kwargs)
-        if resp.status_code == 401:
-            # token expired → login ulang sekali
-            self.login()  
-            # ulang request
+        try:    
+            self._ensure_token()
             resp = self.session.request(method, url, **kwargs)
-        resp.raise_for_status()
-        return resp.json()
+            
+            # If unauthorized, try to refresh token once
+            if resp.status_code == 401:
+                print("Token expired, attempting to refresh...")
+                # token expired → login ulang sekali
+                self.login()  
+                # ulang request
+                resp = self.session.request(method, url, **kwargs)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            print(f"Request failed: {str(e)}")
+            print(f"URL: {url}")
+            print(f"Method: {method}")
+            if 'resp' in locals():
+                print(f"Status Code: {resp.status_code}")
+                print(f"Response Text: {resp.text}")
+            raise
+      
+      
+        
 
     # ---------------------------
     # Public API methods
@@ -67,20 +94,29 @@ class SindoClient:
 
     def get_sindo_routes(self, search: str = None, page_index=0, page_size=0):
         """Get list of Sindo routes"""
-        params = {
-            "filter": (
-                f'{{"searchString":"{search}"}}' if search else '{"searchString":null}'
-            ),
-            "pagination": f'{{"pageIndex":{page_index},"pageSize":{page_size}}}'
-        }
-        url = f"{self.agent_url}/Master/Routes"
+        params = {}
+        #     "filter": (
+        #         f'{{"searchString":"{search}"}}' if search else '{"searchString":null}'
+        #     ),
+        #     "pagination": f'{{"pageIndex":{page_index},"pageSize":{page_size}}}'
+        # }
+        if search:
+            params["searchString"] = search
+        if page_index:
+            params["pageIndex"] = page_index
+        if page_size:
+            params["pageSize"] = page_size
+        
+        url = f"{self.agent_url}/Agent/Master/Routes"
+        print(f"Making request to: {url} with params: {params}")  # Debug
         return self._request("GET", url, params=params)
+
 
     #oneway
     def get_sindo_trips(self, origin: str, destination: str, date: str):
         """Get trips/schedules (general API)"""
         self._ensure_token()
-        url = f"{self.core_url}/Trips/GetTripWeb"
+        url = f"{self.core_url}/api/Trips/GetTripWeb"
 
         params = {
             "embarkation": origin,      # ex: BTC
