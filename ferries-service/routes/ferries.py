@@ -92,3 +92,18 @@ def remove_booking_detail(booking_id: str, booking_detail_id: str):
         return services.delete_booking_detail(booking_id, booking_detail_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# submit booking
+
+
+# get available sectors
+@router.get("/sectors")
+def list_available_sectors():
+    """
+    Ambil daftar sektor ferry yang tersedia.
+    """
+    try:
+        return services.get_available_sectors()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
