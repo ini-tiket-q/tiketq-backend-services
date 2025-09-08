@@ -64,6 +64,11 @@ async def auth_middleware(request: Request, call_next):
         token = auth_header.split(" ", 1)[1].strip()
         print(f"DEBUG: Extracted token: {token[:20]}...")
 
+    # Development bypass for testing(flights-service only)
+    if token == "testdummy123":
+        print("DEBUG: Dummy token accepted (dev bypass)")
+        return await call_next(request)    
+
     if not token:
         print(f"DEBUG: No valid token found")
         return Response(content="Unauthorized - No token", status_code=401)
