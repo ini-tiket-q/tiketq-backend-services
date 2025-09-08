@@ -12,18 +12,20 @@ SERVICES = {
     "hotels": os.getenv("HOTELS_SERVICE_URL", "http://hotels-service:8000"),
     "ppob": os.getenv("PPOB_SERVICE_URL", "http://ppob-service:8000"),
     "payment": os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8000"),
+    "transaction": os.getenv("TRANSACTION_SERVICE_URL", "http://transaction-service:8000"),
+    "trains": os.getenv("TRAINS_SERVICE_URL", "http://trains-service:8000"),
 }
 
 # Map prefixes to service keys
 ROUTE_SERVICE_MAP = {
     "api/v1/flights": "flights",
     "api/v1/bookings": "flights",
-    "api/v1/auth": "auth",
-    "api/v1/users": "user",
-    "api/v1/ferries": "ferries",
-    "api/v1/hotels": "hotels",
-    "api/v1/ppob": "ppob",
-    "api/v1/payments": "payment",
+    "/ferries": "ferries",
+    "/hotels": "hotels",
+    "/ppob": "ppob",
+    "/payments": "payment",
+    "/transactions": "transaction",
+    "/trains": "trains",
 }
 
 def resolve_target_url(path: str) -> str | None:
@@ -40,28 +42,36 @@ async def forward_request(request: Request, full_path: str) -> Response:
     
     if not target_url:
         print(f"❌ No route matched for path: /{full_path}")
-        return Response(content="Service route not found", status_code=404)
+        return Response(content="Service not found", status_code=404)
 
     print(f"📦 FORWARDING {request.method} → {target_url}")
 
-    async with httpx.AsyncClient() as client:
-        method = request.method
-        headers = dict(request.headers)
-        body = await request.body()
+    # Get request body
+    body = await request.body()
 
+    # Get headers (excluding host and content-length)
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    headers.pop("content-length", None)
+
+    async with httpx.AsyncClient() as client:
         try:
             response = await client.request(
-                method=method,
+                method=request.method,
                 url=target_url,
                 headers=headers,
                 content=body,
-                timeout=10
+                timeout=30
             )
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=dict(response.headers)
             )
         except httpx.RequestError as e:
             print(f"❌ Request failed: {e}")
-            return Response(content="Upstream service error", status_code=502)
+            return Response(
+                content=f"Service unavailable: {str(e)}",
+                status_code=503
+            )
+

@@ -1,4 +1,4 @@
-version: '3.9'
+# version: '3.9'
 
 services:
   api-gateway:
@@ -17,6 +17,7 @@ services:
       - hotels-service
       - ppob-service
       - payment-service
+      - transaction-service
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -25,6 +26,8 @@ services:
     build:
       context: ./auth-service
     container_name: auth-service
+    ports:
+      - "8001:8000" # temporary expose for testing
     env_file:
       - .env
     networks:
@@ -77,6 +80,18 @@ services:
     build:
       context: ./payment-service
     container_name: payment-service
+    networks:
+      - tiketq-net
+    restart: unless-stopped
+
+  transaction-service:
+    build:
+      context: ./transaction-service
+    container_name: transaction-service
+    ports:
+      - "8004:8000" # temporary expose e.g. localhost:8004/docs
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped
