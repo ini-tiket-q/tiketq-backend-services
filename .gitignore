@@ -40,7 +40,6 @@ secrets/
 
 # Docker-related
 *.env
-.env.example
 
 # Installer logs
 pip-log.txt

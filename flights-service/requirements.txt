@@ -2,7 +2,4 @@ fastapi
 uvicorn
 requests
 python-dotenv
-pydantic
-httpx
-pydantic[email]
-python-multipart
+pydantic 
