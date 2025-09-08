@@ -117,6 +117,16 @@ To access swagger, access it via http://localhost:8001/docs
 
 # 🔌 Endpoints Overview
 
+## 📬 Postman API Collection
+
+You can test the API endpoints using the following Postman collection:
+
+🔗 [Click here to open in Postman](https://rifqisaleh113-727111.postman.co/workspace/Rifqi-Saleh's-Workspace~470e69f4-ec50-477f-8294-6963e5d01d87/request/47257166-0ad9967c-f8c7-4d98-ab3d-7a7bcf8dac37?action=share&creator=47257166&ctx=documentation&active-environment=47257166-39b94003-3b89-450a-8513-23c5ef963bca)
+
+> Make sure to set the correct environment variables if you're using environment-based configurations.
+
+
+
 <br><br>
 
 ## 🧪 Health Check Endpoint:
@@ -134,14 +144,6 @@ GET /health
 }
 ```
 <br><br>
-
-## 📬 Postman API Collection
-
-You can test the API endpoints using the following Postman collection:
-
-🔗 [Click here to open in Postman](https://rifqisaleh113-727111.postman.co/workspace/Rifqi-Saleh's-Workspace~470e69f4-ec50-477f-8294-6963e5d01d87/collection/47257166-1289c916-b8ef-430e-9beb-39850e7d7999?action=share&creator=47257166&active-environment=47257166-39b94003-3b89-450a-8513-23c5ef963bca)
-
-> Make sure to set the correct environment variables if you're using environment-based configurations.
 
 
 ## 🛫 Flight Service Endpoints
