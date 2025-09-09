@@ -17,6 +17,8 @@ from domain.services import PaymentService
 from adapters.midtrans_adapter import MidtransAdapter
 from adapters.db import DatabaseAdapter
 from adapters.webhook_handler import WebhookHandler
+from domain.services import get_database_session
+from sqlalchemy.orm import Session
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Create router instance
 router = APIRouter()
 
-def get_payment_service() -> PaymentService:
+def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentService:
     """
     Dependency to get payment service instance with shared database
     """
@@ -42,7 +44,7 @@ def get_payment_service() -> PaymentService:
     )
 
     # DatabaseAdapter will automatically connect to shared tiketq_db
-    db_adapter = DatabaseAdapter()
+    db_adapter = DatabaseAdapter(db)
 
     return PaymentService(
         payment_repository=midtrans_adapter,

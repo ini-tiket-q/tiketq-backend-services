@@ -123,7 +123,7 @@ class Order(Base):
 class Payment(Base):
     """SQLAlchemy model for payments table"""
 
-    __tablename__ = "payments"
+    __tablename__ = "payments_transaction"
 
     id = Column(Integer, primary_key=True, index=True)
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
