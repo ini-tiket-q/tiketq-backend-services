@@ -1,7 +1,9 @@
-from typing import Optional, List
+from typing import Optional, List, Generator
 from .models import PaymentRequest, PaymentResponse, PaymentStatus, PaymentNotification
 from .repository import PaymentRepository, PaymentStorageRepository
 import logging
+from adapters.db import DatabaseSessionProvider
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -161,3 +163,18 @@ class PaymentService:
     async def get_payments_by_order_id(self, order_id: str) -> List[PaymentResponse]:
         """Get all payments for an order"""
         return await self.storage_repository.get_payments_by_order(order_id)
+
+
+def get_database_session() -> Generator[Session, None, None]:
+    """
+    FastAPI dependency that provides database sessions.
+    This is the only place where FastAPI directly interacts with the database.
+    """
+
+    _session_provider = DatabaseSessionProvider()
+    session = _session_provider.get_session()
+    try:
+        yield session
+    finally:
+        _session_provider.close_session(session)
+

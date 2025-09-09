@@ -1,18 +1,41 @@
 import os
 import json
+import logging
 from typing import Optional, List
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Float, DateTime, Enum, Text, DECIMAL
+from sqlalchemy import create_engine, Column, String, DateTime, Enum, Text, DECIMAL, text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.dialects.postgresql import UUID
 import uuid
-
 from domain.models import PaymentResponse, PaymentStatus, PaymentMethod
 from domain.repository import PaymentStorageRepository
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
+DATABASE_URL = os.getenv("PAYMENT_DB_URL")
+if not DATABASE_URL:
+    raise RuntimeError("PAYMENT_DB_URL environment variable is required")
+
 Base = declarative_base()
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+
+# Database session provider - infrastructure concern
+class DatabaseSessionProvider:
+    """Provides database sessions for the application layer"""
+
+    def __init__(self):
+        self.session_factory = SessionLocal
+
+    def get_session(self) -> Session:
+        """Get a new database session"""
+        return self.session_factory()
+
+    def close_session(self, session: Session):
+        """Close a database session"""
+        session.close()
 
 
 class PaymentRecord(Base):
@@ -46,54 +69,8 @@ class DatabaseAdapter(PaymentStorageRepository):
     PostgreSQL database adapter for storing payment records in shared tiketq_db.
     """
 
-    def __init__(self, db_url: str = None):
-        """
-        Initialize database adapter with connection URL for shared database
-        """
-        if not db_url:
-            # Read from secrets files (Docker secrets)
-            try:
-                with open('/run/secrets/db_user', 'r') as f:
-                    db_user = f.read().strip()
-                with open('/run/secrets/db_password', 'r') as f:
-                    db_password = f.read().strip()
-
-                db_url = f"postgresql://{db_user}:{db_password}@postgres:5432/tiketq_db"
-            except FileNotFoundError:
-                # Fallback for development
-                db_user = os.getenv("POSTGRES_USER", "tiketq_user")
-                db_password = os.getenv("POSTGRES_PASSWORD", "tiketq_password")
-                db_host = os.getenv("POSTGRES_HOST", "postgres")
-                db_name = os.getenv("POSTGRES_DB", "tiketq_db")
-
-                db_url = f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
-
-        print(f"Connecting to shared database: {db_url.split('@')[1]}")  # Don't log credentials
-
-        # Configure engine for PostgreSQL
-        self.engine = create_engine(
-            db_url,
-            echo=False,
-            pool_size=10,
-            max_overflow=20,
-            pool_pre_ping=True,
-            pool_recycle=300,
-        )
-
-        self.Session = sessionmaker(bind=self.engine)
-
-        # Create payment tables if they don't exist
-        self._create_payment_tables()
-
-    def _create_payment_tables(self):
-        """Create payment-specific tables in shared database"""
-        try:
-            # Only create payment tables, don't interfere with other service tables
-            PaymentRecord.__table__.create(self.engine, checkfirst=True)
-            print("Payment tables created/verified successfully in tiketq_db")
-        except Exception as e:
-            print(f"Error creating payment tables: {e}")
-            raise
+    def __init__(self, db: Session):
+       self.db = db
 
     def _payment_record_to_response(self, record: PaymentRecord) -> PaymentResponse:
         """Convert database record to domain model"""
@@ -130,9 +107,8 @@ class DatabaseAdapter(PaymentStorageRepository):
 
     async def save_payment(self, payment: PaymentResponse) -> None:
         """Save payment record to shared database"""
-        session = self.Session()
         try:
-            existing = session.query(PaymentRecord).filter_by(payment_id=payment.id).first()
+            existing = self.db.query(PaymentRecord).filter_by(payment_id=payment.id).first()
 
             if existing:
                 # Update existing record
@@ -173,23 +149,22 @@ class DatabaseAdapter(PaymentStorageRepository):
                     new_payment.bank_code = payment.metadata.get("bank_code")
                     new_payment.additional_data = json.dumps(payment.metadata)
 
-                session.add(new_payment)
+                self.db.add(new_payment)
 
-            session.commit()
+            self.db.commit()
             print(f"Payment saved to shared database: {payment.id}")
 
         except SQLAlchemyError as e:
-            session.rollback()
+            self.db.rollback()
             print(f"Database error saving payment: {e}")
             raise ValueError(f"Failed to save payment: {str(e)}")
         finally:
-            session.close()
+            self.db.close()
 
     async def get_payment(self, payment_id: str) -> Optional[PaymentResponse]:
         """Retrieve payment record from shared database"""
-        session = self.Session()
         try:
-            record = session.query(PaymentRecord).filter_by(payment_id=payment_id).first()
+            record = self.db.query(PaymentRecord).filter_by(payment_id=payment_id).first()
 
             if record:
                 return self._payment_record_to_response(record)
@@ -200,34 +175,32 @@ class DatabaseAdapter(PaymentStorageRepository):
             print(f"Database error getting payment: {e}")
             raise ValueError(f"Failed to get payment: {str(e)}")
         finally:
-            session.close()
+            self.db.close()
 
     async def update_payment_status(self, payment_id: str, status: PaymentStatus) -> None:
         """Update payment status in shared database"""
-        session = self.Session()
         try:
-            record = session.query(PaymentRecord).filter_by(payment_id=payment_id).first()
+            record = self.db.query(PaymentRecord).filter_by(payment_id=payment_id).first()
 
             if record:
                 record.status = status
                 record.updated_at = datetime.utcnow()
-                session.commit()
+                self.db.commit()
                 print(f"Payment status updated in shared DB: {payment_id} -> {status}")
             else:
                 raise ValueError(f"Payment with ID {payment_id} not found")
 
         except SQLAlchemyError as e:
-            session.rollback()
+            self.db.rollback()
             print(f"Database error updating payment status: {e}")
             raise ValueError(f"Failed to update payment status: {str(e)}")
         finally:
-            session.close()
+            self.db.close()
 
     async def get_payments_by_order(self, order_id: str) -> List[PaymentResponse]:
         """Get all payments associated with an order from shared database"""
-        session = self.Session()
         try:
-            records = session.query(PaymentRecord).filter_by(order_id=order_id).order_by(PaymentRecord.created_at.desc()).all()
+            records = self.db.query(PaymentRecord).filter_by(order_id=order_id).order_by(PaymentRecord.created_at.desc()).all()
 
             return [self._payment_record_to_response(record) for record in records]
 
@@ -235,7 +208,7 @@ class DatabaseAdapter(PaymentStorageRepository):
             print(f"Database error getting payments by order: {e}")
             raise ValueError(f"Failed to get payments by order ID: {str(e)}")
         finally:
-            session.close()
+            self.db.close()
 
     async def get_payments_by_order_id(self, order_id: str) -> List[PaymentResponse]:
         """Alias method for compatibility"""
@@ -244,10 +217,14 @@ class DatabaseAdapter(PaymentStorageRepository):
     def health_check(self) -> bool:
         """Check shared database connection health"""
         try:
-            session = self.Session()
-            session.execute("SELECT 1")
-            session.close()
+            # Test the connection by executing a simple query using text()
+            self.db.execute(text("SELECT 1"))
+            # Commit any pending transactions to ensure the connection is alive
+            self.db.commit()
+            logger.info("Database health check successful")
             return True
         except Exception as e:
-            print(f"Database health check failed: {e}")
+            logger.error(f"Database health check failed: {str(e)}", exc_info=True)
+            # Rollback any failed transactions
+            self.db.rollback()
             return False
