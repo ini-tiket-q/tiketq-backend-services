@@ -148,7 +148,7 @@ async def create_transaction(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=transaction.id,
             email=transaction_request.email,
-            amount=transaction.total,
+            amount=transaction.amount,
             currency=transaction.currency,
             order_number=transaction.order_number,
             status=transaction.status.value,

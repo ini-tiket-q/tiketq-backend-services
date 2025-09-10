@@ -132,7 +132,7 @@ class TransactionService:
             payment_body = {
                 "order_id": order_number,
                 "amount": float(total),  # Ensure amount is a float
-                "payment_method": transaction_request.payment_method.value.upper(),  # Ensure uppercase for payment method
+                "payment_method": transaction_request.payment_method.value.lower(),  # Ensure lowercase for payment method
                 "customer_details": {
                     "email": email,
                 },
@@ -140,16 +140,10 @@ class TransactionService:
                 "description": "Payment for order " + order.order_number,
             }
 
-            logger.info(f"im here!!!0: {item_details_for_payment}, and, {payment_body}")
-
-            logger.info("im here!!!1")
-
             payment_url_body = create_payment_url(payment_body)
             if not payment_url_body:
                 logger.error("Failed to create payment")
                 return None
-
-            logger.info(f"im here!!!2: {payment_url_body}")
 
             # Create transaction using validated request data
             transaction = TransactionCreate(
@@ -165,16 +159,14 @@ class TransactionService:
                 metadata=transaction_request.transaction_metadata
             )
 
-
             db_transaction = self.transaction_repo.create_transaction(transaction)
             if not db_transaction:
                 logger.error("Failed to create transaction")
                 return None
-
             # create payment in db
             payment = PaymentCreate(
                 transaction_id=db_transaction.id,
-                amount=transaction_request.amount,
+                amount=transaction_request.total,
                 currency=transaction_request.currency,
                 payment_method=transaction_request.payment_method,
                 payment_gateway=transaction_request.payment_gateway,
