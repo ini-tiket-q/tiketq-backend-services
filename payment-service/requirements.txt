@@ -4,6 +4,4 @@ requests
 python-dotenv
 pydantic
 sqlalchemy
-psycopg2-binary
-midtransclient
-logger
+psycopg2-binary 
