@@ -341,7 +341,7 @@ def submit_ferry_booking(booking_id: str, email_confirmation: str, remarks: str)
     """
     Submit a booking for final processing.
     """
-    data = sindo_client.submit_booking(booking_id, email_confirmation, remarks)
+    data = sindo_client.sindo_submit_booking(booking_id, email_confirmation, remarks)
     if data.get("status") == "Ok":
         return {"status": "success", "message": "Booking submitted successfully"}
     else:

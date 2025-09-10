@@ -159,6 +159,6 @@ def list_available_sectors():
     Ambil daftar sektor ferry yang tersedia.
     """
     try:
-        return services.get_available_sectors()
+        return services.get_ferry_available_sectors()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -132,7 +132,7 @@ class SindoClient:
    
     def add_sindo_booking_detail(self, booking_id: str, passenger_data: dict):
         """Add passenger details to a booking"""
-        return self._request("POST", f"Booking/Bookings/{booking_id}/Details", url_type="base", json=passenger_data)
+        return self._request("POST", f"/Booking/Bookings/{booking_id}/Details", json=passenger_data)
 
     
     def get_sindo_booking_details(self, booking_id: str, search: str = None):
@@ -167,7 +167,7 @@ class SindoClient:
     
     def delete_sindo_booking_detail(self, booking_id: str, booking_detail_id: str):
         """Delete a booking detail (passenger) from a booking"""
-        return self._request("DELETE", f"Booking/Bookings/{booking_id}/Details/{booking_detail_id}")
+        return self._request("DELETE", f"/Booking/Bookings/{booking_id}/Details/{booking_detail_id}")
 
 
     def sindo_submit_booking(self, booking_id: str, email_confirmation: str, remarks: str):
