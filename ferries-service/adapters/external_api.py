@@ -1,263 +1,185 @@
 import os
+from typing import Optional
 import requests
-from dotenv import load_dotenv
 import json
-
-load_dotenv()
-
-SINDO_BASE_URL = "https://api.test.sindoferry.com.sg/agent"
-# SINDO_CORE_URL = "https://core.test.sindoferry.com.sg/api"
-SINDO_CORE_URL = "https://api.test.sindoferry.com.sg/Agent"
-
-AGENT_CODE = os.getenv("SINDO_AGENT_CODE", "T900T63")
-USERNAME = os.getenv("SINDO_USERNAME", "testparistvl")
-PASSWORD = os.getenv("SINDO_PASSWORD", "j&o99?Pm2#Uj")
+from adapters.ext_api_config import settings
 
 _access_token = None  # cache sementara
 
-# Agen Login (Mandatory)
-def sindo_login():
-    global _access_token
-    url = f"{SINDO_BASE_URL}/Agent/Login"
-    payload = {
-        "agentCode": AGENT_CODE,   # lowercase seperti test_sindo
-        "username": USERNAME,
-        "password": PASSWORD
-    }
-    headers = {"Content-Type": "application/json"}
 
-    resp = requests.post(url, json=payload, headers=headers, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get("status") == "Ok":
-        _access_token = data["data"]["access_token"]
-        return _access_token
-    raise Exception(f"Login gagal: {data}")
+class SindoClient:
+    def __init__(self):
+        self.base_url = settings.SINDO_BASE_URL
+        self.core_url = settings.SINDO_CORE_URL
+        self.agent_url = settings.SINDO_AGENT_URL
+        self.agent_code = settings.SINDO_AGENT_CODE
+        self.username = settings.SINDO_USERNAME
+        self.password = settings.SINDO_PASSWORD
+        self._access_token = None
 
-# Display all routes
-def get_sindo_routes(search: str = None):
-    global _access_token
-    if not _access_token:
-        sindo_login()
-
-    # url = f"{SINDO_CORE_URL}/Master/Routes"
-    url = f"https://api.test.sindoferry.com.sg/Agent/Master/Routes"
-    params = {
-        "filter": f'{{"searchString":"{search}"}}' if search else '{"searchString":null}',
-        "pagination": '{"pageIndex":0,"pageSize":0}'
-    }
-    headers = {
-        "Authorization": f"Bearer {_access_token}",
-        "Content-Type": "application/json"
-    }
-    resp = requests.get(url, headers=headers, params=params, timeout=10)
-
-    if resp.status_code == 401:
-        # token expired → relogin
-        sindo_login()
-        headers["Authorization"] = f"Bearer {_access_token}"
-        resp = requests.get(url, headers=headers, params=params, timeout=10)
-
-    resp.raise_for_status()
-    return resp.json()
-
-
-# Display Trips/Schedules for user to choose
-def get_sindo_trips(origin: str, destination: str, date: str):
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Content-Type": "application/json"
+        })
+        
+    # ---------------------------
+    # Internal methods
+    # ---------------------------
+    # def _build_url(self, endpoint: str) -> str:
+    #     """Build full URL from endpoint using string formatting"""
+    #     return f"{self.base_url}/{endpoint.lstrip('/')}"
     
+    def _build_filter_param(self, search: Optional[str] = None) -> str:
+        """Build filter parameter using string formatting"""
+        if search:
+            return f'{{"searchString":"{search}"}}'
+        return '{"searchString":null}'
+    
+    def _build_pagination_param(self, page_index: int = 0, page_size: int = 0) -> str:
+        """Build pagination parameter using string formatting"""
+        return f'{{"pageIndex":{page_index},"pageSize":{page_size}}}'
 
-    # url = f"{SINDO_CORE_URL}/Trips/GetTripWeb"
-    url = "https://core.test.sindoferry.com.sg/api/Trips/GetTripWeb"
 
-    params = {
-        "embarkation": origin,      # ex: BTC
-        "destination": destination, # ex: HFC
-        "tripdate": date          # format: YYYY-MM-DD
-    }
-
-    headers = {
+# Agen Login (Mandatory)
+    def _login(self):
+        url = f"{self.base_url}/Agent/Login"
+        payload = {
+            "agentCode": self.agent_code,
+            "username": self.username,
+            "password": self.password,
+        }
         
-        "Content-Type": "application/json"
-    }
+        # Temporary session without auth token for login
+        # Prevents infinite retry loops during failed login attempts
+        with requests.Session() as temp_session:
+            resp = temp_session.post(url, json=payload, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            if data.get("status") == "Ok":
+                self._access_token = data["data"]["access_token"]
+                # update session headers dengan token
+                self.session.headers.update({
+                    "Authorization": f"Bearer {self._access_token}"
+                    })
+                return self._access_token
+            raise Exception(f"Login gagal: {data}")
 
-    resp = requests.get(url, headers=headers, params=params, timeout=15)
+    def _ensure_token(self):
+        if not self._access_token:
+            self._login()
 
-    if resp.status_code == 401:
-        sindo_login()
+    def _request(self, method, endpoint, use_core_url=False, **kwargs):
+        """Wrapper for requests with automatic token refresh"""
         
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
-
-    resp.raise_for_status()
-    return resp.json()
-
-# Create Booking
-def create_sindo_booking(booking_data: dict):
-    global _access_token
-    if not _access_token:
-        sindo_login()
-
-    url = "https://api.test.sindoferry.com.sg/Agent/Booking/Bookings"
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {_access_token}"
-    }
-
-    resp = requests.post(url, headers=headers, json=booking_data, timeout=15)
-
-    if resp.status_code == 401:
-        sindo_login()
-        headers["Authorization"] = f"Bearer {_access_token}"
-        resp = requests.post(url, headers=headers, json=booking_data, timeout=15)
-
-    resp.raise_for_status()
-    return resp.json()
-
-# Add Booking details
-def add_sindo_booking_detail(booking_id: str, passenger_data: dict):
-    global _access_token
-    if not _access_token:
-        sindo_login()
-
-    url = f"https://api.test.sindoferry.com.sg/Agent/Booking/Bookings/{booking_id}/Details"
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {_access_token}"
-    }
-
-    resp = requests.post(url, headers=headers, json=passenger_data, timeout=15)
-
-    if resp.status_code == 401:
-        sindo_login()
-        headers["Authorization"] = f"Bearer {_access_token}"
-        resp = requests.post(url, headers=headers, json=passenger_data, timeout=15)
-
-    resp.raise_for_status()
-    return resp.json()
-
-# Get booking details
-def get_sindo_booking_details(booking_id: str, search: str = None):
-    global _access_token
-    if not _access_token:
-        sindo_login()
-
-    url = f"https://api.test.sindoferry.com.sg/Agent/Booking/Bookings/{booking_id}/Details"
-
-    params = {
-        "filter": json.dumps({
-            "searchString": search if search else None,
-            "sort": 2  # Name ASC
-        }),
-        "pagination": json.dumps({
-            "pageIndex": 0,
-            "pageSize": 0
-        })
-    }
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {_access_token}"
-    }
-
-    resp = requests.get(url, headers=headers, params=params, timeout=15)
-
-    if resp.status_code == 401:
-        sindo_login()
-        headers["Authorization"] = f"Bearer {_access_token}"
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
-
-    resp.raise_for_status()
-    return resp.json()
-
-# Display All Countries
-def get_sindo_countries(search: str = None):
-    global _access_token
-    if not _access_token:
-        sindo_login()
-
-    url = f"{SINDO_CORE_URL}/Master/Countries"
-
-    params = {
-        "filter": json.dumps({
-            "searchString": search if search else None,
-            "sort": 0
-        }),
-        "pagination": json.dumps({
-            "pageIndex": 0,
-            "pageSize": 0
-        })
-    }
-
-    headers = {
-        "Authorization": f"Bearer {_access_token}",
-        "Content-Type": "application/json"
-    }
-
-    resp = requests.get(url, headers=headers, params=params, timeout=15)
-
-    if resp.status_code == 401:
-        sindo_login()
-        headers["Authorization"] = f"Bearer {_access_token}"
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
-
-    resp.raise_for_status()
-    return resp.json()
+        base_url = self.core_url if use_core_url else self.base_url
+                
+        url = f"{base_url}{endpoint}"
+            
+        print(f"DEBUG: Making request to URL: {url}") 
+        try:    
+            self._ensure_token()
+            resp = self.session.request(method, url, **kwargs)          
+                
+            if resp.status_code == 401:
+                print("Token expired, attempting to refresh...")
+                # token expired → login ulang sekali
+                self._login()  
+                # ulang request
+                resp = self.session.request(method, url, **kwargs)
+            
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            print(f"Request failed: {str(e)}")
+            print(f"URL: {url}")
+            print(f"Method: {method}")
+            if 'resp' in locals():
+                print(f"Status Code: {resp.status_code}")
+                print(f"Response Text: {resp.text}")
+            raise
 
 
-# Delete Booking
-def delete_sindo_booking_detail(booking_id: str, booking_detail_id: str):
-    """
-    Hapus booking detail (penumpang) dari booking tertentu.
-    """
-    global _access_token
-    if not _access_token:
-        sindo_login()
-
-    url = f"{SINDO_CORE_URL}/Booking/Bookings/{booking_id}/Details/{booking_detail_id}"
-
-    headers = {
-        "Authorization": f"Bearer {_access_token}",
-        "Content-Type": "application/json"
-    }
-
-    resp = requests.delete(url, headers=headers, timeout=10)
-
-    if resp.status_code == 401:
-        sindo_login()
-        headers["Authorization"] = f"Bearer {_access_token}"
-        resp = requests.delete(url, headers=headers, timeout=10)
-
-    resp.raise_for_status()
-    return resp.json()
+    # ---------------------------
+    # Public API methods
+    # ---------------------------
 
 
-# Submit Booking
+    def get_sindo_routes(self, search: str=None, page_index: int=0, page_size: int=0):
+        """Get list of Sindo routes"""
+        params = {
+            "filter": self._build_filter_param(search),
+            "pagination": self._build_pagination_param(page_index, page_size)
+        }
+        return self._request("GET", "/Master/Routes", params=params)
 
 
-# get available sectors
-def get_sindo_available_sectors():
-    """
-    Ambil daftar sektor ferry yang tersedia.
-    """
-    global _access_token
-    if not _access_token:
-        sindo_login()
+    def get_sindo_trips(self, origin: str, destination: str, date: str):
+        """Get trips/schedules (general API)"""
+        # formatted_date = date.replace("-", "")
+        params = {
+            "embarkation": origin,      # ex: BTC
+            "destination": destination, # ex: HFC
+            "tripdate": date   # format: YYYY-MM-DD
+        }
+        return self._request("GET", "/Trips/GetTripWeb", use_core_url=True, params=params) 
 
-    url = f"{SINDO_BASE_URL}/Booking/Sectors/Available"
+    
+    def create_sindo_booking(self, booking_data: dict):
+        """Create a new booking"""
+        return self._request("POST", "/Booking/Bookings", json=booking_data)
 
-    headers = {
-        "Authorization": f"Bearer {_access_token}",
-        "Content-Type": "application/json"
-    }
+   
+    def add_sindo_booking_detail(self, booking_id: str, passenger_data: dict):
+        """Add passenger details to a booking"""
+        return self._request("POST", f"Booking/Bookings/{booking_id}/Details", url_type="base", json=passenger_data)
 
-    resp = requests.get(url, headers=headers, timeout=10)
+    
+    def get_sindo_booking_details(self, booking_id: str, search: str = None):
+        """Get details of a specific booking"""
+        params = {
+            "filter": json.dumps({
+                "searchString": search if search else None,
+                "sort": 2  # Name ASC
+            }),
+            "pagination": json.dumps({
+                "pageIndex": 0,
+                "pageSize": 0
+            })
+        }
+        return self._request("GET", f"/Booking/Bookings/{booking_id}/Details", params=params)
+        
+    
+    def get_sindo_countries(self, search: str = None):
+        """Get list of countries"""
+        params = {
+            "filter": json.dumps({
+                "searchString": search if search else None,
+                "sort": 0
+            }),
+            "pagination": json.dumps({
+                "pageIndex": 0,
+                "pageSize": 0
+            })
+        }
+        return self._request("GET", "/Master/Countries", params=params)
+    
+    
+    def delete_sindo_booking_detail(self, booking_id: str, booking_detail_id: str):
+        """Delete a booking detail (passenger) from a booking"""
+        return self._request("DELETE", f"Booking/Bookings/{booking_id}/Details/{booking_detail_id}")
 
-    if resp.status_code == 401:
-        # refresh token
-        sindo_login()
-        headers["Authorization"] = f"Bearer {_access_token}"
-        resp = requests.get(url, headers=headers, timeout=10)
 
-    resp.raise_for_status()
-    return resp.json()
+    def sindo_submit_booking(self, booking_id: str, email_confirmation: str, remarks: str):
+        """Submit a booking for final processing"""
+        payload = {
+            "id": booking_id,
+            "emailConfirmation": email_confirmation,
+            "remarks": remarks
+        }
+        return self._request("POST", "/Booking/Bookings/Submit", json=payload)
+
+    # get available sectors
+    def get_sindo_available_sectors(self):
+        """Get available ferry sectors"""
+        return self._request("GET", "/Booking/Sectors/Available")
