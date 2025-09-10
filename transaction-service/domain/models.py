@@ -298,6 +298,7 @@ class PaymentConfirmRequest(BaseModel):
     """Request model for confirming payments"""
 
     gateway_response: Dict[str, Any] = Field(default_factory=dict)
+    token: str = Field(..., description="Token for payment authentication")
     notes: Optional[str] = Field(None, max_length=500)
 
 

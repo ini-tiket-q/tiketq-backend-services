@@ -49,6 +49,8 @@ def get_refund_service(db: Session = Depends(get_database_session)) -> RefundSer
     
     ### Access Level: Public
     - No authentication required
+
+    This endpoint creates a new transaction, order, and payment in the database and returns the created transaction along with payment url.
     """
 )
 async def create_transaction(
