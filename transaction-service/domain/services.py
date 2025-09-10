@@ -87,12 +87,26 @@ class TransactionService:
             tax = transaction_request.tax
             discount = transaction_request.discount
             total = transaction_request.total
+
+            items_as_dicts = []
+            item_details_for_payment = []
             
             # Convert TransactionItem objects to dictionaries
-            items_as_dicts = [
-                item.model_dump() if hasattr(item, 'model_dump') else dict(item)
-                for item in transaction_request.items
-            ]
+            for item in transaction_request.items:
+                items_as_dicts.append(item.model_dump() if hasattr(item, 'model_dump') else dict(item))
+                item_details_for_payment.append({
+                    "id": order_number,
+                    "price": item.price,
+                    "quantity": item.quantity,
+                    "name": item.name,
+                })
+
+            item_details_for_payment.append({
+                "id": order_number,
+                "price": tax - discount,
+                "quantity": 1,
+                "name": "Tax and discount",
+            })
 
             # Create order data with email
             order_data = {
@@ -105,7 +119,7 @@ class TransactionService:
                 'discount': discount,
                 'total': total,
                 'status': OrderStatus.CONFIRMED,
-                'metadata': transaction_request.metadata
+                'metadata': transaction_request.transaction_metadata
             }
             
             order = self.order_repo.create_order(OrderCreate(**order_data))
@@ -117,25 +131,25 @@ class TransactionService:
             # create payment gateway url from payment service
             payment_body = {
                 "order_id": order_number,
-                "amount": total,
-                "payment_method": transaction_request.payment_method,
+                "amount": float(total),  # Ensure amount is a float
+                "payment_method": transaction_request.payment_method.value.upper(),  # Ensure uppercase for payment method
                 "customer_details": {
                     "email": email,
                 },
-                "item_details": {
-                    "id": order.id,
-                    "price": total,
-                    "quantity": transaction_request.quantity,
-                    "name": transaction_request.items[0].name,
-                },
+                "item_details": item_details_for_payment,
                 "description": "Payment for order " + order.order_number,
             }
+
+            logger.info(f"im here!!!0: {item_details_for_payment}, and, {payment_body}")
+
+            logger.info("im here!!!1")
 
             payment_url_body = create_payment_url(payment_body)
             if not payment_url_body:
                 logger.error("Failed to create payment")
                 return None
 
+            logger.info(f"im here!!!2: {payment_url_body}")
 
             # Create transaction using validated request data
             transaction = TransactionCreate(
@@ -150,12 +164,12 @@ class TransactionService:
                 gateway_transaction_id= payment_url_body.get("transaction_id"),
                 metadata=transaction_request.transaction_metadata
             )
-            
+
+
             db_transaction = self.transaction_repo.create_transaction(transaction)
             if not db_transaction:
                 logger.error("Failed to create transaction")
                 return None
-
 
             # create payment in db
             payment = PaymentCreate(
@@ -173,7 +187,6 @@ class TransactionService:
             if not db_payment:
                 logger.error("Failed to create payment")
                 return None
-
 
             # Log successful transaction creation
             logger.info(

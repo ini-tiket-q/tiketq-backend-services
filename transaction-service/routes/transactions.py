@@ -59,7 +59,6 @@ async def create_transaction(
         example={
             "email": "john.doe@example.com",
             "transaction_type": "BOOKING",
-            "amount": 885000,
             "currency": "IDR",
             "service_type": "FLIGHTS",
             "items": [
@@ -80,7 +79,7 @@ async def create_transaction(
             "tax": 85000,
             "discount": 50000,
             "total": 885000,
-            "payment_method": "CREDIT_CARD",
+            "payment_method": "credit_card",
             "payment_gateway": "MIDTRANS",
             "transaction_metadata": {
                 "order_id": "ORD-79AFA780",
@@ -106,7 +105,7 @@ async def create_transaction(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=0,  # Will be updated after creation
             email=transaction_request.email,
-            amount=transaction_request.amount,
+            amount=transaction_request.total,
             currency=transaction_request.currency,
             details={
                 "transaction_type": transaction_request.transaction_type.value,
@@ -132,7 +131,7 @@ async def create_transaction(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=0,
                 email=transaction_request.email,
-                amount=transaction_request.amount,
+                amount=transaction_request.total,
                 currency=transaction_request.currency,
                 details={"error": "Failed to create transaction in service layer"},
                 request_context=request_context
@@ -149,7 +148,7 @@ async def create_transaction(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=transaction.id,
             email=transaction_request.email,
-            amount=transaction.amount,
+            amount=transaction.total,
             currency=transaction.currency,
             order_number=transaction.order_number,
             status=transaction.status.value,
@@ -178,7 +177,7 @@ async def create_transaction(
                 "operation": "create_transaction",
                 "validation_error": True,
                 "email": transaction_request.email,
-                "amount": transaction_request.amount
+                "total": transaction_request.total
             },
             email=transaction_request.email,
             endpoint="/transactions/"
@@ -195,7 +194,7 @@ async def create_transaction(
             context={
                 "operation": "create_transaction",
                 "email": transaction_request.email,
-                "amount": transaction_request.amount,
+                "total": transaction_request.total,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
             email=transaction_request.email,
