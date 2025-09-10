@@ -1,5 +1,6 @@
+from typing import Literal, Optional
 from fastapi import APIRouter, HTTPException, Query, Body
-from domain.models import FerryBookingRequest
+from domain.models import FerryBookingRequest, TripSearchRequest
 from domain import services
 
 router = APIRouter(prefix="/ferries", tags=["Ferries"])
@@ -14,8 +15,6 @@ def list_routes(search: str = Query(None, description="Search route by name or c
         return services.get_ferry_routes(search)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 # Trips
 @router.get("/trips")
@@ -33,6 +32,51 @@ def list_trips(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    
+@router.get("/trips/oneway")
+def oneway(
+    nationality: str = Query(..., description="Passenger nationality (country code)"),
+    origin: str = Query(..., description="Departure port code"), 
+    destination: str = Query(..., description="Arrival port code"), 
+    date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
+    pax: int = Query(1, description="Number of passengers"),
+    ferry_class: str = Query("economy", description="Ferry class")
+):
+    try:
+        result = services.get_ferry_oneway(nationality, origin, destination, date, pax, ferry_class)
+         # Return only display data to frontend
+        return {"status": "success", "data": result.get("display_data", [])}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/trips/roundtrip")
+def roundtrip(
+    nationality: str = Query(..., description="Passenger nationality (country code)"),
+    origin: str = Query(..., description="Departure port code"), 
+    destination: str = Query(..., description="Arrival port code"), 
+    depart_date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
+    return_date: str = Query(..., description="Return date in YYYY-MM-DD format"),
+    pax: int = Query(1, description="Number of passengers"),
+    ferry_class: str = Query("economy", description="Ferry class")
+):
+    try:
+        result = services.get_ferry_roundtrip(
+            nationality, origin, destination, 
+            depart_date, return_date, pax, ferry_class
+        )
+         # Return only display data to frontend
+        return {
+            "status": "success",
+            "departure_trips": result.get("display_data", {}).get("departure_trips", []),
+            "return_trips": result.get("display_data", {}).get("return_trips", [])
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 # Create booking
 @router.post("/bookings")
 def create_booking(booking_data: dict = Body(...)):
@@ -44,6 +88,12 @@ def create_booking(booking_data: dict = Body(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/bookings/v2")
+def create_booking_v2(booking_request: FerryBookingRequest):
+    try:
+        return services.create_ferry_booking_v2(booking_request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Add booking details
 @router.post("/bookings/{booking_id}/details")
@@ -94,7 +144,12 @@ def remove_booking_detail(booking_id: str, booking_detail_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# submit booking
+@router.post("/bookings/{booking_id}/submit")
+def submit_booking(booking_id: str, email_confirmation: str = Query(...), remarks: str = Query("")):
+    try:
+        return services.submit_ferry_booking(booking_id, email_confirmation, remarks)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # get available sectors
