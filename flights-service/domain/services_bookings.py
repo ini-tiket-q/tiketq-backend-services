@@ -116,41 +116,22 @@ async def post_booking_service(req: PostBookingRequest):
     return result
 
 def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
-    """
-    If our local status isn't PAID, check the payment DB by FLIGHT-<kodebooking>.
-    If it's SUCCESS there, flip our status to PAID and return it.
-    """
-    if current_status == "PAID":
+    order_id = f"FLIGHT-{kodebooking}"
+    pay_status = get_payment_status_by_order_id(order_id)
+
+    print(f"[DEBUG] reconcile: order_id={order_id}, pay_status={pay_status}, current_status={current_status}")
+
+    if not pay_status:
         return current_status
 
-    # Payment service uses order_id like "FLIGHT-<CODE>"
-    order_id = f"FLIGHT-{kodebooking}"
-
-    pay_status = get_payment_status_by_order_id(order_id)
-    if pay_status is None:
-        return current_status  # not found yet
-
-    if pay_status.upper() == "SUCCESS":
-        # Update your in-memory/store status so subsequent calls are PAID
-        # Adjust this to your repository implementation:
-        try:
-            # e.g., repository_bookings.set_status(kodebooking, "PAID")
-            # or self.repo.update_status(kodebooking, "PAID")
-            pass
-        except Exception:
-            # Don't break the request if local update fails—still return PAID
-            pass
+    if pay_status.upper() in ("SUCCESS", "PAID"):
         return "PAID"
+    elif pay_status.upper() in ("FAILED", "EXPIRED"):
+        return pay_status.upper()
 
-    # Map other statuses if you want (FAILED/EXPIRED → keep waiting or set failed)
     return current_status
 
-async def get_issued_service(kodebooking: str) -> dict:
-    result = await mmbc.get_issued(kodebooking=kodebooking)
-    if result.get("result") == "no":
-        raise IssuedError(result.get("reason", "Unknown error"))
 
-    return result
 
 async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
     result = await mmbc.get_status_booking(kodebooking=kodebooking)
@@ -158,7 +139,37 @@ async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
     if result.get("result") == "no":
         raise HTTPException(status_code=404, detail=result)
 
+    # Internal reconciliation check (do not mutate MMBC status)
+    mm_status = result.get("flight_statusbooking", "waiting")
+    pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
+
+    # Optionally include payment info in a separate field (non-breaking)
+    result["payment_status"] = pay_status
+
     return result
+
+
+async def get_issued_service(kodebooking: str) -> dict:
+    # First check MMBC knows the booking
+    status_resp = await mmbc.get_status_booking(kodebooking=kodebooking)
+    if status_resp.get("result") == "no":
+        raise HTTPException(status_code=404, detail=status_resp)
+
+    mm_status = status_resp.get("flight_statusbooking", "waiting")
+    pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
+
+    if pay_status != "PAID":
+        raise HTTPException(status_code=402, detail="Payment not completed")
+
+    issued = await mmbc.get_issued(kodebooking=kodebooking)
+    if issued.get("result") == "no":
+        raise IssuedError(issued.get("reason", "Unknown error"))
+
+    return issued
+
+
+
+
 
 
 async def get_eticket_service(kodebooking: str) -> dict:
