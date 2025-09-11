@@ -9,7 +9,7 @@ from domain.schemas_bookings import (
     ResetPasswordRequest, ResetPasswordResponse,
     KodeBookingRequest,
     GetIssuedResponseSuccess, GetIssuedResponseError,
-    GetStatusBookingResponse
+    GetStatusBookingResponse, GetETicketRequest, GetETicketResponse
 )
 from fastapi import HTTPException
 from adapters.payment_db_reader import get_payment_status_by_order_id
@@ -139,46 +139,97 @@ async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
     if result.get("result") == "no":
         raise HTTPException(status_code=404, detail=result)
 
-    # Internal reconciliation check (do not mutate MMBC status)
+    # MMBC's reported status
     mm_status = result.get("flight_statusbooking", "waiting")
+
+    # Check payment status via payment-service
     pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
 
-    # Optionally include payment info in a separate field (non-breaking)
-    result["payment_status"] = pay_status
+    # Build response aligned with schema
+    response = GetStatusBookingResponse(
+        result="ok",
+        flight_statusbooking=mm_status,
+        reason=result.get("reason", ""),
+        payment_status=pay_status
+    )
 
-    return result
+    return response
 
 
-async def get_issued_service(kodebooking: str) -> dict:
-    # First check MMBC knows the booking
+async def get_issued_service(kodebooking: str) -> GetIssuedResponseSuccess:
+    # Check booking exists at MMBC
     status_resp = await mmbc.get_status_booking(kodebooking=kodebooking)
     if status_resp.get("result") == "no":
         raise HTTPException(status_code=404, detail=status_resp)
 
+    # Reconcile payment first
     mm_status = status_resp.get("flight_statusbooking", "waiting")
     pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
 
     if pay_status != "PAID":
         raise HTTPException(status_code=402, detail="Payment not completed")
 
+    # Call MMBC to issue ticket
     issued = await mmbc.get_issued(kodebooking=kodebooking)
+
     if issued.get("result") == "no":
+        # MMBC rejected issuance
         raise IssuedError(issued.get("reason", "Unknown error"))
 
-    return issued
+    # Build response aligned with API docs
+    response = GetIssuedResponseSuccess(
+        result="ok",
+        tid=issued.get("tid"),
+        tanggal=issued.get("tanggal"),
+        flight=issued.get("flight"),
+        flight_code=issued.get("flight_code"),
+        kodebooking=issued.get("kodebooking"),
+        flight_route=issued.get("flight_route"),
+        flight_departure=issued.get("flight_departure"),
+        flight_time=issued.get("flight_time"),
+        flight_transit=issued.get("flight_transit"),
+        flight_infotransit=issued.get("flight_infotransit"),
+        flight_class=issued.get("flight_class"),
+        flight_totalpassenger=issued.get("flight_totalpassenger"),
+        flight_datapassengers_json=issued.get("flight_datapassengers_json"),
+        flight_contactdetails_json=issued.get("flight_contactdetails_json"),
+        flight_currency=issued.get("flight_currency"),
+        flight_publishfare=issued.get("flight_publishfare"),
+        flight_tax=issued.get("flight_tax"),
+        flight_totalfare=issued.get("flight_totalfare"),
+        flight_realnta=issued.get("flight_realnta"),
+        flight_shownta=issued.get("flight_shownta"),
+        flight_bonus_agen=issued.get("flight_bonus_agen"),
+        flight_timelimit=issued.get("flight_timelimit"),
+        flight_bookingby=issued.get("flight_bookingby"),
+        flight_bookingby_kodeagen=issued.get("flight_bookingby_kodeagen"),
+        flight_issued_date=issued.get("flight_issued_date"),
+        flight_issued_ticketnumber=issued.get("flight_issued_ticketnumber"),
+        flight_issuedby=issued.get("flight_issuedby"),
+        flight_issuedby_kodeagen=issued.get("flight_issuedby_kodeagen"),
+        flight_statusbooking=issued.get("flight_statusbooking"),
+    )
+    return response
 
 
 
 
 
 
-async def get_eticket_service(kodebooking: str) -> dict:
+
+async def get_eticket_service(kodebooking: str) -> GetETicketResponse:
     result = await mmbc.get_eticket(kodebooking=kodebooking)
 
     if result.get("result") == "no":
         raise ETicketError(result.get("reason", "Failed to retrieve e-ticket"))
 
-    return result
+    # Build response aligned with schema
+    response = GetETicketResponse(
+        result=result.get("result", "no"),
+        reason=result.get("reason", "")
+    )
+    return response
+
 
 
 async def reset_password_service(req: ResetPasswordRequest) -> ResetPasswordResponse:

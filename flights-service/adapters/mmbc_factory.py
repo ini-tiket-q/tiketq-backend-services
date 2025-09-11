@@ -1,6 +1,6 @@
 import os
 from adapters.external_api_bookings import MMBCClient
-from adapters.fake_mmbc import FakeMMBCClient
+from adapters.fake_mmbc_bookings import FakeMMBCClient
 
 def get_mmbc_client():
     # Prefer explicit toggle. If MOCK_REMOTE=true -> fake.
