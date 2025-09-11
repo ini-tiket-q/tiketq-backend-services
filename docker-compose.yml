@@ -58,7 +58,7 @@ services:
       context: ./ferries-service
     container_name: ferries-service
     ports:
-      - "8003:8000" # temporary expose e.g. localhost:8003/docs
+      - "8005:8000" # temporary expose e.g. localhost:8003/docs
     env_file:
       - .env
     networks:

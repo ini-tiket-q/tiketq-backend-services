@@ -317,7 +317,39 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
     """
     data = sindo_client.get_sindo_booking_details(booking_id, search=search)
     records = data.get("data", {}).get("records", [])
-    return {"booking_details": records}
+
+    if not records:
+        return {"status": "error", "message": "No booking details found"}
+
+    # --- Hitung total amount berdasarkan jumlah penumpang ---
+    passenger_count = len(records)
+    default_price_per_passenger = 654000
+    total_amount = passenger_count * default_price_per_passenger
+
+    # --- Mapping ke format payment payload ---
+    mapped_response = {
+        "order_id": booking_id,
+        "amount": total_amount,
+        "payment_method": "bank_transfer",  # default sementara
+        "customer_details": {
+            "name": records[0].get("passengerName", "Unknown Passenger"),
+            "email": "customer@example.com",   # default, bisa diisi dari booking data
+            "phone": "081234567890"            # default, bisa diisi dari booking data
+        },
+        "item_details": [
+            {
+                "item_id": f"{booking_id}_{i+1}",
+                "name": rec.get("passengerName", f"Passenger {i+1}"),
+                "price": default_price_per_passenger,
+                "quantity": 1
+            }
+            for i, rec in enumerate(records)
+        ],
+        "description": f"Ferry booking {booking_id} for {passenger_count} passenger(s)",
+        "expiry_duration": 1
+    }
+
+    return mapped_response
 
 # Get countries
 def get_ferry_countries(search: str = None):
