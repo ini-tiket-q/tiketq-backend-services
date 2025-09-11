@@ -1,19 +1,30 @@
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, APIRouter
+from dotenv import load_dotenv
+from pathlib import Path
+from fastapi.middleware.cors import CORSMiddleware
+from routes import routes_flights
+from routes import routes_bookings
+from config import MOCK_REMOTE, PORT, DB_URL, FLIGHT_API_KEY
 
-app = FastAPI(
-    title="Flights Service",
-    description="Flight booking service for TiketQ platform",
-    version="1.0.0"
-)
+app = FastAPI()
+print(f"🧪 MOCK MODE: {MOCK_REMOTE}")
 
-@app.get("/")
-async def root():
-    return {"service": "Flights Service", "status": "running", "version": "1.0.0"}
+# Main API routes
+app.include_router(routes_flights, prefix="/api/v1/flights")
+app.include_router(routes_bookings.router, prefix="/api/v1/bookings")
 
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "service": "flights-service"}
+# ✅ Health check route under /api/v1/flights/json/health
+health_router = APIRouter(prefix="/json")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000)
+@health_router.get("/health")
+def health_check():
+    return {
+        "status": "ok",
+        "port": PORT,
+        "db_url_present": bool(DB_URL),
+        "api_key_present": bool(FLIGHT_API_KEY),
+        "mmbc_base_url": os.getenv("MMBC_BASE_URL"),
+    }
+
+app.include_router(health_router, prefix="/api/v1/flights")  # ✅ Important

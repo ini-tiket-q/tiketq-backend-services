@@ -74,3 +74,4 @@ async def forward_request(request: Request, full_path: str) -> Response:
                 content=f"Service unavailable: {str(e)}",
                 status_code=503
             )
+

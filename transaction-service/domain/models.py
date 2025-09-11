@@ -24,12 +24,11 @@ class TransactionStatus(str, Enum):
 
 
 class PaymentMethod(str, Enum):
-    CREDIT_CARD = "CREDIT_CARD"
-    DEBIT_CARD = "DEBIT_CARD"
-    BANK_TRANSFER = "BANK_TRANSFER"
-    E_WALLET = "E_WALLET"
-    VIRTUAL_ACCOUNT = "VIRTUAL_ACCOUNT"
-    CASH = "CASH"
+    credit_card = "credit_card"
+    bank_transfer = "bank_transfer"
+    e_wallet = "e_wallet"
+    qris = "qris"
+    retail = "retail"
 
 
 class PaymentGateway(str, Enum):
@@ -86,6 +85,7 @@ class TransactionItem(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "email": "customer@example.com",
                 "name": "Jakarta to Bali Flight",
                 "price": 850000,
                 "quantity": 1,
@@ -94,41 +94,26 @@ class TransactionItem(BaseModel):
                     "departure_date": "2025-09-15",
                     "flight_number": "GA-123",
                     "airline": "Garuda Indonesia",
-                    "class": "Economy"
-                }
+                    "class": "Economy",
+                },
             }
         }
     )
 
-    name: str = Field(
-        ..., 
-        max_length=200, 
-        description="Item name"
-    )
-    price: float = Field(
-        ..., 
-        gt=0, 
-        description="Item price"
-    )
-    quantity: int = Field(
-        ..., 
-        gt=0, 
-        description="Item quantity"
-    )
+    name: str = Field(..., max_length=200, description="Item name")
+    price: float = Field(..., gt=0, description="Item price")
+    quantity: int = Field(..., gt=0, description="Item quantity")
     description: Optional[str] = Field(
-        None, 
-        max_length=500, 
-        description="Item description"
+        None, max_length=500, description="Item description"
     )
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, 
-        description="Item metadata"
-    )
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Item metadata")
 
 
 class TransactionBase(BaseModel):
-    user_id: int
-    order_id: str = Field(default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}")
+    email: str = Field(
+        ..., description="Email of the user who made the transaction", max_length=255
+    )
+    order_number: str = Field(default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}")
     transaction_type: TransactionType
     amount: float
     currency: Currency = Currency.IDR
@@ -136,8 +121,8 @@ class TransactionBase(BaseModel):
     payment_method: Optional[PaymentMethod] = None
     payment_gateway: Optional[PaymentGateway] = None
     gateway_transaction_id: Optional[str] = None
-    # Additional transaction data
     metadata: Dict[str, Any] = {}
+    payment_url: Optional[str] = None
 
 
 class TransactionCreate(TransactionBase):
@@ -162,24 +147,26 @@ class TransactionInDB(TransactionBase):
 
 
 class OrderBase(BaseModel):
-    user_id: int = Field(..., description="ID of the user who placed the order")
+    email: str = Field(
+        ..., description="Email of the user who placed the order", max_length=255
+    )
     order_number: str = Field(
         default_factory=lambda: f"ORD-{uuid4().hex[:8].upper()}",
-        description="Unique order number"
+        description="Unique order number",
     )
     service_type: ServiceType = Field(..., description="Type of service being ordered")
     items: List[TransactionItem] = Field(
-        default_factory=list, 
-        description="List of items in the order"
+        default_factory=list, description="List of items in the order"
     )
     subtotal: float = Field(..., ge=0, description="Subtotal before tax and discount")
     tax: float = Field(default=0.0, ge=0, description="Tax amount")
     discount: float = Field(default=0.0, ge=0, description="Discount amount")
     total: float = Field(..., ge=0, description="Total amount after tax and discount")
-    status: OrderStatus = Field(default=OrderStatus.DRAFT, description="Current status of the order")
+    status: OrderStatus = Field(
+        default=OrderStatus.DRAFT, description="Current status of the order"
+    )
     metadata: Dict[str, Any] = Field(
-        default_factory=dict, 
-        description="Additional order metadata"
+        default_factory=dict, description="Additional order metadata"
     )
 
 
@@ -193,7 +180,9 @@ class OrderCreate(OrderBase):
         calculated_total = self.subtotal + self.tax - self.discount
 
         # Ensure total matches the calculated total within a small tolerance
-        if abs(calculated_total - self.total) > 0.01:  # Allow for floating point precision
+        if (
+            abs(calculated_total - self.total) > 0.01
+        ):  # Allow for floating point precision
             raise ValueError(
                 f"Total amount {self.total} does not match the calculated total "
                 f"(subtotal {self.subtotal} + tax {self.tax} - discount {self.discount} = {calculated_total})"
@@ -209,6 +198,7 @@ class OrderUpdate(BaseModel):
 
 class OrderInDB(OrderBase):
     """Database model for orders with all fields from OrderBase plus database-specific fields"""
+
     id: int = Field(..., description="Unique identifier for the order")
     created_at: datetime = Field(..., description="When the order was created")
     updated_at: datetime = Field(..., description="When the order was last updated")
@@ -284,16 +274,12 @@ class RefundInDB(RefundBase):
 class PaymentCreateRequest(BaseModel):
     """Request model for creating payments with validation"""
 
-    transaction_id: int = Field(
-        ..., gt=0, description="Transaction ID must be positive"
-    )
     amount: float = Field(..., gt=0, description="Amount must be greater than 0")
     currency: Currency = Currency.IDR
     payment_method: PaymentMethod = Field(..., description="Payment method is required")
     payment_gateway: PaymentGateway = Field(
         ..., description="Payment gateway is required"
     )
-    gateway_transaction_id: Optional[str] = Field(None, max_length=255)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = ModelConfigs.payment_create_config()
@@ -312,26 +298,8 @@ class PaymentConfirmRequest(BaseModel):
     """Request model for confirming payments"""
 
     gateway_response: Dict[str, Any] = Field(default_factory=dict)
+    token: str = Field(..., description="Token for payment authentication")
     notes: Optional[str] = Field(None, max_length=500)
-
-
-class PaymentRefundRequest(BaseModel):
-    """Request model for processing payment refunds"""
-
-    amount: Optional[float] = Field(
-        None, gt=0, description="Refund amount (defaults to full payment amount)"
-    )
-    reason: str = Field(
-        ..., min_length=1, max_length=255, description="Reason for refund"
-    )
-    notes: Optional[str] = Field(None, max_length=500)
-
-    @field_validator("amount")
-    @classmethod
-    def validate_amount(cls, v):
-        if v is not None and v <= 0:
-            raise ValueError(ValidationMessages.REFUND_AMOUNT_POSITIVE)
-        return v
 
 
 class PaymentWebhookRequest(BaseModel):
@@ -363,8 +331,8 @@ class OrderCreateRequest(BaseModel):
                             "departure_date": "2025-09-15",
                             "flight_number": "GA-123",
                             "airline": "Garuda Indonesia",
-                            "class": "Economy"
-                        }
+                            "class": "Economy",
+                        },
                     }
                 ],
                 "tax": 85000,
@@ -372,35 +340,17 @@ class OrderCreateRequest(BaseModel):
                 "metadata": {
                     "passenger_name": "John Doe",
                     "booking_reference": "TQ-FL-001",
-                    "contact_email": "john.doe@example.com",
-                    "special_requests": "Window seat preferred"
-                }
+                    "special_requests": "Window seat preferred",
+                },
             }
         }
     )
-
-    service_type: ServiceType = Field(
-        ..., 
-        description="Type of service being ordered"
-    )
-    items: List[TransactionItem] = Field(
-        ..., 
-        min_length=1, 
-        description="Order items"
-    )
-    tax: float = Field(
-        0.0, 
-        ge=0, 
-        description="Tax amount"
-    )
-    discount: float = Field(
-        0.0, 
-        ge=0, 
-        description="Discount amount"
-    )
+    service_type: ServiceType = Field(..., description="Type of service being ordered")
+    items: List[TransactionItem] = Field(..., min_length=1, description="Order items")
+    tax: float = Field(0.0, ge=0, description="Tax amount")
+    discount: float = Field(0.0, ge=0, description="Discount amount")
     metadata: Dict[str, Any] = Field(
-        default_factory=dict, 
-        description="Additional order metadata"
+        default_factory=dict, description="Additional order metadata"
     )
 
     model_config = ModelConfigs.order_create_config()
@@ -440,8 +390,8 @@ class TransactionCreateRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "email": "customer@example.com",
                 "transaction_type": "BOOKING",
-                "amount": 885000,
                 "currency": "IDR",
                 "service_type": "FLIGHTS",
                 "items": [
@@ -454,79 +404,56 @@ class TransactionCreateRequest(BaseModel):
                             "departure_date": "2025-09-15",
                             "flight_number": "GA-123",
                             "airline": "Garuda Indonesia",
-                            "class": "Economy"
-                        }
+                            "class": "Economy",
+                        },
                     }
                 ],
                 "subtotal": 850000,
                 "tax": 85000,
                 "discount": 50000,
                 "total": 885000,
-                "payment_method": "CREDIT_CARD",
+                "payment_method": "credit_card",
                 "payment_gateway": "MIDTRANS",
-                "metadata": {
+                "transaction_metadata": {
                     "order_id": "ORD-79AFA780",
                     "passenger_name": "John Doe",
                     "booking_reference": "TQ-FL-001",
-                    "ip_address": "192.168.1.100"
-                }
+                    "ip_address": "192.168.1.100",
+                },
+                "payment_metadata": {
+                    "bank_name": "BCA",
+                    "card_last_digits": "1234",
+                    "card_type": "visa",
+                },
             }
         }
     )
-
-    transaction_type: TransactionType = Field(
-        ..., 
-        description="Type of transaction"
+    email: str = Field(
+        ..., max_length=255, description="Email of the user making the transaction"
     )
-    amount: float = Field(
-        ..., 
-        gt=0, 
-        description="Transaction amount"
-    )
-    currency: Currency = Field(
-        Currency.IDR, 
-        description="Transaction currency"
-    )
+    transaction_type: TransactionType = Field(..., description="Type of transaction")
+    currency: Currency = Field(Currency.IDR, description="Transaction currency")
     service_type: ServiceType = Field(
-        ..., 
-        description="Type of service being transacted"
+        ..., description="Type of service being transacted"
     )
     items: List[TransactionItem] = Field(
-        ..., 
-        min_length=1, 
-        description="List of transaction items"
+        ..., min_length=1, description="List of transaction items"
     )
     subtotal: Optional[float] = Field(
-        None, 
-        ge=0, 
-        description="Subtotal before tax and discount"
+        None, ge=0, description="Subtotal before tax and discount"
     )
-    tax: float = Field(
-        0.0, 
-        ge=0, 
-        description="Tax amount"
-    )
-    discount: float = Field(
-        0.0, 
-        ge=0, 
-        description="Discount amount"
-    )
-    total: Optional[float] = Field(
-        None, 
-        ge=0, 
-        description="Total amount"
-    )
-    payment_method: Optional[PaymentMethod] = Field(
-        None, 
-        description="Payment method"
-    )
+    tax: float = Field(0.0, ge=0, description="Tax amount")
+    discount: float = Field(0.0, ge=0, description="Discount amount")
+    total: Optional[float] = Field(None, ge=0, description="Total amount")
+    payment_method: Optional[PaymentMethod] = Field(None, description="Payment method")
     payment_gateway: Optional[PaymentGateway] = Field(
-        None, 
-        description="Payment gateway"
+        None, description="Payment gateway"
     )
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, 
-        description="Additional transaction metadata"
+    transaction_metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional transaction metadata"
+    )
+    payment_metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional payment metadata"
     )
 
     model_config = ModelConfigs.transaction_create_config()
@@ -539,7 +466,7 @@ class TransactionCreateRequest(BaseModel):
             raise ValueError(ValidationMessages.ITEMS_EMPTY)
         return v
 
-    @field_validator("amount", "subtotal", "tax", "discount", "total")
+    @field_validator("subtotal", "tax", "discount", "total")
     @classmethod
     def validate_amounts(cls, v):
         """Validate monetary amounts"""
@@ -552,9 +479,7 @@ class TransactionCreateRequest(BaseModel):
         """Validate total calculation consistency"""
         if self.subtotal is None:
             # Calculate subtotal from items - items are TransactionItem objects
-            self.subtotal = sum(
-                item.price * item.quantity for item in self.items
-            )
+            self.subtotal = sum(item.price * item.quantity for item in self.items)
 
         if self.total is None:
             # Calculate total
@@ -659,7 +584,9 @@ class TransactionReportRequest(BaseModel):
     max_amount: Optional[float] = Field(
         None, ge=0, description="Maximum transaction amount"
     )
-    user_id: Optional[int] = Field(None, gt=0, description="Filter by specific user ID")
+    email: Optional[str] = Field(
+        None, description="Filter by specific user's email address"
+    )
     currency: Optional[str] = Field("IDR", max_length=3, description="Currency filter")
 
     @field_validator("currency")
@@ -716,8 +643,8 @@ class RefundReportRequest(BaseModel):
     reason_filter: Optional[str] = Field(
         None, max_length=100, description="Filter by refund reason keyword"
     )
-    processed_by: Optional[int] = Field(
-        None, gt=0, description="Filter by admin who processed refund"
+    processed_by: Optional[str] = Field(
+        None, description="Email of admin who processed refund"
     )
 
     @model_validator(mode="after")
@@ -737,7 +664,7 @@ class TransactionReportData(BaseModel):
     """Transaction report data model"""
 
     transaction_id: int
-    user_id: int
+    email: str
     order_id: str
     transaction_type: TransactionType
     amount: float
@@ -788,7 +715,7 @@ class RefundReportData(BaseModel):
 
     refund_id: int
     transaction_id: int
-    user_id: int
+    email: str
     amount: float
     reason: str
     status: RefundStatus
