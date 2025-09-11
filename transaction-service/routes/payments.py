@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 
 from domain.models import (
-    PaymentCreateRequest, PaymentInDB, PaymentConfirmRequest, PaymentWebhookRequest,
+    PaymentInDB, PaymentConfirmRequest,
     UserRole
 )
 from domain.services import (
@@ -28,49 +28,6 @@ def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentS
     order_repo = DBOrderRepository(db)
     return PaymentService(transaction_repo, payment_repo, order_repo)
 
-@router.post(
-    "/payments/", 
-    response_model=PaymentInDB,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a new payment",
-    description="""
-    Create a new payment for a transaction.
-    
-    ### Access Level: Public
-    - No authentication required
-    """
-)
-async def create_payment(
-    payment_data: PaymentCreateRequest = Body(...),
-    payment_service: PaymentService = Depends(get_payment_service),
-):
-    """Create payment - USER/ADMIN access"""
-    try:
-        payment = payment_service.create_payment(
-            transaction_id=payment_data.transaction_id,
-            payment_data=payment_data,
-            email=payment_data.email
-        )
-        
-        if not payment:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to create payment or transaction not found"
-            )
-            
-        return payment
-        
-    except ValueError as e:
-        # Service layer validation errors
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create payment {str(e)}"
-        )
 
 @router.get(
     "/payments/{payment_id}", 
@@ -121,42 +78,40 @@ async def get_payment_details(
         )
 
 @router.post(
-    "/payments/{payment_id}/confirm",
+    "/payments/{order_number}/confirm",
     response_model=PaymentInDB,
     summary="Confirm a payment",
     description="""
     Confirm a payment that was initiated.
     
-    ### Access Level: Admin Only
-    - Requires admin privileges
+    ### Access Level: Public (with token)
     - Used to confirm successful payments
     """
 )
 async def confirm_payment(
-    payment_id: int,
+    order_number: str,
     confirm_data: PaymentConfirmRequest = Body(..., example={
         "gateway_response": {
             "transaction_id": "1234567890",
             "success": True,
             "amount": 885000,
             "currency": "IDR",
-            "payment_method": "CREDIT_CARD",
+            "payment_method": "credit_card",
             "metadata": {
                 "card_number": "1234-5678-9012-3456",
                 "card_holder": "John Doe",
                 "card_expiry": "12/25",
                 "card_cvv": "123"
             }
-        }
+        },
+        "token": "Payment token here"
     }),
-    current_user = Depends(require_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     try:
         payment = payment_service.confirm_payment(
-            payment_id=payment_id,
+            order_number=order_number,
             gateway_response=confirm_data,
-            confirmed_by=current_user.email
         )
         
         if not payment:
@@ -180,28 +135,26 @@ async def confirm_payment(
         )
         
 
-@router.post(
-    "/webhooks/payment",
+@router.get(
+    "/payments/admin/get-token",
     status_code=status.HTTP_200_OK,
-    summary="Payment webhook endpoint",
+    summary="Payment token endpoint",
     description="""
-    Webhook endpoint for payment gateway callbacks.
+    Create payment token for admin test.
     
-    ### Access Level: Public
+    ### Access Level: Admin
     - No authentication required
-    - Used by payment gateways to send payment status updates
+    - create payment token for admin test
     """
 )
-async def payment_webhook(
-    webhook_request: PaymentWebhookRequest = Body(...),
-    payment_service: PaymentService = Depends(get_payment_service)
+async def payment_token(
+    payment_service: PaymentService = Depends(get_payment_service),
+    current_user = Depends(require_admin),
 ):
-    """Payment gateway webhook - Public access"""
+    """Payment token - Admin access"""
     try:
-        # For now, just return success
-        # In a complete implementation, this would process the webhook
-        # and update payment status accordingly
-        return {"message": "Webhook received successfully"}
+        logger.info("Creating payment token route")
+        return payment_service.create_payment_token()
         
     except ValueError as e:
         # Service layer validation errors
@@ -212,5 +165,5 @@ async def payment_webhook(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process payment webhook {str(e)}"
+            detail=f"Failed to process payment token {str(e)}"
         )
