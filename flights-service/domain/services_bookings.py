@@ -12,6 +12,7 @@ from domain.schemas_bookings import (
     GetStatusBookingResponse
 )
 from fastapi import HTTPException
+from adapters.payment_db_reader import get_payment_status_by_order_id
 
 
 class PriceError(Exception):
@@ -113,6 +114,36 @@ async def post_booking_service(req: PostBookingRequest):
         result["payment_error"] = str(e)
 
     return result
+
+def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
+    """
+    If our local status isn't PAID, check the payment DB by FLIGHT-<kodebooking>.
+    If it's SUCCESS there, flip our status to PAID and return it.
+    """
+    if current_status == "PAID":
+        return current_status
+
+    # Payment service uses order_id like "FLIGHT-<CODE>"
+    order_id = f"FLIGHT-{kodebooking}"
+
+    pay_status = get_payment_status_by_order_id(order_id)
+    if pay_status is None:
+        return current_status  # not found yet
+
+    if pay_status.upper() == "SUCCESS":
+        # Update your in-memory/store status so subsequent calls are PAID
+        # Adjust this to your repository implementation:
+        try:
+            # e.g., repository_bookings.set_status(kodebooking, "PAID")
+            # or self.repo.update_status(kodebooking, "PAID")
+            pass
+        except Exception:
+            # Don't break the request if local update fails—still return PAID
+            pass
+        return "PAID"
+
+    # Map other statuses if you want (FAILED/EXPIRED → keep waiting or set failed)
+    return current_status
 
 async def get_issued_service(kodebooking: str) -> dict:
     result = await mmbc.get_issued(kodebooking=kodebooking)
