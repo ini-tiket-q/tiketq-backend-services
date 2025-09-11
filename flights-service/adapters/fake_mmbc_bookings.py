@@ -8,24 +8,31 @@ class FakeMMBCClient:
     async def get_price(self, **kwargs):
         return {
             "result": "ok",
+            "flight_id": "01",  # add this
             "flight": "Citilink",
             "flight_code": "QG-724",
+            "flight_image": "https://klikmbc.biz/v2/images/airlines/icon_citilink.png",  # add this
             "flight_from": "CGK",
             "flight_to": "SUB",
             "flight_route": "CGK-SUB",
             "flight_date": "2025-09-01",
-            "flight_departure": "01 Sep 2025 18:40",
+            "flight_transit": "Nonstop",  # add this
+            "flight_infotransit": "Jakarta(CGK) 18:40 - Surabaya(SUB) 20:20",  # add this
             "flight_time": "18:40 - 20:20",
+            "flight_duration": "1j 40mnt",  # add this
             "flight_class": "O",
             "flight_availableseat": "5",
             "flight_baggage": "20kg",
             "publish": 425000,
             "tax": 112500,
             "totalfare": 537500,
-            "adult": "1",
-            "child": "0",
-            "infant": "0"
+            "adult": 1,
+            "child": 0,
+            "infant": 0,
+            "flight_shownta": 524750,   # optional
+            "flight_realnta": 516250    # optional
         }
+
 
     async def post_booking(self, **kwargs):
         kode = "BTK159"
