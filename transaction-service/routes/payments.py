@@ -30,11 +30,11 @@ def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentS
 
 
 @router.get(
-    "/payments/{payment_id}", 
+    "/payments/{order_number}", 
     response_model=PaymentInDB,
-    summary="Get payment details by ID",
+    summary="Get transaction payment details by order number",
     description="""
-    Retrieve details of a specific payment by its ID.
+    Retrieve details of a specific payment by its order number.
     
     ### Access Level: User/Admin
     - Requires authentication
@@ -43,24 +43,26 @@ def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentS
     """
 )
 async def get_payment_details(
-    payment_id: int,
+    order_number: str,
     current_user = Depends(require_user_or_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Get payment details - USER/ADMIN access"""
     try:
-        payment = payment_service.payment_repo.get_payment(payment_id)
+        payment = payment_service.payment_repo.get_payment_by_order_number(order_number)
         
         if not payment:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Payment not found"
             )
-        
+        logger.info("Payment found: %s", payment)
         # Check authorization - users can only see their own payments
         if current_user.role != UserRole.ADMIN:
             # Get associated transaction to check user ownership
+            logger.info("Checking user authorization for payment %s", payment.transaction_id)
             transaction = payment_service.transaction_repo.get_transaction(payment.transaction_id)
+            logger.info("Transaction found: %s", transaction)
             if not transaction or transaction.email != current_user.email:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -80,9 +82,9 @@ async def get_payment_details(
 @router.post(
     "/payments/{order_number}/confirm",
     response_model=PaymentInDB,
-    summary="Confirm a payment",
+    summary="Confirm a transaction payment",
     description="""
-    Confirm a payment that was initiated.
+    Confirm a transaction payment that was initiated.
     
     ### Access Level: Public (with token)
     - Used to confirm successful payments
