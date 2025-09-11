@@ -1,9 +1,10 @@
 from typing import Literal, Optional
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, Depends
 from domain.models import FerryBookingRequest, TripSearchRequest
 from domain import services
 
-router = APIRouter(prefix="/ferries", tags=["Ferries"])
+
+router = APIRouter(tags=["Ferries"])
 
 # Routes
 @router.get("/routes")
