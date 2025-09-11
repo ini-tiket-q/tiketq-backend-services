@@ -20,7 +20,7 @@ def list_routes(search: str = Query(None, description="Search route by name or c
 # Trips
 @router.get("/trips")
 def list_trips(
-    origin: str = Query(..., description="Origin port code (ex: BTC)"),
+    departure: str = Query(..., description="Origin port code (ex: BTC)"),
     destination: str = Query(..., description="Destination port code (ex: HFC)"),
     date: str = Query(..., description="Departure date (YYYY-MM-DD)")
 ):
@@ -29,22 +29,22 @@ def list_trips(
     - Wajib isi origin, destination, dan date.
     """
     try:
-        return services.get_ferry_trips(origin, destination, date)
+        return services.get_ferry_trips(departure, destination, date)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     
-@router.get("/trips/oneway")
+@router.get("/trips/search")
 def oneway(
     nationality: str = Query(..., description="Passenger nationality (country code)"),
-    origin: str = Query(..., description="Departure port code"), 
+    departure: str = Query(..., description="Departure port code"), 
     destination: str = Query(..., description="Arrival port code"), 
     date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
     pax: int = Query(1, description="Number of passengers"),
     ferry_class: str = Query("economy", description="Ferry class")
 ):
     try:
-        result = services.get_ferry_oneway(nationality, origin, destination, date, pax, ferry_class)
+        result = services.get_ferry_oneway(nationality, departure, destination, date, pax, ferry_class)
          # Return only display data to frontend
         return {"status": "success", "data": result.get("display_data", [])}
     except ValueError as e:
@@ -52,31 +52,31 @@ def oneway(
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/trips/roundtrip")
-def roundtrip(
-    nationality: str = Query(..., description="Passenger nationality (country code)"),
-    origin: str = Query(..., description="Departure port code"), 
-    destination: str = Query(..., description="Arrival port code"), 
-    depart_date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
-    return_date: str = Query(..., description="Return date in YYYY-MM-DD format"),
-    pax: int = Query(1, description="Number of passengers"),
-    ferry_class: str = Query("economy", description="Ferry class")
-):
-    try:
-        result = services.get_ferry_roundtrip(
-            nationality, origin, destination, 
-            depart_date, return_date, pax, ferry_class
-        )
-         # Return only display data to frontend
-        return {
-            "status": "success",
-            "departure_trips": result.get("display_data", {}).get("departure_trips", []),
-            "return_trips": result.get("display_data", {}).get("return_trips", [])
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+# @router.get("/trips/search/roundtrip")
+# def roundtrip(
+#     nationality: str = Query(..., description="Passenger nationality (country code)"),
+#     origin: str = Query(..., description="Departure port code"), 
+#     destination: str = Query(..., description="Arrival port code"), 
+#     depart_date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
+#     return_date: str = Query(..., description="Return date in YYYY-MM-DD format"),
+#     pax: int = Query(1, description="Number of passengers"),
+#     ferry_class: str = Query("economy", description="Ferry class")
+# ):
+#     try:
+#         result = services.get_ferry_roundtrip(
+#             nationality, origin, destination, 
+#             depart_date, return_date, pax, ferry_class
+#         )
+#          # Return only display data to frontend
+#         return {
+#             "status": "success",
+#             "departure_trips": result.get("display_data", {}).get("departure_trips", []),
+#             "return_trips": result.get("display_data", {}).get("return_trips", [])
+#         }
+#     except ValueError as e:
+#         raise HTTPException(status_code=400, detail=str(e))
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail="Internal server error")
 
 # Create booking
 @router.post("/bookings")

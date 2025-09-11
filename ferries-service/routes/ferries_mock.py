@@ -12,11 +12,11 @@ router_mock = APIRouter(prefix="/Mockferries", tags=["Ferries"])
 # get all routes for user/guest to choose
 @router_mock.get("/schedules")
 def list_schedules(
-    origin: str = Query(None),
+    departure: str = Query(None),
     destination: str = Query(None),
     date: str = Query(None)
 ):
-    return get_ferry_schedules(origin, destination, date)
+    return get_ferry_schedules(departure, destination, date)
 
 ## -------------------------
 ## Bookings

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import uuid
 from fastapi import HTTPException
-from domain.models import FerryBookingRequest, FerryBookingResponse
+from domain.models import FerryBookingRequest, FerryBookingResponse, TripSearchRequest
 from adapters.external_api import SindoClient
 import logging
 
@@ -58,58 +58,68 @@ def get_ferry_trips(origin: str, destination: str, date: str):
     return {"trips": records}
 
 
-def get_ferry_oneway(nationality: str, origin: str, destination: str, depart_date: str,
-                       pax: int = 1, ferry_class: str = "economy"):
+def get_ferry_oneway(search_request: TripSearchRequest):
     try:
         # Validate origin and destination
-        if origin == destination:
+        if search_request.departure == search_request.destination:
             raise ValueError("Origin and destination cannot be the same")
             
         # Validate pax count
-        if pax < 1:
+        if search_request.pax < 1:
             raise ValueError("Number of passengers must be at least 1")
         
-        sindo_date = format_date_for_sindo(depart_date)
+        # Get available sectors to validate the route
+        sectors = get_ferry_available_sectors()
         
-        # Get raw data from Sindo API using the general function
-        schedules = get_ferry_trips(origin, destination, sindo_date)
+        # Find the sector that matches the departure and destination
+        matching_sector = None
+        for sector in sectors:
+            if (search_request.departure in sector["code"] and 
+                search_request.destination in sector["code"]):
+                matching_sector = sector
+                break
+        
+        if not matching_sector:
+            raise ValueError("No available route between selected locations")
+        
+        sindo_date = format_date_for_sindo(search_request.depart_date)
+        
+        # Get raw data from Sindo API 
+        trips = get_ferry_trips(matching_sector[""], sindo_date)
         # Check if API returned an error
-        if schedules.get("status") == "error":
-            raise ValueError(schedules.get("message", "Error fetching ferry data")) 
+        if trips.get("status") == "error":
+            raise ValueError(trips.get("message", "Error fetching ferry data")) 
         
-        trips_list = schedules.get("trips", [])
+        trips_list = trips.get("trips", [])
             
         # Transform data for frontend consumption
         display_trips = []
         internal_trips = []
         
         for item in trips_list:
-            display_trips = {                         
+            display_trips = {
+                # User selection parameters
+                                                      
                 "nationality": nationality,
+                "departure": departure,
+                "destination": destination,  
+                "departure_date": depart_date,            
                 "pax": pax,
-                "ferry_class": ferry_class,
-                
-                
+                "ferry_class": ferry_class,                
             }
             display_trips.append(display_trips) 
              
             # Internal data for booking
-            internal_trip = {
-                "route": f"{origin}-{destination}",
-                "raw_data": item
-                
-            #     "departure_time": item.get("departureTime"),
-            #     "arrival_time": item.get("arrivalTime"),
-            #     "status": item.get("status"),
-            #     "available_seats": item.get("usedSeat"),                            
-            #      # Basic pricing info (if available)
-            #     # "price_per_pax": item.get("price", 0),  # Simple price per passenger
-            #     # "currency": "IDR",
-                
-            #     # Other info
-            
-            }
-                    
+            internal_trip = {              
+                "code": f"{departure}-{destination}",
+                "raw_data": item,
+                "metadata": {
+                    "merchant": item.get("merchant", ""),
+                    "merchant_id": item.get("merchantID"),         
+                    "route_id": item.get("routeID"),
+                    "sector_id": item.get("sectorID"),
+                }
+            }           
         return {
             "status": "success", 
             "display_data": display_trips,  # For frontend display
@@ -123,12 +133,12 @@ def get_ferry_oneway(nationality: str, origin: str, destination: str, depart_dat
         raise Exception("Failed to fetch ferry data from provider")
         
     
-def get_ferry_roundtrip(nationality: str, origin: str, destination: str, 
+def get_ferry_roundtrip(nationality: str, departure: str, destination: str, 
                        depart_date: str, return_date: str, pax: int = 1, 
                        ferry_class: str = "economy"):
     try:
         # Validate origin and destination
-        if origin == destination:
+        if departure == destination:
             raise ValueError("Origin and destination cannot be the same")
             
         # Validate pax count
@@ -148,12 +158,12 @@ def get_ferry_roundtrip(nationality: str, origin: str, destination: str,
         
         # Get departure trips (origin → destination)
         depart_result = get_ferry_oneway(
-            nationality, origin, destination, depart_date, pax, ferry_class
+            nationality, departure, destination, depart_date, pax, ferry_class
         )
         
         # Get return trips (destination → origin) 
         return_result = get_ferry_oneway(
-            nationality, destination, origin, return_date, pax, ferry_class
+            nationality, departure, destination, depart_date, return_date, pax, ferry_class
         )
         
         # Check if either request failed
@@ -181,7 +191,7 @@ def get_ferry_roundtrip(nationality: str, origin: str, destination: str,
         # Log the error here if needed
         raise Exception("Failed to fetch roundtrip ferry data")
 
-def search_ferry_trips(nationality: str, origin: str, destination: str,
+def search_ferry_trips(nationality: str, departure: str, destination: str,
                       depart_date: str, is_round_trip: bool = False,
                       return_date: Optional[str] = None, pax: int = 1,
                       ferry_class: str = "economy"):
@@ -194,13 +204,12 @@ def search_ferry_trips(nationality: str, origin: str, destination: str,
             raise ValueError("Return date required for round trips")
             
         return get_ferry_roundtrip(
-            nationality, origin, destination, 
+            nationality, departure, destination, 
             depart_date, return_date, pax, ferry_class
-        )
-                
+        )              
     else:
         return get_ferry_oneway(
-            nationality, origin, destination, 
+            nationality, departure, destination, 
             depart_date, pax, ferry_class
         )
     
@@ -352,6 +361,14 @@ def get_ferry_available_sectors():
     """
     Service untuk ambil sektor ferry yang tersedia.
     """
-    data = sindo_client.get_sindo_available_sectors()
-    records = data.get("data", {}).get("records", [])
-    return {"sectors": records}
+    try:
+        data = sindo_client.get_sindo_available_sectors()
+        
+        if data.get("status") == "Ok":
+            sectors = data.get("data", {}).get("records", [])
+            return {"status": "success", "sectors": sectors}
+        else:
+            return {"status": "error", "message": "Failed to fetch sectors"}
+    except Exception as e:
+        logger.error(f"Error in get_available_sectors: {str(e)}", exc_info=True)
+        return {"status": "error", "message": str(e)}

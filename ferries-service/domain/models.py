@@ -1,96 +1,199 @@
 # PYDANTIC MODELS FOR FERRY SERVICE
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from enum import Enum
+from uuid import UUID
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Any, Dict, List, Literal, Optional
 from datetime import date, datetime
 
-# Type Aliases for Ferry Service
-PassengerType = Literal["ADULT", "CHILD", "INFANT"]
-BookingStatus = Literal["PENDING", "CONFIRMED", "CANCELLED"]
-PaymentStatus = Literal["PENDING", "PAID", "FAILED", "REFUNDED"]
 
+class PassengerType(str, Enum):
+    ADULT = "ADULT"
+    CHILD = "CHILD"
+    INFANT = "INFANT"
 
-class GenericResponse(BaseModel):
-    status: str
-    data: Optional[Dict[str, Any]] = None
-    message: Optional[str] = None
-    
+class BookingStatus(str, Enum):
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"
+
+class PaymentStatus(str, Enum):
+    PENDING = "PENDING"
+    PAID = "PAID"
+    FAILED = "FAILED"
+    REFUNDED = "REFUNDED"
+
+class FerryClass(str, Enum):
+    ECONOMY = "Economy Class"
+    BUSINESS = "Business Class"
+    FIRST = "First Class"
+
+class PaymentMethod(str, Enum):
+    CREDIT_CARD = "credit_card"
+    BANK_TRANSFER = "bank_transfer"
+    E_WALLET = "e_wallet"
+    QR_CODE = "qr_code"
+
+class PaymentGateway(str, Enum):
+    MIDTRANS = "midtrans" 
+
 class Passenger(BaseModel):
-    type: PassengerType                                         # "Adult" atau "Child"
-    title: Literal["MR", "MRS", "MS", "MISS"]                   # "Mr", "Mrs", "Ms"
-    name: str                                                   # Nama sesuai passport
-    passport_no: str
-    nationality: str
-    issuing_country: str
+    type: PassengerType                                         
+    title: Literal["MR", "MRS", "MS", "MISS"]                   
+    name: str = Field(..., min_length=1, max_length=100)
+    passport_no: str = Field(..., min_length=5, max_length=20)
+    nationality: str = Field(..., min_length=2, max_length=3)
+    issuing_country: str = Field(..., min_length=2, max_length=3)
     date_of_birth: date                   
     passport_expiry: date
     passport_issue: date
+    
+    @model_validator(mode='after')
+    def validate_passport_dates(self):
+        if self.passport_expiry <= date.today():
+            raise ValueError('Passport has expired')
+        if self.passport_issue >= self.passport_expiry:
+            raise ValueError('Passport issue date must be before expiry date')
+        if self.passport_issue >= date.today():
+            raise ValueError('Passport issue date cannot be in the future')
+        return self
 
-#contact info
-class BookingRequirements(BaseModel):
+
+class ContactInfo(BaseModel):
     email: EmailStr
     confirm_email: EmailStr
-    mobile_phone: str
-    whatsapp_no: Optional[str] = None
-    
+    mobile_phone: str = Field(..., min_length=8, max_length=15)
+    whatsapp_no: Optional[str] = Field(None, min_length=8, max_length=15)
+ 
     @field_validator('confirm_email')
     @classmethod
     def emails_match(cls, v, values):
         if 'email' in values and v != values['email']:
             raise ValueError('Emails do not match')
         return v
+    
+    @field_validator('mobile_phone', 'whatsapp_no')
+    @classmethod
+    def validate_phone_format(cls, v):
+        if v and not v.replace('+', '').replace(' ', '').isdigit():
+            raise ValueError('Phone number must contain only digits and optional + prefix')
+        return v
+
 
 class TripSearchRequest(BaseModel):
-    is_round_trip: bool = False
-    nationality: str
-    origin: str                                          # port code (e.g., "BTC")
-    destination: str
+    nationality: str = Field(..., min_length=2, max_length=3)
+    departure: str = Field(..., min_length=3, max_length=10)
+    destination: str = Field(..., min_length=3, max_length=10)
     depart_date: date
-    return_date: Optional[date] = None
     pax: int = Field(1, ge=1, le=10)
-    ferry_class: Literal["economy", "business", "first"] = "economy"
-    
-class TripSearchResponse(BaseModel):
     is_round_trip: bool = False
-    nationality: str
-    origin: str                                          # port code (e.g., "BTC")
-    destination: str
-    depart_date: date
     return_date: Optional[date] = None
-    pax: int = Field(1, ge=1, le=10)
-    ferry_class: Literal["economy", "business", "first"] = "economy"
-    departure_trips: List[Dict[str, Any]] = Field(default_factory=list)  # For internal use
-    return_trips: Optional[List[Dict[str, Any]]] = None  # For internal use
-    
+    ferry_class: FerryClass = FerryClass.ECONOMY
+
+    @field_validator('departure', 'destination')
+    @classmethod
+    def validate_port_codes(cls, v):
+        # Add specific validation for port codes if needed
+        if len(v) < 3:
+            raise ValueError('Port code must be at least 3 characters')
+        return v.upper()
+
     @field_validator('return_date')
     @classmethod
     def validate_return_date(cls, v, info):
         if info.data.get('is_round_trip') and not v:
             raise ValueError('Return date is required for round trip')
-        if v and v <= info.data.get('date'):
+        if v and v <= info.data['depart_date']:
             raise ValueError('Return date must be after departure date')
         return v
+
+
+class FerryTripDisplay(BaseModel):
+    schedule_id: UUID
+    departure_time: str
+    arrival_time: str
+    duration: str
+    status: str
+    available_seats: int
+    base_price: float # Price per passenger
+    currency: str = "IDR"
+    vessel_name: str
+    operator: str
+    departure_port: str
+    arrival_port: str
+    tax_percentage: float = 0.1  # Example 10% tax
+    tax_amount: float
+    total_price: float  # Base price + tax
+    metadata: Dict[str, Any] = {}
+
+    @model_validator(mode='after')
+    def calculate_tax_and_total(self):
+        self.tax_amount = self.base_price * self.tax_percentage
+        self.total_price = self.base_price + self.tax_amount
+        return self
+
+class TripSearchResponse(BaseModel):
+    status: str
+    departure_trips: List[FerryTripDisplay]
+    return_trips: Optional[List[Dict[str, Any]]] = None  
+    
     
 #create booking
 class FerryBookingRequest(BaseModel):
     is_round_trip: bool
-    # is_return_trip_open: bool
-    departure_trip: dict  # Will contain the trip details from Sindo API
-    return_trip: Optional[dict] = None
-    ferry_class: str = "economy"
-    schedule_id: str
+    departure_schedule_id: UUID
+    return_schedule_id: Optional[UUID] = None
+    ferry_class: FerryClass = FerryClass.ECONOMY
     passengers: List[Passenger] = Field(..., min_items=1, max_items=10)
-    requirements: BookingRequirements
+    contact_info: ContactInfo
+    payment_method: PaymentMethod
+    payment_gateway: PaymentGateway = PaymentGateway.MIDTRANS
+    metadata: Dict[str, Any] 
+    
+    @model_validator(mode='after')
+    def validate_round_trip(self):
+        if self.is_round_trip and not self.return_schedule_id:
+            raise ValueError('Return schedule ID is required for round trips')
+        return self
 
 class FerryBookingResponse(BaseModel):
     booking_id: str #internal booking ID
     sindo_booking_id: str
     status: BookingStatus
-    subtotal: float
-    tax: float = 0.0
-    discount: float = 0.0
-    total: float = Field(..., ge=0)
-    items: List[Dict[str, Any]]
-    metadata: Dict[str, Any]
-    currency: str = Field("IDR", pattern="^[A-Z]{3}$")
+    total_amount: float 
+    currency: str = "IDR"
+    transaction_id: Optional[str] = None   # Reference to transaction service
     payment_url: Optional[str] = None  # For Midtrans integration
     expires_at: datetime
+    metadata: Dict[str, Any] = {}
+
+class BookingSearchRequest(BaseModel):
+    booking_id: Optional[str] = None
+    passport_no: Optional[str] = None
+    email: Optional[EmailStr] = None
+    
+class BookingDetails(BaseModel):
+    booking_id: str
+    sindo_booking_id: UUID
+    status: BookingStatus
+    total_amount: float
+    currency: str
+    passengers: List[Passenger]
+    contact_info: ContactInfo
+    departure_trip: Dict[str, Any]
+    return_trip: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+    payment_status: PaymentStatus
+    
+#for price calculation
+class PriceBreakdown(BaseModel):
+    base_fare: float
+    tax_percentage: float
+    tax_amount: float
+    discount_amount: float = 0
+    total_amount: float
+    
+    @model_validator(mode='after')
+    def calculate_total(self):
+        self.total_amount = self.base_fare + self.tax_amount - self.discount_amount
+        return self
