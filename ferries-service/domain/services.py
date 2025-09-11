@@ -2,7 +2,13 @@ from datetime import datetime, timedelta
 from typing import Optional
 import uuid
 from fastapi import HTTPException
-from domain.models import FerryBookingRequest, FerryBookingResponse, TripSearchRequest
+from domain.models import (
+    FerryBookingRequest, 
+    FerryBookingResponse, 
+    FerryTripDisplay, 
+    TripSearchRequest, 
+    TripSearchResponse
+)
 from adapters.external_api import SindoClient
 import logging
 
@@ -94,77 +100,87 @@ def get_ferry_oneway(search_request: TripSearchRequest):
             
         # Transform data for frontend consumption
         display_trips = []
-        internal_trips = []
+        current_time = datetime.now()
         
         for item in trips_list:
-            display_trips = {
-                # User selection parameters
-                                                      
-                "nationality": nationality,
-                "departure": departure,
-                "destination": destination,  
-                "departure_date": depart_date,            
-                "pax": pax,
-                "ferry_class": ferry_class,                
-            }
-            display_trips.append(display_trips) 
-             
-            # Internal data for booking
-            internal_trip = {              
-                "code": f"{departure}-{destination}",
-                "raw_data": item,
-                "metadata": {
-                    "merchant": item.get("merchant", ""),
-                    "merchant_id": item.get("merchantID"),         
-                    "route_id": item.get("routeID"),
-                    "sector_id": item.get("sectorID"),
-                }
-            }           
-        return {
-            "status": "success", 
-            "display_data": display_trips,  # For frontend display
-            "internal_data": internal_trips  # For internal booking use
-        }
-    except ValueError as e:
+           # Calculate duration from departure and arrival times
+            dep_time = datetime.strptime(item.get("departureTime", "00:00"), "%H:%M")
+            arr_time = datetime.strptime(item.get("arrivalTime", "00:00"), "%H:%M")
+            duration_minutes = (arr_time - dep_time).total_seconds() / 60
+            duration = f"{int(duration_minutes // 60)}h {int(duration_minutes % 60)}m"
+            
+            # Calculate base price per passenger
+            base_price = calculate_base_price(item, search_request.ferry_class)
+              
+            #create FerryTripDisplay object with pricing info    
+            display_trip = FerryTripDisplay(
+                schedule_id=uuid.UUID(item.get("tripSchedID", str(uuid.uuid4()))),
+                departure_time=item.get("departureTime"),
+                arrival_time=item.get("arrivalTime"),
+                duration=duration,
+                status=item.get("status", "Available"),
+                available_seats=calculate_available_seats(item),
+                base_price=base_price,
+                currency="IDR",
+                vessel_name=get_vessel_name(item.get("tripID")),
+                operator=get_operator_name(item.get("tripID")),
+                departure_port=search_request.departure,
+                arrival_port=search_request.destination,
+                tax_percentage=0.1,  # Example 10% tax
+                tax_amount=base_price * 0.1,
+                total_price=base_price * 1.1  # Base + tax
+            )
+            display_trips.append(display_trip)
         
+        return TripSearchResponse(
+            status="success",
+            departure_trips=display_trips
+        )
+    except ValueError as e:
+        # Re-raise ValueError exceptions
         raise 
     except Exception as e:
         logger.error(f"Error in get_ferry_oneway: {str(e)}", exc_info=True)
-        raise Exception("Failed to fetch ferry data from provider")
+        raise Exception(f"Failed to fetch ferry data: {str(e)}")
         
     
-def get_ferry_roundtrip(nationality: str, departure: str, destination: str, 
-                       depart_date: str, return_date: str, pax: int = 1, 
-                       ferry_class: str = "economy"):
+def get_ferry_roundtrip(search_request: TripSearchRequest):
+    
     try:
         # Validate origin and destination
-        if departure == destination:
+        if search_request.departure == search_request.destination:
             raise ValueError("Origin and destination cannot be the same")
             
         # Validate pax count
-        if pax < 1:
+        if search_request.pax < 1:
             raise ValueError("Number of passengers must be at least 1")
         
-        # Format and validate dates
-        sindo_depart_date = format_date_for_sindo(depart_date)
-        sindo_return_date = format_date_for_sindo(return_date)
-        
-        # Validate return date is not before departure date
-        depart_dt = datetime.strptime(depart_date, '%Y-%m-%d')
-        return_dt = datetime.strptime(return_date, '%Y-%m-%d')
-        
-        if return_dt < depart_dt:
-            raise ValueError("Return date cannot be before departure date")    
-        
+        # Get departure trips
+        depart_search = TripSearchRequest(
+            nationality=search_request.nationality,
+            departure=search_request.departure,
+            destination=search_request.destination,
+            depart_date=search_request.depart_date,
+            pax=search_request.pax,
+            ferry_class=search_request.ferry_class,
+            is_round_trip=False
+        )
         # Get departure trips (origin → destination)
-        depart_result = get_ferry_oneway(
-            nationality, departure, destination, depart_date, pax, ferry_class
+        depart_result = get_ferry_oneway(depart_search)        
+             
+        # Get return trips
+        return_search = TripSearchRequest(
+            nationality=search_request.nationality,
+            departure=search_request.destination,
+            destination=search_request.departure,
+            depart_date=search_request.return_date,
+            pax=search_request.pax,
+            ferry_class=search_request.ferry_class,
+            is_round_trip=True
         )
-        
         # Get return trips (destination → origin) 
-        return_result = get_ferry_oneway(
-            nationality, departure, destination, depart_date, return_date, pax, ferry_class
-        )
+        return_result = get_ferry_oneway(return_search)
+
         
         # Check if either request failed
         if depart_result.get("status") == "error":
@@ -172,46 +188,33 @@ def get_ferry_roundtrip(nationality: str, departure: str, destination: str,
         if return_result.get("status") == "error":
             return return_result
         
-        # Combine the results
-        return {
-            "status": "success",
-            "display_data": {
-                "departure_trips": depart_result.get("display_data", []),
-                "return_trips": return_result.get("display_data", [])
-            },
-            "internal_data": {
-                "departure_trips": depart_result.get("internal_data", []),
-                "return_trips": return_result.get("internal_data", [])
-            }
-        }
+        return TripSearchResponse(
+            status="success",
+            departure_trips=depart_result.departure_trips,
+            return_trips=return_result.departure_trips
+        )
     except ValueError as e:
         # Convert ValueError to HTTPException
         raise 
     except Exception as e:
-        # Log the error here if needed
-        raise Exception("Failed to fetch roundtrip ferry data")
+        logger.error(f"Error in get_ferry_roundtrip: {str(e)}", exc_info=True)
+        raise Exception(f"Failed to fetch roundtrip ferry data: {str(e)}")
 
-def search_ferry_trips(nationality: str, departure: str, destination: str,
-                      depart_date: str, is_round_trip: bool = False,
-                      return_date: Optional[str] = None, pax: int = 1,
-                      ferry_class: str = "economy"):
-    """
-    Coordinator function that calls the appropriate specific service
-    """
-   
-    if is_round_trip:
-        if not return_date:
-            raise ValueError("Return date required for round trips")
+
+def search_ferry_trips(search_request: TripSearchRequest):
+    """Coordinator function to search for ferry trips (handles both one-way and round-trip)"""
+    try:
+        if search_request.is_round_trip:
+            return get_ferry_roundtrip(search_request)
+        else:
+            return get_ferry_oneway(search_request)
             
-        return get_ferry_roundtrip(
-            nationality, departure, destination, 
-            depart_date, return_date, pax, ferry_class
-        )              
-    else:
-        return get_ferry_oneway(
-            nationality, departure, destination, 
-            depart_date, pax, ferry_class
-        )
+    except ValueError as e:
+        # Re-raise ValueError exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error in search_ferry_trips: {str(e)}", exc_info=True)
+        raise ValueError(f"Failed to search ferry trips: {str(e)}")
     
 
 #Create Booking
