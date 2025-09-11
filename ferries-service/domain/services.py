@@ -330,7 +330,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
     mapped_response = {
         "order_id": booking_id,
         "amount": total_amount,
-        "payment_method": "bank_transfer",  # default sementara
+        "payment_method": "credit_card",  # default sementara
         "customer_details": {
             "name": records[0].get("passengerName", "Unknown Passenger"),
             "email": "customer@example.com",   # default, bisa diisi dari booking data
