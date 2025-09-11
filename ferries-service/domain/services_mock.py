@@ -15,11 +15,11 @@ def get_all_bookings():
     return list_bookings()
 
 
-def get_ferry_schedules(origin: str = None, destination: str = None, date: str = None):
+def get_ferry_schedules(departure: str = None, destination: str = None, date: str = None):
     schedules = get_mock_schedules()
 
-    if origin:
-        schedules = [s for s in schedules if s["origin"].lower() == origin.lower()]
+    if departure:
+        schedules = [s for s in schedules if s["departure"].lower() == departure.lower()]
     if destination:
         schedules = [s for s in schedules if s["destination"].lower() == destination.lower()]
     if date:
