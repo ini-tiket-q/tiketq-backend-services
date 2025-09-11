@@ -1,12 +1,14 @@
 from datetime import datetime
-from typing import Literal, Optional
-from fastapi import APIRouter, HTTPException, Query, Body, Depends
-from domain.models import FerryBookingRequest, TripSearchRequest
-from domain.services import (
-    search_ferry_trips
+from fastapi import APIRouter, HTTPException, Query, Body, BackgroundTasks
+from domain.models import (
+    FerryBookingRequest, 
+    FerryBookingResponse, 
+    TripSearchRequest
 )
 from domain import services
+import logging
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Ferries"])
 
@@ -43,12 +45,12 @@ def list_trips(
             destination=destination,
             depart_date=depart_date,
             pax=1,
-            ferry_class="Economy",
+            ferry_class="Economy Class",
             is_round_trip=False
         )
         
         # Use the search function
-        result = search_ferry_trips(search_request)
+        result = services.search_ferry_trips(search_request)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -63,7 +65,7 @@ def search_oneway_trips(
     destination: str = Query(..., description="Arrival port code"), 
     date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
     pax: int = Query(1, description="Number of passengers"),
-    ferry_class: str = Query("economy", description="Ferry class")
+    ferry_class: str = Query("Economy Class", description="Ferry class")
 ):
     try:
         # Convert string date to date object
@@ -81,7 +83,7 @@ def search_oneway_trips(
         )
         
         # Use the search function
-        result = search_ferry_trips(search_request)
+        result = services.search_ferry_trips(search_request)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -92,12 +94,12 @@ def search_oneway_trips(
 @router.get("/trips/search/roundtrip")
 def search_roundtrip_trips(
     nationality: str = Query(..., description="Passenger nationality (country code)"),
-    origin: str = Query(..., description="Departure port code"), 
+    departure: str = Query(..., description="Departure port code"), 
     destination: str = Query(..., description="Arrival port code"), 
     depart_date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
     return_date: str = Query(..., description="Return date in YYYY-MM-DD format"),
     pax: int = Query(1, description="Number of passengers"),
-    ferry_class: str = Query("economy", description="Ferry class")
+    ferry_class: str = Query("Economy Class", description="Ferry class")
 ):
     try:
         # Convert string dates to date objects
@@ -117,7 +119,7 @@ def search_roundtrip_trips(
         )
         
         # Use the search function
-        result = search_ferry_trips(search_request)
+        result = services.search_ferry_trips(search_request)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -125,22 +127,45 @@ def search_roundtrip_trips(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # Create booking
-@router.post("/bookings")
-def create_booking(booking_data: dict = Body(...)):
+@router.post("/bookings", response_model=FerryBookingResponse)
+async def create_booking(
+    booking_data: FerryBookingRequest,
+    background_tasks: BackgroundTasks
+):
     """
-    Buat booking baru ke Sindo API.
+    Create a new ferry booking with transaction service integration.
     """
     try:
-        return services.create_ferry_booking(booking_data)
+        # Validate request
+        if booking_data.is_round_trip and not booking_data.return_schedule_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Return schedule ID is required for round trips"
+            )
+        
+        # Create booking
+        booking_result = await services.create_ferry_booking(booking_data)
+        
+        # Add background task for confirmation email
+        background_tasks.add_task(
+            send_booking_confirmation,
+            booking_data.contact_info.email,
+            booking_result.booking_id
+        )
+        
+        return booking_result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/bookings/v2")
-def create_booking_v2(booking_request: FerryBookingRequest):
-    try:
-        return services.create_ferry_booking_v2(booking_request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# @router.post("/bookings/v2")
+# def create_booking_v2(booking_request: FerryBookingRequest):
+#     try:
+#         return services.create_ferry_booking_v2(booking_request)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 
 # Add booking details
 @router.post("/bookings/{booking_id}/details")
@@ -162,9 +187,14 @@ def list_booking_details(booking_id: str, search: str = Query(None, description=
     Bisa difilter pakai `?search=Nama`.
     """
     try:
-        return services.get_ferry_booking_details(booking_id, search)
+        booking_details = services.get_ferry_booking_details(booking_id, search)
+        if not booking_details:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        
+        return booking_details
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # get coutries
 @router.get("/countries")
@@ -209,3 +239,13 @@ def list_available_sectors():
         return services.get_ferry_available_sectors()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Helper function for sending confirmation email
+def send_booking_confirmation(email: str, booking_id: str):
+    """
+    Send booking confirmation email (placeholder implementation)
+    """
+    # This would be your actual email sending logic
+    print(f"Sending confirmation email to {email} for booking {booking_id}")
+

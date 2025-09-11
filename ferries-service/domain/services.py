@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Dict, Optional
 import uuid
 from fastapi import HTTPException
 from domain.models import (
+    BookingStatus,
     FerryBookingRequest, 
     FerryBookingResponse, 
-    FerryTripDisplay, 
+    FerryTripDisplay,
+    PriceBreakdown,
     TripSearchRequest, 
     TripSearchResponse
 )
@@ -15,6 +17,8 @@ import logging
 logger = logging.getLogger(__name__)
 # Initialize the SindoClient instance
 sindo_client = SindoClient()
+# In-memory storage for demonstration (replace with database in production)
+bookings_cache = {}
 BOOKING_EXPIRY_HOURS = 1
 # Booking list local cache (opsional, bisa dipakai untuk debug)
 # _local_bookings = []
@@ -25,18 +29,12 @@ def format_date_for_sindo(date_str: str) -> str:
     Raises ValueError for invalid dates.
     """
     try:
-        # Try to parse the date
-        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-        
-        # Ensure date is not in the past
-        if date_obj.date() < datetime.now().date():
-            raise ValueError("Date cannot be in the past")
-            
         return date_obj.strftime('%Y%m%d')
-    except ValueError:
-        # Re-raise with a more specific message
-        raise ValueError("Date must be in YYYY-MM-DD format and not in the past")
-
+    except Exception as e:
+        logger.error(f"Error formatting date: {str(e)}")
+        raise ValueError("Invalid date format")
+            
+            
 # Get All Routes Provided
 def get_ferry_routes(search: str = None):
     """
@@ -48,11 +46,11 @@ def get_ferry_routes(search: str = None):
 
 # Get All Trips for users to choose
 # raw shedules from Sindo API
-def get_ferry_trips(origin: str, destination: str, date: str):
+def get_ferry_trips(departure: str, destination: str, date: str):
     """
     Ambil daftar trip / jadwal ferry dari API Sindo.
     """
-    data = sindo_client.get_sindo_trips(origin, destination, date)
+    data = sindo_client.get_sindo_trips(departure, destination, date)
 
     # Kalau API balikin list langsung
     if isinstance(data, list):
@@ -60,9 +58,21 @@ def get_ferry_trips(origin: str, destination: str, date: str):
     else:
         # fallback kalau ada format lain
         records = data.get("data", {}).get("records", [])
-
     return {"trips": records}
 
+def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
+    """
+    Calculate base price based on item and ferry class.
+    This is a placeholder implementation.
+    """
+    # Your actual implementation here
+    base_price = 100000  # Example base price
+    # Apply class multiplier
+    if ferry_class == "Business Class":
+        base_price *= 1.5
+    elif ferry_class == "First Class":
+        base_price *= 2.0
+    return base_price
 
 def get_ferry_oneway(search_request: TripSearchRequest):
     try:
@@ -75,7 +85,11 @@ def get_ferry_oneway(search_request: TripSearchRequest):
             raise ValueError("Number of passengers must be at least 1")
         
         # Get available sectors to validate the route
-        sectors = get_ferry_available_sectors()
+        sectors_response = get_ferry_available_sectors()
+        if sectors_response.get("status") == "error":
+            raise ValueError(sectors_response.get("message", "Error fetching available sectors"))
+        
+        sectors = sectors_response.get("sectors", [])
         
         # Find the sector that matches the departure and destination
         matching_sector = None
@@ -119,16 +133,17 @@ def get_ferry_oneway(search_request: TripSearchRequest):
                 arrival_time=item.get("arrivalTime"),
                 duration=duration,
                 status=item.get("status", "Available"),
-                available_seats=calculate_available_seats(item),
+                available_seats=item.get("availableSeats", 0), # Use actual field from API
                 base_price=base_price,
                 currency="IDR",
-                vessel_name=get_vessel_name(item.get("tripID")),
-                operator=get_operator_name(item.get("tripID")),
+                vessel_name=item.get("vesselName", "Unknown Vessel"),
+                operator=item.get("operator", "Unknown Operator"),
                 departure_port=search_request.departure,
                 arrival_port=search_request.destination,
                 tax_percentage=0.1,  # Example 10% tax
                 tax_amount=base_price * 0.1,
-                total_price=base_price * 1.1  # Base + tax
+                total_price=base_price * 1.1  # Base + tax,
+                metadata=item
             )
             display_trips.append(display_trip)
         
@@ -216,102 +231,185 @@ def search_ferry_trips(search_request: TripSearchRequest):
         logger.error(f"Error in search_ferry_trips: {str(e)}", exc_info=True)
         raise ValueError(f"Failed to search ferry trips: {str(e)}")
     
-
-#Create Booking
-def create_ferry_booking(booking_data: dict):
+#Transaction---------------------------------------------------------------------------------
+async def call_transaction_service(transaction_data: dict) -> dict:
     """
-    Kirim booking ke API Sindo.
-    """
-    data = sindo_client.create_sindo_booking(booking_data)
-    # return the full response here 
-    # so frontend can get booking ID and other info
-    return data
-    
-    
-def create_ferry_booking_v2(booking_request: FerryBookingRequest) -> FerryBookingResponse:
-    """
-    Create a ferry booking with proper normalization between frontend and Sindo API
+    Call the transaction service to create a payment transaction
     """
     try:
-        # Normalize data for Sindo API
-        sindo_booking_data = normalize_booking_for_sindo(booking_request)
+        # This would be an actual API call to transaction service
+        # For development, use mock service
+        from .tx_mock_service import create_mock_transaction
+
+        return await create_mock_transaction(transaction_data)
+
+    except Exception as e:
+        logger.error(f"Error calling transaction service: {str(e)}")
+        raise Exception("Failed to create payment transaction")
+
+
+def calculate_price(departure_trip: Dict, return_trip: Optional[Dict], 
+                   passenger_count: int, ferry_class: str) -> PriceBreakdown:
+    """
+     Calculate base price based on item and ferry class.
+    This is a placeholder implementation.
+    """
+    # Your implementation here
+    base_fare = 100000  # Example base fare
+    tax_percentage = 0.1
+    tax_amount = base_fare * tax_percentage
+    total_amount = base_fare + tax_amount
+    
+    return PriceBreakdown(
+        base_fare=base_fare,
+        tax_percentage=tax_percentage,
+        tax_amount=tax_amount,
+        total_amount=total_amount
+    )
+    
+
+def prepare_transaction_data(booking_data: FerryBookingRequest, 
+                           trip_details: Dict[str, Any],
+                           price_breakdown: PriceBreakdown) -> dict:
+    """
+    Prepare data for transaction service API call
+    """
+    # Generate a unique order ID
+    order_id = f"FERRY_{uuid.uuid4().hex[:8].upper()}"
+    
+    # Create transaction items
+    items = []
+    
+    # Main fare item
+    items.append({
+        "name": f"Ferry Ticket: {trip_details['departure_port']} to {trip_details['arrival_port']}",
+        "price": price_breakdown.base_fare,
+        "quantity": len(booking_data.passengers),
+        "description": f"{trip_details['vessel_name']} - {booking_data.ferry_class}",
+    })
+    
+    # Tax item
+    if price_breakdown.tax_amount > 0:
+        items.append({
+            "name": "Tax and Fees",
+            "price": price_breakdown.tax_amount,
+            "quantity": 1,
+            "description": "Government taxes and service fees",
+        })
+    
+    # Prepare customer details
+    customer_details = {
+        "email": booking_data.contact_info.email,
+        "phone": booking_data.contact_info.mobile_phone,
+        "first_name": booking_data.passengers[0].name.split()[0] if booking_data.passengers else "",
+        "last_name": booking_data.passengers[0].name.split()[-1] if booking_data.passengers else "",
+    }
+    
+    # Prepare the request for transaction service
+    return {
+        "order_id":order_id,
+        "amount":price_breakdown.total_amount,
+        "payment_method":booking_data.payment_method.value, # Convert enum to string
+        "customer_details":customer_details,
+        "item_details":items,
+        "description":f"Ferry booking from {trip_details['departure_port']} to {trip_details['arrival_port']}",
+        "expiry_duration":24  # 24 hours
+    }
+
+# def create_ferry_booking_v2(booking_data: dict):
+#     """
+#     Kirim booking ke API Sindo.
+#     """
+#     data = sindo_client.create_sindo_booking(booking_data)
+    # return the full response here 
+    # so frontend can get booking ID and other info
+    # return data
+    
+#booking---------------------------------------------------------------------------------------    
+async def create_ferry_booking(booking_data: FerryBookingRequest) -> FerryBookingResponse:
+    """
+    Create a ferry booking with transaction service integration
+    """
+    try:
+        # 1. Validate availability (pseudo-code)
+        # if not validate_availability(booking_data.departure_schedule_id, len(booking_data.passengers)):
+        #     raise ValueError("Not enough available seats")
         
-        # Add agent information (required by Sindo API)
-        sindo_booking_data["AgentCode"] = sindo_client.agent_code
-        sindo_booking_data["UserName"] = sindo_client.username
+        # if booking_data.is_round_trip and booking_data.return_schedule_id:
+        #     if not validate_availability(booking_data.return_schedule_id, len(booking_data.passengers)):
+        #         raise ValueError("Not enough available seats for return trip")
         
-        # Call the Sindo API
-        sindo_response = sindo_client.create_sindo_booking(sindo_booking_data)
+        # 2. Get trip details and calculate price (pseudo-code)
+        # departure_trip = get_trip_details(booking_data.departure_schedule_id)
+        # return_trip = None
+        # if booking_data.is_round_trip and booking_data.return_schedule_id:
+        #     return_trip = get_trip_details(booking_data.return_schedule_id)
         
-        # Normalize response for frontend later
-        #booking_response = normalize_booking_for_frontend(sindo_response, booking_request)
-        #Basic response mapping (can be enhanced later for frontend)
+        # For demonstration, create mock trip details
+        departure_trip = {
+            "departure_port": "BTC",
+            "arrival_port": "HFC", 
+            "vessel_name": "Fast Ferry",
+            "departure_time": "08:00",
+            "arrival_time": "10:00"
+        }
+        
+        price_breakdown = calculate_price(
+            departure_trip, 
+            None, 
+            len(booking_data.passengers),
+            booking_data.ferry_class
+        )
+        
+        # 3. Prepare transaction data as dict
+        transaction_data = prepare_transaction_data(
+            booking_data, 
+            departure_trip, 
+            price_breakdown
+        )
+        
+        # 4. Call transaction service
+        transaction_response = await call_transaction_service(transaction_data)
+        # 5. Create Sindo booking (pseudo-code)
+        # sindo_booking_data = normalize_booking_for_sindo(booking_data)
+        # sindo_response = sindo_client.create_sindo_booking(sindo_booking_data)
+        
+        # For demonstration,create a mock Sindo response
+        sindo_booking_id = f"SINDO_{uuid.uuid4().hex[:8].upper()}"
+        # 6. Create booking record
         internal_booking_id = str(uuid.uuid4())
+        expiry_time = datetime.now() + timedelta(hours=BOOKING_EXPIRY_HOURS)
         
+        # Store booking in cache(replace with database in production)
+        bookings_cache[internal_booking_id] = {
+            "sindo_booking_id": booking_data.sindo_booking_id,
+            "status": BookingStatus.PENDING,
+            "total_amount": price_breakdown.total_amount,
+            "currency": "IDR",
+            "transaction_id": transaction_response.transaction_id, #access as dict
+            "passengers": booking_data.passengers,
+            "contact_info": booking_data.contact_info,
+            "expires_at": expiry_time,
+            "created_at": datetime.now()
+        }
+        
+        # 7. Return response
         return FerryBookingResponse(
             booking_id=internal_booking_id,
-            sindo_booking_id=sindo_response.get("BookingId", ""),
-            status=sindo_response.get("Status", "PENDING"),
-            total=sindo_response.get("TotalAmount", 0),
-            currency=sindo_response.get("Currency", "IDR"),
-            payment_url=None,  # Can be implemented later
-            expires_at=datetime.now() + timedelta(hours=BOOKING_EXPIRY_HOURS),
-            metadata=sindo_response  
+            sindo_booking_id=sindo_booking_id,
+            status=BookingStatus.PENDING,
+            total_amount=price_breakdown.total_amount,
+            currency="IDR",
+            transaction_id=transaction_response["transaction_id"],  # Access as dict key
+            payment_url=transaction_response["payment_url"],  # Access as dict key
+            expires_at=expiry_time,
+            metadata={}
         )
-        # return booking_response       
+        
     except Exception as e:
-        logger.error(f"Error in create_booking_v2: {str(e)}", exc_info=True)
-        raise Exception("Failed to create booking: {str(e)}")
-        
-        
-def normalize_booking_for_sindo(booking_request: FerryBookingRequest) -> dict:        
-    
-    departure_trip = booking_request.departure_trip
-    return_trip = booking_request.return_trip
-    
-    base_data = {
-        "IsRoundTrip": booking_request.is_round_trip,
-        "FerryClass": booking_request.ferry_class,
-        "DepartureTrip": {
-            "TripID": departure_trip.get("trip_id"),
-            "ScheduleID": departure_trip.get("schedule_id"),
-            "Origin": departure_trip.get("origin"),
-            "Destination": departure_trip.get("destination"),
-            "DepartureDate": departure_trip.get("departure_date"),
-            "DepartureTime": departure_trip.get("departure_time"),
-            "Operator": departure_trip.get("operator", ""),
-        },
-        "Passengers": [{
-            "Type": passenger.type,
-            "Title": passenger.title,
-            "Name": passenger.name,
-            "PassportNo": passenger.passport_no,
-            "Nationality": passenger.nationality,
-            "IssuingCountry": passenger.issuing_country,
-            "DateOfBirth": passenger.date_of_birth.isoformat(),
-            "PassportExpiry": passenger.passport_expiry.isoformat(),
-            "PassportIssue": passenger.passport_issue.isoformat()
-        } for passenger in booking_request.passengers],
-        "Requirements": {
-            "Email": booking_request.requirements.email,
-            "ConfirmEmail": booking_request.requirements.confirm_email,
-            "MobilePhone": booking_request.requirements.mobile_phone,
-            "WhatsappNo": booking_request.requirements.whatsapp_no
-        }
-    }
-    # Add return trip if it's a round trip
-    if booking_request.is_round_trip and return_trip:
-        base_data["ReturnTrip"] = {
-            "TripID": return_trip.get("trip_id"),
-            "ScheduleID": return_trip.get("schedule_id"),
-            "Origin": return_trip.get("origin"),
-            "Destination": return_trip.get("destination"),
-            "DepartureDate": return_trip.get("departure_date"),
-            "DepartureTime": return_trip.get("departure_time"),
-            "Operator": return_trip.get("operator", ""),
-        }
-    
-    return base_data
+        logger.error(f"Error creating booking: {str(e)}", exc_info=True)
+        raise
+             
 
 # Add passenger details to an already created booking
 def add_ferry_booking_detail(booking_id: str, passenger_data: dict):

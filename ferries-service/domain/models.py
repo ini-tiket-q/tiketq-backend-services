@@ -136,21 +136,6 @@ class TripSearchResponse(BaseModel):
     departure_trips: List[FerryTripDisplay]
     return_trips: Optional[List[Dict[str, Any]]] = None  
     
-# Model for transaction service payment request
-class TransactionPaymentRequest(BaseModel):
-    order_id: str = Field(..., description="Unique order ID for the transaction")
-    amount: float = Field(..., ge=0, description="Total amount to be paid")
-    payment_method: PaymentMethod = Field(..., description="Payment method selected by customer")
-    customer_details: Dict[str, Any] = Field(
-        default_factory=dict, 
-        description="Customer details for payment processing"
-    )
-    item_details: List[Dict[str, Any]] = Field(
-        default_factory=list, 
-        description="Details of items being purchased"
-    )
-    description: str = Field(..., description="Description of the transaction")
-    expiry_duration: int = Field(24, ge=1, description="Expiry duration in hours")
        
 #create booking
 class FerryBookingRequest(BaseModel):
@@ -214,10 +199,3 @@ class PriceBreakdown(BaseModel):
         self.total_amount = self.base_fare + self.tax_amount - self.discount_amount
         return self
 
-# Response model for transaction service
-class TransactionResponse(BaseModel):
-    transaction_id: str
-    order_id: str
-    status: str
-    payment_url: Optional[str] = None
-    expiry_time: datetime
