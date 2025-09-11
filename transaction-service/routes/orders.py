@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from domain.models import (
     OrderInDB, OrderStatus,
-    OrderCreateRequest, OrderStatusUpdateRequest
+    OrderCreateRequest, OrderStatusUpdateRequest,
+    UserRole
 )
 from domain.services import (
     OrderService,
@@ -13,6 +14,10 @@ from domain.services import (
     require_admin,
     require_user_or_admin
 )
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["orders"])
 
@@ -93,7 +98,6 @@ async def get_order(
     try:
         order = service.get_order(
             order_id=order_id,
-            email=current_user.email
         )
         
         if not order:
@@ -103,7 +107,7 @@ async def get_order(
             )
         
         # Check access rights - users can only see their own orders
-        if current_user.role != "admin" and order.email != current_user.email:
+        if current_user.role != UserRole.ADMIN and order.email != current_user.email:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this order"
@@ -178,9 +182,10 @@ async def update_order_status(
         # Check if order exists
         existing_order = service.get_order(
             order_id=order_id,
-            email=current_user.email  # Admin can access any order
         )
-        
+
+        logger.info("Existing order: %s", existing_order)
+
         if not existing_order:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -191,7 +196,6 @@ async def update_order_status(
         updated_order = service.update_order_status(
             order_id=order_id,
             status_request=status_request,
-            email=current_user.email
         )
         
         if not updated_order:
