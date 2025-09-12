@@ -10,7 +10,7 @@ class FakeMMBCClient:
             "result": "ok",
             "flight_id": "02",
             "flight": "Singapore Airlines",
-            "flight_code": "SQ-953",
+            "flight_code": "SQ-955",
             "flight_image": "https://klikmbc.biz/v2/images/airlines/singapore.png",
             "flight_from": "CGK",
             "flight_to": "SIN",
@@ -19,7 +19,7 @@ class FakeMMBCClient:
             "flight_transit": "Nonstop",
             "flight_infotransit": "Jakarta(CGK) 11:00 - Singapore(SIN) 13:45",
             "flight_time": "11:00 - 13:45",
-            "flight_duration": "2j 45mnt",
+            "flight_duration": "1j 45mnt",
             "flight_class": "M",
             "flight_availableseat": "7",
             "flight_baggage": "25kg",
@@ -35,13 +35,13 @@ class FakeMMBCClient:
 
 
     async def post_booking(self, **kwargs):
-        kode = "SIA888"
+        kode = "SIA341"
         return {
             "result": "ok",
-            "tid": "888777666",
+            "tid": "888877666",
             "tanggal": "2025-09-15 09:30:00",
             "flight": "Singapore Airlines",
-            "flight_code": "SQ-953",
+            "flight_code": "SQ-955",
             "kodebooking": kode,
             "flight_route": "CGK-SIN",
             "flight_departure": "15 Sep 2025 11:00",
@@ -87,10 +87,10 @@ class FakeMMBCClient:
 
         return {
             "result": "ok",
-            "tid": "888777666",
+            "tid": "888877666",
             "tanggal": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             "flight": "Singapore Airlines",
-            "flight_code": "SQ-953",
+            "flight_code": "SQ-955",
             "kodebooking": kode,
             "flight_route": "CGK-SIN",
             "flight_departure": "15 Sep 2025 11:00",
@@ -130,10 +130,10 @@ class FakeMMBCClient:
 
         return {
             "result": "ok",
-            "tid": "888777666",
+            "tid": "888877666",
             "tanggal": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             "flight": "Singapore Airlines",
-            "flight_code": "SQ-953",
+            "flight_code": "SQ-955",
             "kodebooking": kode,
             "flight_route": "CGK-SIN",
             "flight_departure": "15 Sep 2025 11:00",
@@ -165,10 +165,18 @@ class FakeMMBCClient:
 
 
 
-
     async def get_eticket(self, **kwargs):
-            kode = kwargs.get("kodebooking")
+        kode = kwargs.get("kodebooking")
+        status = BOOKING_STATUS.get(kode, "waiting")
+
+        if status != "issued":
             return {
-                "result": "ok",
-                "reason": f"https://klikmbc.co.id/getbook/etiket/etiket-{kode}.pdf"
+                "result": "no",
+                "reason": f"Invalid Kode Booking {kode}!"
             }
+
+        return {
+            "result": "ok",
+            "reason": f"link download etiket https://klikmbc.co.id/getbook/etiket/etiket-{kode}.pdf"
+        }
+
