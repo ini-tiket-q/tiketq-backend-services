@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, Optional, Union
 import uuid
 from fastapi import HTTPException
 from domain.models import (
@@ -23,18 +23,46 @@ BOOKING_EXPIRY_HOURS = 1
 # Booking list local cache (opsional, bisa dipakai untuk debug)
 # _local_bookings = []
 
-def format_date_for_sindo(date_str: str) -> str:
+def validate_dates(date_input: str) -> str:
     """
     Convert date string to Sindo's required yyyyMMdd format.
     Raises ValueError for invalid dates.
     """
     try:
+        # First, parse the input string into a datetime object
+        # You might need to adjust the format based on your input format
+        date_obj = datetime.strptime(date_input, '%Y-%m-%d')  # Adjust format as needed
+        
+        # Then format it to the required output format
         return date_obj.strftime('%Y%m%d')
+    except ValueError as e:
+        logger.error(f"Error parsing date '{date_input}': {str(e)}")
+        raise ValueError("Invalid date format")
     except Exception as e:
         logger.error(f"Error formatting date: {str(e)}")
         raise ValueError("Invalid date format")
             
-            
+# def validate_dates(depart_date: Union[str, date], return_date: Optional[Union[str, date]] = None) -> None:
+#     """
+#     Validate that dates are in the correct order.
+#     This version accepts both strings (YYYY-MM-DD) and date objects.
+#     """
+#     # Convert to date objects if they're strings
+#     if isinstance(depart_date, str):
+#         depart_date = datetime.strptime(depart_date, "%Y-%m-%d").date()
+    
+#     if return_date and isinstance(return_date, str):
+#         return_date = datetime.strptime(return_date, "%Y-%m-%d").date()
+    
+#     today = date.today()
+    
+#     if depart_date < today:
+#         raise ValueError("Departure date cannot be in the past")
+    
+#     if return_date and return_date < depart_date:
+#         raise ValueError("Return date cannot be before departure date")
+          
+               
 # Get All Routes Provided
 def get_ferry_routes(search: str = None):
     """
@@ -46,19 +74,25 @@ def get_ferry_routes(search: str = None):
 
 # Get All Trips for users to choose
 # raw shedules from Sindo API
-def get_ferry_trips(departure: str, destination: str, date: str):
+def get_ferry_trips(origin: str, destination: str, date: str):
     """
     Ambil daftar trip / jadwal ferry dari API Sindo.
     """
-    data = sindo_client.get_sindo_trips(departure, destination, date)
-
-    # Kalau API balikin list langsung
-    if isinstance(data, list):
-        records = data
-    else:
-        # fallback kalau ada format lain
-        records = data.get("data", {}).get("records", [])
-    return {"trips": records}
+    try:
+        sindo_date = date.replace("-", "")
+        data = sindo_client.get_sindo_trips(origin, destination, date)
+        logger.debug(f"Raw API response: {data}")
+        # Kalau API balikin list langsung
+        if isinstance(data, list):
+            records = data
+        else:
+            # fallback kalau ada format lain
+            records = data.get("data", {}).get("records", [])
+        logger.info(f"Found {len(records)} trips")
+        return {"trips": records}
+    except Exception as e:
+        logger.error(f"Error in get_ferry_trips: {str(e)}")
+        raise
 
 def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
     """
@@ -77,7 +111,7 @@ def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
 def get_ferry_oneway(search_request: TripSearchRequest):
     try:
         # Validate origin and destination
-        if search_request.departure == search_request.destination:
+        if search_request.origin == search_request.destination:
             raise ValueError("Origin and destination cannot be the same")
             
         # Validate pax count
@@ -85,27 +119,27 @@ def get_ferry_oneway(search_request: TripSearchRequest):
             raise ValueError("Number of passengers must be at least 1")
         
         # Get available sectors to validate the route
-        sectors_response = get_ferry_available_sectors()
-        if sectors_response.get("status") == "error":
-            raise ValueError(sectors_response.get("message", "Error fetching available sectors"))
+        # sectors_response = get_ferry_available_sectors()
+        # if sectors_response.get("status") == "error":
+        #     raise ValueError(sectors_response.get("message", "Error fetching available sectors"))
         
-        sectors = sectors_response.get("sectors", [])
+        # sectors = sectors_response.get("sectors", [])
         
-        # Find the sector that matches the departure and destination
-        matching_sector = None
-        for sector in sectors:
-            if (search_request.departure in sector["code"] and 
-                search_request.destination in sector["code"]):
-                matching_sector = sector
-                break
+        # # Find the sector that matches the departure and destination
+        # matching_sector = None
+        # for sector in sectors:
+        #     if (search_request.departure in sector["code"] and 
+        #         search_request.destination in sector["code"]):
+        #         matching_sector = sector
+        #         break
         
-        if not matching_sector:
-            raise ValueError("No available route between selected locations")
-        
-        sindo_date = format_date_for_sindo(search_request.depart_date)
+        # if not matching_sector:
+        #     raise ValueError("No available route between selected locations")
+        validate_dates(search_request.depart_date)
+        sindo_date = search_request.depart_date.strftime("%Y%m%d")
         
         # Get raw data from Sindo API 
-        trips = get_ferry_trips(matching_sector[""], sindo_date)
+        trips = get_ferry_trips(search_request.origin, search_request.destination, sindo_date)
         # Check if API returned an error
         if trips.get("status") == "error":
             raise ValueError(trips.get("message", "Error fetching ferry data")) 
@@ -114,14 +148,14 @@ def get_ferry_oneway(search_request: TripSearchRequest):
             
         # Transform data for frontend consumption
         display_trips = []
-        current_time = datetime.now()
+        # current_time = datetime.now()
         
         for item in trips_list:
            # Calculate duration from departure and arrival times
-            dep_time = datetime.strptime(item.get("departureTime", "00:00"), "%H:%M")
-            arr_time = datetime.strptime(item.get("arrivalTime", "00:00"), "%H:%M")
-            duration_minutes = (arr_time - dep_time).total_seconds() / 60
-            duration = f"{int(duration_minutes // 60)}h {int(duration_minutes % 60)}m"
+            # dep_time = datetime.strptime(item.get("departureTime", "00:00"), "%H:%M")
+            # arr_time = datetime.strptime(item.get("arrivalTime", "00:00"), "%H:%M")
+            # duration_minutes = (arr_time - dep_time).total_seconds() / 60
+            # duration = f"{int(duration_minutes // 60)}h {int(duration_minutes % 60)}m"
             
             # Calculate base price per passenger
             base_price = calculate_base_price(item, search_request.ferry_class)
@@ -131,18 +165,18 @@ def get_ferry_oneway(search_request: TripSearchRequest):
                 schedule_id=uuid.UUID(item.get("tripSchedID", str(uuid.uuid4()))),
                 departure_time=item.get("departureTime"),
                 arrival_time=item.get("arrivalTime"),
-                duration=duration,
+                duration=item.get("duration", "N/A"),
                 status=item.get("status", "Available"),
                 available_seats=item.get("availableSeats", 0), # Use actual field from API
                 base_price=base_price,
                 currency="IDR",
                 vessel_name=item.get("vesselName", "Unknown Vessel"),
                 operator=item.get("operator", "Unknown Operator"),
-                departure_port=search_request.departure,
+                departure_port=search_request.origin,
                 arrival_port=search_request.destination,
                 tax_percentage=0.1,  # Example 10% tax
                 tax_amount=base_price * 0.1,
-                total_price=base_price * 1.1  # Base + tax,
+                total_price=base_price * 1.1,  # Base + tax,
                 metadata=item
             )
             display_trips.append(display_trip)
@@ -163,17 +197,23 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
     
     try:
         # Validate origin and destination
-        if search_request.departure == search_request.destination:
+        if search_request.origin == search_request.destination:
             raise ValueError("Origin and destination cannot be the same")
             
         # Validate pax count
         if search_request.pax < 1:
             raise ValueError("Number of passengers must be at least 1")
         
+        validate_dates(search_request.depart_date, search_request.return_date)
+        
+        # Format and validate dates
+        sindo_depart_date = search_request.depart_date.strftime("%Y%m%d")
+        sindo_return_date = search_request.return_date_date.strftime("%Y%m%d")
+       
         # Get departure trips
         depart_search = TripSearchRequest(
             nationality=search_request.nationality,
-            departure=search_request.departure,
+            origin=search_request.origin,
             destination=search_request.destination,
             depart_date=search_request.depart_date,
             pax=search_request.pax,
@@ -186,8 +226,8 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
         # Get return trips
         return_search = TripSearchRequest(
             nationality=search_request.nationality,
-            departure=search_request.destination,
-            destination=search_request.departure,
+            origin=search_request.origin,
+            destination=search_request.destination,
             depart_date=search_request.return_date,
             pax=search_request.pax,
             ferry_class=search_request.ferry_class,

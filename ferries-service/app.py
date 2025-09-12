@@ -1,9 +1,15 @@
 from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
 import os
-
 from routes.ferries import router as ferries_router
 # from routes.ferries_mock import router_mock as ferries_router_mock
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 # Load .env variables
 load_dotenv()
@@ -20,11 +26,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-app.include_router(ferries_router, prefix="/api/v1/ferries")
+app.include_router(ferries_router)
+# app.include_router(ferries_router, prefix="/api/v1/ferries")
 # app.include_router(ferries_router_mock)
 
 
-health_router = APIRouter(prefix="/ferries")
+health_router = APIRouter()
 
 @app.get("/")
 async def root():
@@ -40,7 +47,8 @@ async def health_check():
         "api_key_present": bool(FERRY_API_KEY)
     }
 
-app.include_router(health_router, prefix="/api/v1/ferries")  # ✅ Important
+app.include_router(health_router)
+# app.include_router(health_router, prefix="/api/v1/ferries")  # ✅ Important
 # if __name__ == "__main__":
 #     import uvicorn
 #     uvicorn.run("app:app", host="0.0.0.0", port=8000)

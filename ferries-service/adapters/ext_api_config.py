@@ -11,9 +11,9 @@ class Settings:
     SINDO_BASE_URL: str = os.getenv("SINDO_BASE_URL") or "https://api.test.sindoferry.com.sg/Agent"    
     SINDO_CORE_URL: str = os.getenv("SINDO_CORE_URL") or "https://core.test.sindoferry.com.sg/api"
     SINDO_AGENT_URL: str = os.getenv("SINDO_AGENT_URL") or "https://api.test.sindoferry.com.sg/agent"
-    SINDO_AGENT_CODE: str = os.getenv("SINDO_AGENT_CODE", "T900T63")
-    SINDO_USERNAME: str = os.getenv("SINDO_USERNAME", "testparistvl")
-    SINDO_PASSWORD: str = os.getenv("SINDO_PASSWORD", "j&o99?Pm2#Uj")
+    SINDO_AGENT_CODE: str = os.getenv("SINDO_AGENT_CODE", "")
+    SINDO_USERNAME: str = os.getenv("SINDO_USERNAME", "")
+    SINDO_PASSWORD: str = os.getenv("SINDO_PASSWORD", "")
 
     def validate(self):
         missing = [k for k, v in self.__dict__.items() if v in (None, "")]

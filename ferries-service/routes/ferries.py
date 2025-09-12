@@ -26,7 +26,7 @@ def list_routes(search: str = Query(None, description="Search route by name or c
 # Simple trip listing endpoint (for basic use cases)
 @router.get("/trips")
 def list_trips(
-    departure: str = Query(..., description="Origin port code (ex: BTC)"),
+    origin: str = Query(..., description="Origin port code (ex: BTC)"),
     destination: str = Query(..., description="Destination port code (ex: HFC)"),
     date: str = Query(..., description="Departure date (YYYY-MM-DD)")
 ):
@@ -34,47 +34,52 @@ def list_trips(
     Ambil daftar trip / jadwal ferry untuk route tertentu.
     - Wajib isi origin, destination, dan date.
     """
+    logger.info(f"Received trip request: {origin}->{destination} on {date}")
+    # try:
+    #     # Convert string date to date object
+    #     depart_date = datetime.strptime(date, "%Y-%m-%d").date()
+    #     logger.debug(f"Parsed date: {depart_date}")
+    #     # Create a basic search request
+    #     search_request = TripSearchRequest(
+    #         nationality="ID",  # Default value
+    #         departure=departure,
+    #         destination=destination,
+    #         depart_date=depart_date,
+    #         pax=1,
+    #         ferry_class="Economy Class",
+    #         is_round_trip=False
+    #     )
+        
+    #     # Use the search function
+    #     result = services.search_ferry_trips(search_request)
     try:
-        # Convert string date to date object
-        depart_date = datetime.strptime(date, "%Y-%m-%d").date()
-        
-        # Create a basic search request
-        search_request = TripSearchRequest(
-            nationality="ID",  # Default value
-            departure=departure,
-            destination=destination,
-            depart_date=depart_date,
-            pax=1,
-            ferry_class="Economy Class",
-            is_round_trip=False
-        )
-        
-        # Use the search function
-        result = services.search_ferry_trips(search_request)
-        return result
+        return services.get_ferry_trips(origin, destination, date)
     except ValueError as e:
+        logger.error(f"Value error in list_trips: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Unexpected error in list_trips: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
     
-@router.get("/trips/oneway")
+@router.get("/trips/search/oneway")
 def search_oneway_trips(
     nationality: str = Query(..., description="Passenger nationality (country code)"),
-    departure: str = Query(..., description="Departure port code"), 
+    origin: str = Query(..., description="Departure port code"), 
     destination: str = Query(..., description="Arrival port code"), 
     date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
     pax: int = Query(1, description="Number of passengers"),
     ferry_class: str = Query("Economy Class", description="Ferry class")
 ):
     try:
+        
         # Convert string date to date object
-        depart_date = datetime.strptime(date, "%Y-%m-%d").date()
+        depart_date = datetime.strptime(date, "%Y%m%d").date()
         
         # Create search request
         search_request = TripSearchRequest(
             nationality=nationality,
-            departure=departure,
+            origin=origin,
             destination=destination,
             depart_date=depart_date,
             pax=pax,
@@ -94,7 +99,7 @@ def search_oneway_trips(
 @router.get("/trips/search/roundtrip")
 def search_roundtrip_trips(
     nationality: str = Query(..., description="Passenger nationality (country code)"),
-    departure: str = Query(..., description="Departure port code"), 
+    origin: str = Query(..., description="Departure port code"), 
     destination: str = Query(..., description="Arrival port code"), 
     depart_date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
     return_date: str = Query(..., description="Return date in YYYY-MM-DD format"),
@@ -103,13 +108,13 @@ def search_roundtrip_trips(
 ):
     try:
         # Convert string dates to date objects
-        depart_date_obj = datetime.strptime(depart_date, "%Y-%m-%d").date()
-        return_date_obj = datetime.strptime(return_date, "%Y-%m-%d").date()
+        depart_date_obj = datetime.strptime(depart_date, "%Y%m%d").date()
+        return_date_obj = datetime.strptime(return_date, "%Y%m%d").date()
         
         # Create search request
         search_request = TripSearchRequest(
             nationality=nationality,
-            departure=departure,
+            origin=origin,
             destination=destination,
             depart_date=depart_date_obj,
             pax=pax,

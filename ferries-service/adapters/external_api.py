@@ -1,9 +1,11 @@
 import os
 from typing import Optional
+import logging
 import requests
 import json
 from adapters.ext_api_config import settings
 
+logger = logging.getLogger(__name__)
 _access_token = None  # cache sementara
 
 
@@ -77,7 +79,7 @@ class SindoClient:
                 
         url = f"{base_url}{endpoint}"
             
-        # print(f"DEBUG: Making request to URL: {url}") 
+        print(f"DEBUG: Making request to URL: {url}") 
         try:    
             self._ensure_token()
             resp = self.session.request(method, url, **kwargs)          
@@ -123,8 +125,10 @@ class SindoClient:
             "destination": destination, # ex: HFC
             "tripdate": date   # format: YYYY-MM-DD
         }
-        return self._request("GET", "/Trips/GetTripWeb", use_core_url=True, params=params) 
-
+        logger.debug(f"Making request to Sindo API with params: {params}")
+        response = self._request("GET", "/Trips/GetTripWeb", use_core_url=True, params=params) 
+        logger.debug(f"Sindo API response: {response}")
+        return response
     
     def create_sindo_booking(self, booking_data: dict):
         """Create a new booking"""

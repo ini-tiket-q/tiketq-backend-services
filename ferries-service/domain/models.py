@@ -81,15 +81,15 @@ class ContactInfo(BaseModel):
 
 class TripSearchRequest(BaseModel):
     nationality: str = Field(..., min_length=2, max_length=3)
-    departure: str = Field(..., min_length=3, max_length=10)
-    destination: str = Field(..., min_length=3, max_length=10)
+    origin: str = Field(..., min_length=3, max_length=20, alias="departure")
+    destination: str = Field(..., min_length=3, max_length=20)
     depart_date: date
     pax: int = Field(1, ge=1, le=10)
     is_round_trip: bool = False
     return_date: Optional[date] = None
     ferry_class: FerryClass = FerryClass.ECONOMY
 
-    @field_validator('departure', 'destination')
+    @field_validator('origin', 'destination')
     @classmethod
     def validate_port_codes(cls, v):
         # Add specific validation for port codes if needed
