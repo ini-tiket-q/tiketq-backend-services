@@ -313,18 +313,52 @@ def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
 # Get Booking details 
 def get_ferry_booking_details(booking_id: str, search: str = None):
     """
-    Ambil detail penumpang dari sebuah booking.
+    Ambil detail penumpang dari sebuah booking dan hitung total amount
+    berdasarkan BookingTypePricings dari Sindo API.
     """
+    # --- Ambil detail penumpang ---
     data = sindo_client.get_sindo_booking_details(booking_id, search=search)
     records = data.get("data", {}).get("records", [])
 
     if not records:
         return {"status": "error", "message": "No booking details found"}
 
-    # --- Hitung total amount berdasarkan jumlah penumpang ---
-    passenger_count = len(records)
-    default_price_per_passenger = 654000
-    total_amount = passenger_count * default_price_per_passenger
+    # --- Ambil harga tiket dari endpoint BookingTypePricings ---
+    pricing_data = sindo_client.get_booking_type_pricings()
+    pricing_items = pricing_data.get("data", {}).get("records", [])
+
+    # fallback harga default kalau tidak ada di API
+    default_price = 654000  
+
+    # Buat dict harga berdasarkan bookingType.name
+    price_map = {
+        item.get("bookingType", {}).get("name"): item.get("totalPrice", default_price)
+        for item in pricing_items
+        if isinstance(item.get("bookingType"), dict)
+    }
+
+
+    # --- Hitung total amount & mapping item_details ---
+    item_details = []
+    total_amount = 0
+
+    for i, rec in enumerate(records):
+        passenger_name = rec.get("passengerName", f"Passenger {i+1}")
+
+        passenger_type = rec.get("bookingType", "Adult")
+        if isinstance(passenger_type, dict):
+            passenger_type = passenger_type.get("name", "Adult")
+
+        passenger_price = price_map.get(passenger_type, default_price)
+
+        item_details.append({
+            "item_id": f"{booking_id}_{i+1}",
+            "name": passenger_name,
+            "price": passenger_price,
+            "quantity": 1
+        })
+
+        total_amount += passenger_price
 
     # --- Mapping ke format payment payload ---
     mapped_response = {
@@ -336,20 +370,13 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
             "email": "customer@example.com",   # default, bisa diisi dari booking data
             "phone": "081234567890"            # default, bisa diisi dari booking data
         },
-        "item_details": [
-            {
-                "item_id": f"{booking_id}_{i+1}",
-                "name": rec.get("passengerName", f"Passenger {i+1}"),
-                "price": default_price_per_passenger,
-                "quantity": 1
-            }
-            for i, rec in enumerate(records)
-        ],
-        "description": f"Ferry booking {booking_id} for {passenger_count} passenger(s)",
+        "item_details": item_details,
+        "description": f"Ferry booking {booking_id} for {len(records)} passenger(s)",
         "expiry_duration": 1
     }
 
     return mapped_response
+
 
 # Get countries
 def get_ferry_countries(search: str = None):
@@ -388,9 +415,9 @@ def get_ferry_available_sectors():
     records = data.get("data", {}).get("records", [])
     return {"sectors": records}
 
-# domain/services.py
 
 
+# get booking type pricing
 def list_booking_type_pricings(search: str = None):
     """
     Service untuk ambil Booking Type Pricings (daftar harga tiket).
