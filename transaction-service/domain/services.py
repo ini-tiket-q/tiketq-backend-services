@@ -5,7 +5,8 @@ import logging
 from sqlalchemy.orm import Session
 import os
 from fastapi import HTTPException, status, Depends, Header
-from adapters.external_api import get_user_info
+from adapters.external_api import (get_user_info, create_payment_url)
+from jose import jwt, JWTError
 
 from domain.models import (
     TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus,
@@ -55,9 +56,11 @@ class TransactionService:
         self, 
         transaction_repo: DBTransactionRepository,
         order_repo: DBOrderRepository,
+        payment_repo: DBPaymentRepository,
     ):
         self.transaction_repo = transaction_repo
         self.order_repo = order_repo
+        self.payment_repo = payment_repo
     
     def create_transaction(self, transaction_request: TransactionCreateRequest, email: str) -> Optional[TransactionInDB]:
         """Create a new transaction with validated request model.
@@ -85,12 +88,26 @@ class TransactionService:
             tax = transaction_request.tax
             discount = transaction_request.discount
             total = transaction_request.total
+
+            items_as_dicts = []
+            item_details_for_payment = []
             
             # Convert TransactionItem objects to dictionaries
-            items_as_dicts = [
-                item.model_dump() if hasattr(item, 'model_dump') else dict(item)
-                for item in transaction_request.items
-            ]
+            for item in transaction_request.items:
+                items_as_dicts.append(item.model_dump() if hasattr(item, 'model_dump') else dict(item))
+                item_details_for_payment.append({
+                    "id": order_number,
+                    "price": item.price,
+                    "quantity": item.quantity,
+                    "name": item.name,
+                })
+
+            item_details_for_payment.append({
+                "id": order_number,
+                "price": tax - discount,
+                "quantity": 1,
+                "name": "Tax and discount",
+            })
 
             # Create order data with email
             order_data = {
@@ -102,34 +119,68 @@ class TransactionService:
                 'tax': tax,
                 'discount': discount,
                 'total': total,
-                'status': OrderStatus.DRAFT,
-                'metadata': transaction_request.metadata
+                'status': OrderStatus.CONFIRMED,
+                'metadata': transaction_request.transaction_metadata
             }
             
             order = self.order_repo.create_order(OrderCreate(**order_data))
             if not order:
                 logger.error("Failed to create order")
                 return None
-            
+
+
+            # create payment gateway url from payment service
+            payment_body = {
+                "order_id": order_number,
+                "amount": float(total),  # Ensure amount is a float
+                "payment_method": transaction_request.payment_method.value.lower(),  # Ensure lowercase for payment method
+                "customer_details": {
+                    "email": email,
+                },
+                "item_details": item_details_for_payment,
+                "description": "Payment for order " + order.order_number,
+            }
+
+            payment_url_body = create_payment_url(payment_body)
+            if not payment_url_body:
+                logger.error("Failed to create payment")
+                return None
+
             # Create transaction using validated request data
             transaction = TransactionCreate(
                 email=email,
                 order_number=order.order_number,
                 transaction_type=transaction_request.transaction_type,
-                amount=transaction_request.amount,
+                amount=total,
                 currency=transaction_request.currency,
-                status=TransactionStatus.PENDING,
+                status=TransactionStatus.PROCESSING,
                 payment_method=transaction_request.payment_method,
                 payment_gateway=transaction_request.payment_gateway,
-                gateway_transaction_id=None,  # Set later during payment processing
-                metadata=transaction_request.metadata
+                gateway_transaction_id= payment_url_body.get("transaction_id"),
+                metadata=transaction_request.transaction_metadata
             )
-            
+
             db_transaction = self.transaction_repo.create_transaction(transaction)
             if not db_transaction:
                 logger.error("Failed to create transaction")
                 return None
-            
+            # create payment in db
+            payment = PaymentCreate(
+                transaction_id=db_transaction.id,
+                amount=transaction_request.total,
+                currency=transaction_request.currency,
+                payment_method=transaction_request.payment_method,
+                payment_gateway=transaction_request.payment_gateway,
+                gateway_transaction_id=payment_url_body.get("transaction_id"),
+                status=PaymentStatus.PENDING,
+                meta_data=transaction_request.payment_metadata
+            )
+
+            db_payment = self.payment_repo.create_payment(payment)
+            if not db_payment:
+                logger.error("Failed to create payment")
+                return None
+
             # Log successful transaction creation
             logger.info(
                 f"Transaction created successfully - ID: {db_transaction.id}, "
@@ -140,6 +191,9 @@ class TransactionService:
                 f"Gateway: {transaction_request.payment_gateway.value if transaction_request.payment_gateway else 'Not set'}, "
                 f"Items: {len(transaction_request.items)}"
             )
+
+            # add payment url to transaction
+            db_transaction.payment_url = payment_url_body.get("payment_url")
                 
             return db_transaction
             
@@ -739,9 +793,8 @@ class PaymentService:
     
     def confirm_payment(
         self, 
-        payment_id: int, 
+        order_number: str, 
         gateway_response: PaymentConfirmRequest,
-        confirmed_by: int
     ) -> Optional[PaymentInDB]:
         """Confirm a payment with gateway response data.
         
@@ -758,6 +811,19 @@ class PaymentService:
         """
     
         try:
+            # Validate payment token
+            if not self.validate_payment_token(gateway_response.token):
+                logger.error("Invalid payment token")
+                raise ValueError("Invalid payment token")
+
+            # Get payment with order number
+            payment = self.payment_repo.get_payment_by_order_number(order_number)
+            if not payment:
+                logger.error(f"Payment {order_number} not found")
+                return None
+
+            payment_id = payment.id
+            
             # Get payment with transaction
             logger.info(f"Payment {payment_id} found")
             payment = self.payment_repo.get_payment(payment_id)
@@ -800,7 +866,6 @@ class PaymentService:
                     metadata={
                         **payment.metadata,
                         'gateway_response': gateway_response.gateway_response,
-                        'confirmed_by': confirmed_by,
                         'confirmed_at': datetime.now(timezone.utc)
                     }
                 )
@@ -814,49 +879,28 @@ class PaymentService:
             return updated_payment
             
         except Exception as e:
-            logger.error(f"Error confirming payment {payment_id}: {str(e)}", exc_info=True)
+            logger.error(f"Error confirming payment with order number {order_number}: {str(e)}", exc_info=True)
             return None
 
+    def validate_payment_token(self, token: str) -> bool:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            status: str = payload.get("token")
+            if status == "success":
+                return True
+            return False
+        except JWTError:
+            return False
 
-    def process_webhook(
-        self,
-        webhook_data: Dict[str, Any]
-    ) -> Optional[PaymentInDB]:
-        """Process a payment webhook with validation.
-        
-        Args:
-            webhook_data: Dictionary containing webhook data
-            
-        Returns:
-            Updated PaymentInDB if successful, None otherwise
-            
-        Raises:
-            ValueError: If webhook data validation fails
-        """
+    def create_payment_token(self):
         try:
-            validated_request = PaymentWebhookRequest(**webhook_data)
+            logger.info("Creating payment token")
+            payload = {
+                "token": "success"
+            }
+            return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
         except Exception as e:
-            logger.error(f"Payment webhook validation failed: {str(e)}")
-            raise ValueError(f"Payment webhook validation failed: {str(e)}")
-        
-        try:
-            # Update payment status based on webhook
-            payment = self.payment_repo.update_payment(
-                payment_id=validated_request.payment_id,
-                payment_data={
-                    "status": validated_request.status,
-                    "gateway_response": validated_request.gateway_response
-                }
-            )
-            
-            if not payment:
-                logger.error(f"Payment {validated_request.payment_id} not found for webhook processing")
-                return None
-            
-            return payment
-            
-        except Exception as e:
-            logger.error(f"Error processing webhook for payment {validated_request.payment_id}: {str(e)}", exc_info=True)
+            logger.error(f"Error creating payment token: {str(e)}", exc_info=True)
             return None
 
 

@@ -29,7 +29,8 @@ def get_transaction_service(db: Session = Depends(get_database_session)) -> Tran
     """Dependency injection for TransactionService"""
     transaction_repo = DBTransactionRepository(db)
     order_repo = DBOrderRepository(db)
-    return TransactionService(transaction_repo, order_repo)
+    payment_repo = DBPaymentRepository(db)
+    return TransactionService(transaction_repo, order_repo, payment_repo)
 
 def get_refund_service(db: Session = Depends(get_database_session)) -> RefundService:
     """Dependency injection for RefundService"""
@@ -48,6 +49,8 @@ def get_refund_service(db: Session = Depends(get_database_session)) -> RefundSer
     
     ### Access Level: Public
     - No authentication required
+
+    This endpoint creates a new transaction, order, and payment in the database and returns the created transaction along with payment url.
     """
 )
 async def create_transaction(
@@ -58,7 +61,6 @@ async def create_transaction(
         example={
             "email": "john.doe@example.com",
             "transaction_type": "BOOKING",
-            "amount": 885000,
             "currency": "IDR",
             "service_type": "FLIGHTS",
             "items": [
@@ -71,24 +73,29 @@ async def create_transaction(
                         "departure_date": "2025-09-15",
                         "flight_number": "GA-123",
                         "airline": "Garuda Indonesia",
-                        "class": "Economy"
-                    }
+                        "class": "Economy",
+                    },
                 }
             ],
             "subtotal": 850000,
             "tax": 85000,
             "discount": 50000,
             "total": 885000,
-            "payment_method": "CREDIT_CARD",
+            "payment_method": "credit_card",
             "payment_gateway": "MIDTRANS",
-            "metadata": {
+            "transaction_metadata": {
                 "order_id": "ORD-79AFA780",
                 "passenger_name": "John Doe",
                 "booking_reference": "TQ-FL-001",
-                "ip_address": "192.168.1.100"
-            }
-        }
-    )
+                "ip_address": "192.168.1.100",
+            },
+            "payment_metadata": {
+                "bank_name": "BCA",
+                "card_last_digits": "1234",
+                "card_type": "visa",
+            },
+        },
+    ),
 ):
     """Create a new transaction - USER/ADMIN access"""
     start_time = time.time()
@@ -100,7 +107,7 @@ async def create_transaction(
             event_type=AuditEventType.TRANSACTION_CREATED,
             transaction_id=0,  # Will be updated after creation
             email=transaction_request.email,
-            amount=transaction_request.amount,
+            amount=transaction_request.total,
             currency=transaction_request.currency,
             details={
                 "transaction_type": transaction_request.transaction_type.value,
@@ -126,7 +133,7 @@ async def create_transaction(
                 event_type=AuditEventType.TRANSACTION_FAILED,
                 transaction_id=0,
                 email=transaction_request.email,
-                amount=transaction_request.amount,
+                amount=transaction_request.total,
                 currency=transaction_request.currency,
                 details={"error": "Failed to create transaction in service layer"},
                 request_context=request_context
@@ -172,7 +179,7 @@ async def create_transaction(
                 "operation": "create_transaction",
                 "validation_error": True,
                 "email": transaction_request.email,
-                "amount": transaction_request.amount
+                "total": transaction_request.total
             },
             email=transaction_request.email,
             endpoint="/transactions/"
@@ -189,7 +196,7 @@ async def create_transaction(
             context={
                 "operation": "create_transaction",
                 "email": transaction_request.email,
-                "amount": transaction_request.amount,
+                "total": transaction_request.total,
                 "operation_duration_ms": (time.time() - start_time) * 1000
             },
             email=transaction_request.email,

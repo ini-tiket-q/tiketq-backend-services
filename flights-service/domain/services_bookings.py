@@ -1,5 +1,7 @@
 import os
 import inspect
+import json
+from adapters.payment_clients import create_payment
 from adapters.mmbc_factory import mmbc
 from domain.schemas_bookings import (
     GetPriceRequest, GetPriceResponse,
@@ -7,9 +9,10 @@ from domain.schemas_bookings import (
     ResetPasswordRequest, ResetPasswordResponse,
     KodeBookingRequest,
     GetIssuedResponseSuccess, GetIssuedResponseError,
-    GetStatusBookingResponse
+    GetStatusBookingResponse, GetETicketRequest, GetETicketResponse
 )
 from fastapi import HTTPException
+from adapters.payment_db_reader import get_payment_status_by_order_id
 
 
 class PriceError(Exception):
@@ -57,6 +60,8 @@ async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
     return result
 
 
+
+
 async def post_booking_service(req: PostBookingRequest):
     kwargs = req.dict(by_alias=True)
 
@@ -68,14 +73,65 @@ async def post_booking_service(req: PostBookingRequest):
     if result.get("result") == "no":
         raise BookingError(result.get("reason", "Booking failed"), result)
 
+    # 💳 Payment Integration
+    try:
+        # Parse contact details from stringified JSON
+        contact_json = result.get("flight_contactdetails_json", "{}")
+        contact_data = json.loads(contact_json)
+
+        # Optional: parse passenger count from passenger JSON
+        passengers_json = result.get("flight_datapassengers_json", "[]")
+        passengers = json.loads(passengers_json)
+
+        payment_payload = {
+            "order_id": f"FLIGHT-{result['kodebooking']}",
+            "amount": float(result["flight_totalfare"]),
+            "payment_method": "credit_card",  # or make this dynamic later
+            "customer_details": {
+                "first_name": contact_data.get("contact_fullname", "").split(" ")[0],
+                "last_name": " ".join(contact_data.get("contact_fullname", "").split(" ")[1:]),
+                "email": contact_data.get("contact_email"),
+                "phone": contact_data.get("contact_phone")
+            },
+            "item_details": [
+                {
+                    "id": f"flight-{result['kodebooking']}",
+                    "price": float(result["flight_totalfare"]),
+                    "quantity": len(passengers),
+                    "name": f"Flight Ticket {result.get('flight_route', result['flight_code'])}"
+                }
+            ],
+            "description": f"Flight booking payment for {result['flight_code']}"
+        }
+
+        payment_response = await create_payment(payment_payload)
+
+        result["payment_status"] = "initiated"
+        result["payment_response"] = payment_response
+
+    except Exception as e:
+        result["payment_status"] = "failed"
+        result["payment_error"] = str(e)
+
     return result
 
-async def get_issued_service(kodebooking: str) -> dict:
-    result = await mmbc.get_issued(kodebooking=kodebooking)
-    if result.get("result") == "no":
-        raise IssuedError(result.get("reason", "Unknown error"))
+def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
+    order_id = f"FLIGHT-{kodebooking}"
+    pay_status = get_payment_status_by_order_id(order_id)
 
-    return result
+    print(f"[DEBUG] reconcile: order_id={order_id}, pay_status={pay_status}, current_status={current_status}")
+
+    if not pay_status:
+        return current_status
+
+    if pay_status.upper() in ("SUCCESS", "PAID"):
+        return "PAID"
+    elif pay_status.upper() in ("FAILED", "EXPIRED"):
+        return pay_status.upper()
+
+    return current_status
+
+
 
 async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
     result = await mmbc.get_status_booking(kodebooking=kodebooking)
@@ -83,16 +139,97 @@ async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
     if result.get("result") == "no":
         raise HTTPException(status_code=404, detail=result)
 
-    return result
+    # MMBC's reported status
+    mm_status = result.get("flight_statusbooking", "waiting")
+
+    # Check payment status via payment-service
+    pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
+
+    # Build response aligned with schema
+    response = GetStatusBookingResponse(
+        result="ok",
+        flight_statusbooking=mm_status,
+        reason=result.get("reason", ""),
+        payment_status=pay_status
+    )
+
+    return response
 
 
-async def get_eticket_service(kodebooking: str) -> dict:
+async def get_issued_service(kodebooking: str) -> GetIssuedResponseSuccess:
+    # Check booking exists at MMBC
+    status_resp = await mmbc.get_status_booking(kodebooking=kodebooking)
+    if status_resp.get("result") == "no":
+        raise HTTPException(status_code=404, detail=status_resp)
+
+    # Reconcile payment first
+    mm_status = status_resp.get("flight_statusbooking", "waiting")
+    pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
+
+    if pay_status != "PAID":
+        raise HTTPException(status_code=402, detail="Payment not completed")
+
+    # Call MMBC to issue ticket
+    issued = await mmbc.get_issued(kodebooking=kodebooking)
+
+    if issued.get("result") == "no":
+        # MMBC rejected issuance
+        raise IssuedError(issued.get("reason", "Unknown error"))
+
+    # Build response aligned with API docs
+    response = GetIssuedResponseSuccess(
+        result="ok",
+        tid=issued.get("tid"),
+        tanggal=issued.get("tanggal"),
+        flight=issued.get("flight"),
+        flight_code=issued.get("flight_code"),
+        kodebooking=issued.get("kodebooking"),
+        flight_route=issued.get("flight_route"),
+        flight_departure=issued.get("flight_departure"),
+        flight_time=issued.get("flight_time"),
+        flight_transit=issued.get("flight_transit"),
+        flight_infotransit=issued.get("flight_infotransit"),
+        flight_class=issued.get("flight_class"),
+        flight_totalpassenger=issued.get("flight_totalpassenger"),
+        flight_datapassengers_json=issued.get("flight_datapassengers_json"),
+        flight_contactdetails_json=issued.get("flight_contactdetails_json"),
+        flight_currency=issued.get("flight_currency"),
+        flight_publishfare=issued.get("flight_publishfare"),
+        flight_tax=issued.get("flight_tax"),
+        flight_totalfare=issued.get("flight_totalfare"),
+        flight_realnta=issued.get("flight_realnta"),
+        flight_shownta=issued.get("flight_shownta"),
+        flight_bonus_agen=issued.get("flight_bonus_agen"),
+        flight_timelimit=issued.get("flight_timelimit"),
+        flight_bookingby=issued.get("flight_bookingby"),
+        flight_bookingby_kodeagen=issued.get("flight_bookingby_kodeagen"),
+        flight_issued_date=issued.get("flight_issued_date"),
+        flight_issued_ticketnumber=issued.get("flight_issued_ticketnumber"),
+        flight_issuedby=issued.get("flight_issuedby"),
+        flight_issuedby_kodeagen=issued.get("flight_issuedby_kodeagen"),
+        flight_statusbooking=issued.get("flight_statusbooking"),
+    )
+    return response
+
+
+
+
+
+
+
+async def get_eticket_service(kodebooking: str) -> GetETicketResponse:
     result = await mmbc.get_eticket(kodebooking=kodebooking)
 
     if result.get("result") == "no":
         raise ETicketError(result.get("reason", "Failed to retrieve e-ticket"))
 
-    return result
+    # Build response aligned with schema
+    response = GetETicketResponse(
+        result=result.get("result", "no"),
+        reason=result.get("reason", "")
+    )
+    return response
+
 
 
 async def reset_password_service(req: ResetPasswordRequest) -> ResetPasswordResponse:

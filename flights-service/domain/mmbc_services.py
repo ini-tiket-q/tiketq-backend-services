@@ -65,7 +65,7 @@ class MMBCService:
 
 # export
 if MOCK_REMOTE:
-    from adapters.fake_mmbc import FakeMMBCClient
+    from adapters.fake_mmbc_bookings import FakeMMBCClient
     mmbc = FakeMMBCClient()
 else:
     mmbc = MMBCService()

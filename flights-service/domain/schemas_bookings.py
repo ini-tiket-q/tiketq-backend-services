@@ -208,7 +208,8 @@ class PostBookingResponse(BaseModel):
     flight_statusbooking: Optional[str] = None
     flight_realnta: Optional[int] = None
     flight_shownta: Optional[int] = None
-
+    payment_status: Optional[str] = None       # 👈 new
+    payment_response: Optional[dict] = None
 
 
 
@@ -259,8 +260,10 @@ class GetIssuedResponseError(BaseModel):
 # ===  Get Status Booking ===
 class GetStatusBookingResponse(BaseModel):
     result: str
-    flight_statusbooking: Literal["issued", "waiting"]
-    reason: Optional[str]
+    flight_statusbooking: Literal["issued", "waiting", "cancel", "expired"]
+    reason: str = ""   # MMBC always includes this, empty if no error
+    payment_status: Optional[str] = None  # extra, from our reconcile step
+
 
 
 # ===  Reset Password ===

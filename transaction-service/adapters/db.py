@@ -122,7 +122,7 @@ class Order(Base):
 class Payment(Base):
     """SQLAlchemy model for payments table"""
 
-    __tablename__ = "payments"
+    __tablename__ = "transaction_payments"
 
     id = Column(Integer, primary_key=True, index=True)
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
@@ -639,6 +639,16 @@ class DBPaymentRepository(PaymentRepository):
         except Exception as e:
             self.db.rollback()
             raise e
+
+    def get_payment_by_order_number(self, order_number: str) -> Optional[PaymentInDB]:
+        # Join with Transaction table to get payment by order_number
+        db_payment = (
+            self.db.query(Payment)
+            .join(Transaction, Payment.transaction_id == Transaction.id)
+            .filter(Transaction.order_number == order_number)
+            .first()
+        )
+        return self._to_domain_model(db_payment) if db_payment else None
 
     def _to_domain_model(self, db_payment: Payment) -> PaymentInDB:
         # Ensure metadata is a dict and not SQLAlchemy's MetaData
