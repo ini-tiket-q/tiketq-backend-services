@@ -69,6 +69,7 @@ class SindoClient:
         if not self._access_token:
             self._login()
 
+
     def _request(self, method, endpoint, use_core_url=False, **kwargs):
         """Wrapper for requests with automatic token refresh"""
         
@@ -76,7 +77,7 @@ class SindoClient:
                 
         url = f"{base_url}{endpoint}"
             
-        print(f"DEBUG: Making request to URL: {url}") 
+        # print(f"DEBUG: Making request to URL: {url}") 
         try:    
             self._ensure_token()
             resp = self.session.request(method, url, **kwargs)          
