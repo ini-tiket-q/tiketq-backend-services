@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Optional, List
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, DateTime, Enum, Text, DECIMAL, text
+from sqlalchemy import create_engine, Column, String, DateTime, Enum, Text, DECIMAL, text, types
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -42,12 +42,36 @@ class PaymentRecord(Base):
     """SQLAlchemy model for payment records"""
     __tablename__ = "payments"  # Table name in shared database
 
+    # Create a custom enum type that ensures lowercase values
+    class LowercaseStringEnum(types.TypeDecorator):
+        """Converts lowercase strings to enum values on the way in and out of the database"""
+
+        impl = types.String
+        cache_ok = True
+
+        def __init__(self, enum_type, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.enum_type = enum_type
+            self._value_cache = {e.value.lower(): e for e in enum_type}
+
+        def process_bind_param(self, value, dialect):
+            if value is None:
+                return None
+            if isinstance(value, self.enum_type):
+                return value.value.lower()
+            return str(value).lower()
+
+        def process_result_value(self, value, dialect):
+            if value is None:
+                return None
+            return self._value_cache.get(value.lower())
+
     # Use UUID for primary key
     payment_id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
     order_id = Column(String(255), index=True, nullable=False)
     status = Column(Enum(PaymentStatus), nullable=False, index=True)
     amount = Column(DECIMAL(15, 2), nullable=False)
-    payment_method = Column(Enum(PaymentMethod), nullable=False)
+    payment_method = Column(LowercaseStringEnum(PaymentMethod), nullable=False)
     transaction_time = Column(DateTime, nullable=False)
     expiry_time = Column(DateTime, nullable=True)
     payment_url = Column(Text, nullable=True)
