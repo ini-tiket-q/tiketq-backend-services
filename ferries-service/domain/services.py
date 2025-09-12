@@ -311,6 +311,8 @@ def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
 
 
 # Get Booking details 
+# ferries-service/domain/services.py
+
 def get_ferry_booking_details(booking_id: str, search: str = None):
     data = sindo_client.get_sindo_booking_details(booking_id, search=search)
     records = data.get("data", {}).get("records", [])
@@ -338,46 +340,62 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         or "Unknown Passenger"
     )
 
-    # --- Hitung total amount ---
-    total_amount = sum(
-        price_map.get(
+    # --- Ambil harga tiap penumpang (sementara 1 flight saja) ---
+    items = []
+    subtotal = 0
+    for i, rec in enumerate(records):
+        price = price_map.get(
             rec.get("bookingType", {}).get("name"),
             default_price
         )
-        for rec in records
-    )
+        subtotal += price
 
-    # --- Mapping ke payment payload ---
-    mapped_response = {
-        "order_id": booking_id,
-        "amount": total_amount,
-        "payment_method": "credit_card",
-        "customer_details": {
-            "name": passenger_name,
-            "email": "customer@example.com",
-            "phone": "081234567890"
-        },
-        "item_details": [
-            {
-                "item_id": f"{booking_id}_{i+1}",
-                "name": (
-                    rec.get("passengerName")
-                    or rec.get("identification", {}).get("fullName")
-                    or f"Passenger {i+1}"
-                ),
-                "price": price_map.get(
-                    rec.get("bookingType", {}).get("name"),
-                    default_price
-                ),
-                "quantity": 1
+        items.append({
+            "name": f"Ferry Ticket {i+1}",
+            "price": price,
+            "quantity": 1,
+            "description": f"Ferry ticket for passenger {passenger_name}",
+            "metadata": {
+                "departure_date": "2025-09-15",   # TODO: ambil dari rec kalau ada
+                "ferry_number": "SF-123",         # TODO: mapping ke data asli
+                "operator": "Sindo Ferry",        # fixed untuk sekarang
+                "class": "Economy"                # default sementara
             }
-            for i, rec in enumerate(records)
-        ],
-        "description": f"Ferry booking {booking_id} for {passenger_count} passenger(s)",
-        "expiry_duration": 1
+        })
+
+    # --- Hitung tax & discount ---
+    tax = int(subtotal * 0.1)    # contoh 10% pajak
+    discount = 0                 # sementara belum ada diskon
+    total = subtotal + tax - discount
+
+    # --- Mapping ke format baru ---
+    mapped_response = {
+        "email": "customer@example.com",
+        "transaction_type": "BOOKING",
+        "currency": "IDR",
+        "service_type": "FERRIES",
+        "items": items,
+        "subtotal": subtotal,
+        "tax": tax,
+        "discount": discount,
+        "total": total,
+        "payment_method": "credit_card",
+        "payment_gateway": "MIDTRANS",  # default sementara
+        "transaction_metadata": {
+            "order_id": booking_id,
+            "passenger_name": passenger_name,
+            "booking_reference": f"TQ-FR-{booking_id[:6]}",  # contoh reference
+            "ip_address": "192.168.1.100"
+        },
+        "payment_metadata": {
+            "bank_name": "BCA",
+            "card_last_digits": "1234",
+            "card_type": "visa"
+        }
     }
 
     return mapped_response
+
 
 
 
