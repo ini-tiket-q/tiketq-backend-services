@@ -163,3 +163,15 @@ def list_available_sectors():
         return services.get_ferry_available_sectors()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# get booking type pricing
+@router.get("/booking-type-pricings")
+def get_booking_type_pricings(search: str = Query(None, description="Search booking type")):
+    """
+    Ambil daftar Booking Type Pricings dari Sindo Ferry.
+    """
+    try:
+        return services.list_booking_type_pricings(search)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

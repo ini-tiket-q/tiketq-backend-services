@@ -387,3 +387,32 @@ def get_ferry_available_sectors():
     data = sindo_client.get_sindo_available_sectors()
     records = data.get("data", {}).get("records", [])
     return {"sectors": records}
+
+# domain/services.py
+
+
+def list_booking_type_pricings(search: str = None):
+    """
+    Service untuk ambil Booking Type Pricings (daftar harga tiket).
+    """
+    data = sindo_client.get_booking_type_pricings(search)
+    if data.get("status") != "Ok":
+        return {"status": "error", "message": data}
+
+    records = data["data"].get("records", [])
+    # bisa tambahkan normalisasi kalau mau (misal ambil code, name, price saja)
+    simplified = [
+        {
+            "id": rec.get("id"),
+            "code": rec.get("bookingType", {}).get("code"),
+            "name": rec.get("bookingType", {}).get("name"),
+            "isRoundTrip": rec.get("bookingType", {}).get("isRoundTrip"),
+            "departureSector": rec.get("bookingType", {}).get("departureSector", {}).get("name"),
+            "price": rec.get("totalPrice"),
+            "effectiveDate": rec.get("effectiveDate"),
+            "expiryDate": rec.get("expiryDate"),
+        }
+        for rec in records
+    ]
+
+    return {"status": "ok", "total": len(simplified), "records": simplified}

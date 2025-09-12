@@ -183,3 +183,22 @@ class SindoClient:
     def get_sindo_available_sectors(self):
         """Get available ferry sectors"""
         return self._request("GET", "/Booking/Sectors/Available")
+    
+   
+   
+    def get_booking_type_pricings(self, search: str = None):
+        """
+        Ambil daftar Booking Type Pricings dari Sindo API.
+        """
+        params = {
+            "filter": json.dumps({
+                "searchString": search if search else None,
+                "sort": 0,
+                "currentActive": True
+            }),
+            "pagination": json.dumps({
+                "pageIndex": 0,
+                "pageSize": 0
+            })
+        }
+        return self._request("GET", "/Booking/BookingTypePricings", params=params)
