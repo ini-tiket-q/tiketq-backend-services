@@ -1,9 +1,9 @@
 import os
 import httpx
-
 from fastapi import Request, Response
+from urllib.parse import urljoin
 
-# Load service URLs from env
+# Load service URLs from env (or default to Docker hostnames)
 SERVICES = {
     "auth": os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000"),
     "user": os.getenv("USER_SERVICE_URL", "http://user-service:8000"),
@@ -13,65 +13,65 @@ SERVICES = {
     "ppob": os.getenv("PPOB_SERVICE_URL", "http://ppob-service:8000"),
     "payment": os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8000"),
     "transaction": os.getenv("TRANSACTION_SERVICE_URL", "http://transaction-service:8000"),
+    "trains": os.getenv("TRAINS_SERVICE_URL", "http://trains-service:8000"),
 }
 
+# Map prefixes to service keys
 ROUTE_SERVICE_MAP = {
-    "/auth": "auth",
-    "/users": "user",
-    "/flights": "flights",
+    "api/v1/flights": "flights",
+    "api/v1/bookings": "flights",
     "/ferries": "ferries",
     "/hotels": "hotels",
     "/ppob": "ppob",
-    "/payments": "transaction",
+    "/payments": "payment",
     "/transactions": "transaction",
+    "/trains": "trains",
 }
 
-
 def resolve_target_url(path: str) -> str | None:
-    """
-    Match the route to a service and build the full URL.
-    """
-    for prefix, service in ROUTE_SERVICE_MAP.items():
-        if path.startswith(prefix.lstrip("/")):
-            return f"{SERVICES[service]}/{path}"
+    for prefix, service_key in ROUTE_SERVICE_MAP.items():
+        if path.startswith(prefix):
+            return urljoin(SERVICES[service_key] + "/", path)
     return None
-
 
 async def forward_request(request: Request, full_path: str) -> Response:
     """
-    Forward the request to the matched service.
+    Forwards a request from API Gateway to the target microservice.
     """
     target_url = resolve_target_url(full_path)
+    
     if not target_url:
-        return Response("Service not found", status_code=404)
-    
-    # Prepare the request
-    method = request.method
+        print(f"❌ No route matched for path: /{full_path}")
+        return Response(content="Service not found", status_code=404)
+
+    print(f"📦 FORWARDING {request.method} → {target_url}")
+
+    # Get request body
+    body = await request.body()
+
+    # Get headers (excluding host and content-length)
     headers = dict(request.headers)
-    
-    # Remove host header to avoid conflicts
     headers.pop("host", None)
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # Get request body if present
-            body = await request.body()
-            
-            # Forward the request
+    headers.pop("content-length", None)
+
+    async with httpx.AsyncClient() as client:
+        try:
             response = await client.request(
-                method=method,
+                method=request.method,
                 url=target_url,
                 headers=headers,
                 content=body,
-                params=request.query_params
+                timeout=30
             )
-            
-            # Return the response
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 headers=dict(response.headers)
             )
-            
-    except Exception as e:
-        return Response(f"Service unavailable: {str(e)}", status_code=503)
+        except httpx.RequestError as e:
+            print(f"❌ Request failed: {e}")
+            return Response(
+                content=f"Service unavailable: {str(e)}",
+                status_code=503
+            )
+

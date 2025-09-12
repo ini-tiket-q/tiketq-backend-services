@@ -1,106 +1,69 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status, Body
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Dict, Any
 from sqlalchemy.orm import Session
 
-from domain.models import PaymentInDB, PaymentStatus
-from domain.services import (
-    PaymentService, 
-    TransactionService,
-    get_database_session,
-    create_payment_service,
-    create_transaction_service
+from domain.models import (
+    PaymentInDB, PaymentConfirmRequest,
+    UserRole
 )
+from domain.services import (
+    PaymentService,
+    get_database_session,
+    require_user_or_admin,
+    require_admin
+)
+from adapters.db import (
+    DBTransactionRepository, DBPaymentRepository, DBOrderRepository
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["payments"])
 
-# Security scheme for JWT Bearer token
-security = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Mock authentication - replace with real auth service integration"""
-    if not credentials or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
-        )
-    
-    # For now, return a mock user - this should integrate with auth service
-    # The API Gateway should handle authentication and pass user info
-    return {"id": 1, "role": "user", "email": "test@example.com"}
-
 def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentService:
     """Dependency injection for PaymentService"""
-    return create_payment_service(db)
+    transaction_repo = DBTransactionRepository(db)
+    payment_repo = DBPaymentRepository(db)
+    order_repo = DBOrderRepository(db)
+    return PaymentService(transaction_repo, payment_repo, order_repo)
 
-def get_transaction_service(db: Session = Depends(get_database_session)) -> TransactionService:
-    """Dependency injection for TransactionService"""
-    return create_transaction_service(db)
-
-# Payment Endpoints based on documentation
-@router.post(
-    "/payments/", 
-    response_model=PaymentInDB,
-    status_code=status.HTTP_201_CREATED
-)
-async def create_payment(
-    payment_data: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
-    payment_service: PaymentService = Depends(get_payment_service)
-):
-    """Create payment - USER/ADMIN access"""
-    try:
-        # Call service layer with all validation handling
-        payment = payment_service.create_payment(
-            transaction_id=payment_data.get("transaction_id"),
-            payment_data=payment_data,
-            user_id=current_user["id"]
-        )
-        
-        if not payment:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to create payment or transaction not found"
-            )
-            
-        return payment
-        
-    except ValueError as e:
-        # Service layer validation errors
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create payment"
-        )
 
 @router.get(
-    "/payments/{payment_id}", 
-    response_model=PaymentInDB
+    "/payments/{order_number}", 
+    response_model=PaymentInDB,
+    summary="Get transaction payment details by order number",
+    description="""
+    Retrieve details of a specific payment by its order number.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only view their own payments
+    - Admins can view any payment
+    """
 )
 async def get_payment_details(
-    payment_id: int,
-    current_user: dict = Depends(get_current_user),
+    order_number: str,
+    current_user = Depends(require_user_or_admin),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """Get payment details - USER/ADMIN access"""
     try:
-        payment = payment_service.payment_repo.get_payment(payment_id)
+        payment = payment_service.payment_repo.get_payment_by_order_number(order_number)
         
         if not payment:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Payment not found"
             )
-        
+        logger.info("Payment found: %s", payment)
         # Check authorization - users can only see their own payments
-        if current_user["role"] != "admin":
+        if current_user.role != UserRole.ADMIN:
             # Get associated transaction to check user ownership
+            logger.info("Checking user authorization for payment %s", payment.transaction_id)
             transaction = payment_service.transaction_repo.get_transaction(payment.transaction_id)
-            if not transaction or transaction.user_id != current_user["id"]:
+            logger.info("Transaction found: %s", transaction)
+            if not transaction or transaction.email != current_user.email:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to view this payment"
@@ -113,31 +76,44 @@ async def get_payment_details(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve payment details"
+            detail=f"Failed to retrieve payment details {str(e)}"
         )
 
 @router.post(
-    "/payments/{payment_id}/confirm",
-    response_model=PaymentInDB
+    "/payments/{order_number}/confirm",
+    response_model=PaymentInDB,
+    summary="Confirm a transaction payment",
+    description="""
+    Confirm a transaction payment that was initiated.
+    
+    ### Access Level: Public (with token)
+    - Used to confirm successful payments
+    """
 )
 async def confirm_payment(
-    payment_id: int,
-    gateway_response: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
+    order_number: str,
+    confirm_data: PaymentConfirmRequest = Body(..., example={
+        "gateway_response": {
+            "transaction_id": "1234567890",
+            "success": True,
+            "amount": 885000,
+            "currency": "IDR",
+            "payment_method": "credit_card",
+            "metadata": {
+                "card_number": "1234-5678-9012-3456",
+                "card_holder": "John Doe",
+                "card_expiry": "12/25",
+                "card_cvv": "123"
+            }
+        },
+        "token": "Payment token here"
+    }),
     payment_service: PaymentService = Depends(get_payment_service)
 ):
-    """Confirm payment - ADMIN access only"""
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can confirm payments"
-        )
-    
     try:
         payment = payment_service.confirm_payment(
-            payment_id=payment_id,
-            gateway_response=gateway_response,
-            confirmed_by=current_user["id"]
+            order_number=order_number,
+            gateway_response=confirm_data,
         )
         
         if not payment:
@@ -154,77 +130,33 @@ async def confirm_payment(
             detail=str(e)
         )
     except Exception as e:
+        logger.error(f"Error confirming payment: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to confirm payment"
         )
+        
 
-@router.post(
-    "/payments/{payment_id}/refund",
-    response_model=PaymentInDB
-)
-async def process_payment_refund(
-    payment_id: int,
-    refund_data: Dict[str, Any] = Body(...),
-    current_user: dict = Depends(get_current_user),
-    payment_service: PaymentService = Depends(get_payment_service)
-):
-    """Process payment refund - ADMIN access only"""
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can process payment refunds"
-        )
+@router.get(
+    "/payments/admin/get-token",
+    status_code=status.HTTP_200_OK,
+    summary="Payment token endpoint",
+    description="""
+    Create payment token for admin test.
     
-    try:
-        # Call service layer with all validation handling
-        updated_payment = payment_service.process_refund(
-            payment_id=payment_id,
-            refund_data=refund_data,
-            refunded_by=current_user["id"]
-        )
-        
-        if not updated_payment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment not found or cannot be refunded"
-            )
-        
-        return updated_payment
-        
-    except ValueError as e:
-        # Service layer validation errors
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process payment refund"
-        )
-
-@router.post(
-    "/webhooks/payment",
-    status_code=status.HTTP_200_OK
+    ### Access Level: Admin
+    - No authentication required
+    - create payment token for admin test
+    """
 )
-async def payment_webhook(
-    webhook_data: Dict[str, Any] = Body(...),
-    payment_service: PaymentService = Depends(get_payment_service)
+async def payment_token(
+    payment_service: PaymentService = Depends(get_payment_service),
+    current_user = Depends(require_admin),
 ):
-    """Payment gateway webhook - Public access"""
+    """Payment token - Admin access"""
     try:
-        # TODO: Implement webhook signature validation
-        # Call service layer with all validation handling
-        payment = payment_service.process_webhook(webhook_data)
-        
-        if not payment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment not found"
-            )
-        
-        return {"message": "Webhook processed successfully", "payment_id": payment.id}
+        logger.info("Creating payment token route")
+        return payment_service.create_payment_token()
         
     except ValueError as e:
         # Service layer validation errors
@@ -235,5 +167,5 @@ async def payment_webhook(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process payment webhook"
+            detail=f"Failed to process payment token {str(e)}"
         )
