@@ -263,36 +263,7 @@ async def get_payments_by_order(
             detail="Failed to retrieve payments"
         )
 
-@router.post("/webhook",
-    summary="Handle Midtrans webhook",
-    description="Process payment status updates from Midtrans")
-async def handle_webhook(
-    notification_data: Dict[str, Any] = Body(...),
-    webhook_handler: WebhookHandler = Depends(get_webhook_handler),
-    payment_service: PaymentService = Depends(get_payment_service)
-):
-    """Handle webhook notifications from Midtrans"""
-    try:
-        logger.info(f"Received webhook notification: {notification_data}")
 
-        # Process webhook and update payment status
-        result = await webhook_handler.process_webhook(
-            notification_data=notification_data,
-            payment_repository=payment_service.storage_repository,
-            verify_signature=True  # Set to False for testing
-        )
-
-        logger.info(f"Webhook processed successfully: {result}")
-        return result
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error handling webhook: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to handle webhook: {str(e)}"
-        )
 
 # Add manual status check endpoint
 @router.get("/{payment_id}/status",
