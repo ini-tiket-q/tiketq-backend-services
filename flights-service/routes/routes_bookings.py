@@ -16,6 +16,7 @@ from domain.services_bookings import (
 )
 from pydantic import BaseModel
 from typing import Optional
+from domain.mmbc_services import mmbc
 
 router = APIRouter(prefix="/json", tags=["MMBC Flight-Service (Bookings)"])
 
@@ -26,17 +27,17 @@ router = APIRouter(prefix="/json", tags=["MMBC Flight-Service (Bookings)"])
     "/resetpassword",
     response_model=ResetPasswordResponse,
     summary="Reset agent password",
-    responses={
-        200: {"description": "Password reset success"},
-        400: {"description": "Validation error / reset failed"},
-        500: {"description": "Internal server error"},
-    }
+    description="Allows travel agents to reset their MMBC credentials."
 )
 async def reset_password(req: ResetPasswordRequest):
-    result = await get_price_service(req)
+    # call the reset_password method in FakeMMBCClient / MMBC service
+    result = await mmbc.reset_password(**req.dict())
+
     if result.get("result") == "no":
         raise HTTPException(status_code=400, detail=result.get("reason", "Reset failed"))
+
     return result
+
 
 # -------------------------------
 # Get Price Endpoint
