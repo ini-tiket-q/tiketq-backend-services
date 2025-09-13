@@ -208,7 +208,7 @@ class PostBookingResponse(BaseModel):
     flight_statusbooking: Optional[str] = None
     flight_realnta: Optional[int] = None
     flight_shownta: Optional[int] = None
-    payment_status: Optional[str] = None       # 👈 new
+    payment_status: Optional[str] = None       
     payment_response: Optional[dict] = None
 
 

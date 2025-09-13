@@ -10,7 +10,7 @@ class FakeMMBCClient:
             "result": "ok",
             "flight_id": "02",
             "flight": "Singapore Airlines",
-            "flight_code": "SQ-955",
+            "flight_code": "SQ-959",
             "flight_image": "https://klikmbc.biz/v2/images/airlines/singapore.png",
             "flight_from": "CGK",
             "flight_to": "SIN",
@@ -35,13 +35,13 @@ class FakeMMBCClient:
 
 
     async def post_booking(self, **kwargs):
-        kode = "SIA341"
+        kode = "SINCGK12"
         return {
             "result": "ok",
             "tid": "888877666",
             "tanggal": "2025-09-15 09:30:00",
             "flight": "Singapore Airlines",
-            "flight_code": "SQ-955",
+            "flight_code": "SQ-959",
             "kodebooking": kode,
             "flight_route": "CGK-SIN",
             "flight_departure": "15 Sep 2025 11:00",
@@ -90,7 +90,7 @@ class FakeMMBCClient:
             "tid": "888877666",
             "tanggal": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             "flight": "Singapore Airlines",
-            "flight_code": "SQ-955",
+            "flight_code": "SQ-959",
             "kodebooking": kode,
             "flight_route": "CGK-SIN",
             "flight_departure": "15 Sep 2025 11:00",
@@ -133,7 +133,7 @@ class FakeMMBCClient:
             "tid": "888877666",
             "tanggal": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             "flight": "Singapore Airlines",
-            "flight_code": "SQ-955",
+            "flight_code": "SQ-959",
             "kodebooking": kode,
             "flight_route": "CGK-SIN",
             "flight_departure": "15 Sep 2025 11:00",
