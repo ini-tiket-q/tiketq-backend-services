@@ -1,10 +1,10 @@
 # PYDANTIC MODELS FOR FERRY SERVICE
 from enum import Enum
-from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from uuid import UUID, uuid4
+from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator, model_validator
 from typing import Any, Dict, List, Literal, Optional
 from datetime import date, datetime
-
+from utils.date_utils import validate_dates
 
 class PassengerType(str, Enum):
     ADULT = "ADULT"
@@ -81,7 +81,7 @@ class ContactInfo(BaseModel):
 
 class TripSearchRequest(BaseModel):
     nationality: str = Field(..., min_length=2, max_length=3)
-    origin: str = Field(..., min_length=3, max_length=20, alias="departure")
+    origin: str = Field(..., min_length=3, max_length=20)
     destination: str = Field(..., min_length=3, max_length=20)
     depart_date: date
     pax: int = Field(1, ge=1, le=10)
@@ -106,35 +106,67 @@ class TripSearchRequest(BaseModel):
             raise ValueError('Return date must be after departure date')
         return v
 
-
+    @field_validator("depart_date")
+    @classmethod
+    def validate_date_format_future(cls, v):
+        from datetime import date
+        if v < date.today():
+            raise ValueError("Departure date cannot be in the past")
+        return v
+        
 class FerryTripDisplay(BaseModel):
-    schedule_id: UUID
-    departure_time: str
-    arrival_time: str
-    duration: str
-    status: str
-    available_seats: int
-    base_price: float # Price per passenger
-    currency: str = "IDR"
-    vessel_name: str
-    operator: str
-    departure_port: str
-    arrival_port: str
-    tax_percentage: float = 0.1  # Example 10% tax
-    tax_amount: float
-    total_price: float  # Base price + tax
-    metadata: Dict[str, Any] = {}
-
-    @model_validator(mode='after')
-    def calculate_tax_and_total(self):
-        self.tax_amount = self.base_price * self.tax_percentage
-        self.total_price = self.base_price + self.tax_amount
-        return self
+    trip_sched_id: str 
+    departure_time: str 
+    arrival_time: Optional[str] 
+    status: Optional[str] = None
+    trip_id: str 
+    remarks: Optional[str] = None
+    used_seat: str
+    gate_open: Optional[str] 
+    gate_close: Optional[str] 
+    nationality: str
+    origin: str
+    destination: str
+    depart_date: str
+    return_date: Optional[str] = None
+    pax: int
+    ferry_class: str
+    is_round_trip: bool
+    
+     # Add a validator to convert numeric fields to strings
+    @field_validator('trip_sched_id', 'used_seat', mode='before')
+    @classmethod
+    def convert_to_string(cls, v):
+        if v is not None:
+            return str(v)
+        return v
+    
+    @computed_field
+    def route(self) -> str:
+        return f"{self.origin}-{self.destination}"
+    
+    @computed_field
+    def metadata(self) -> Dict[str, Any]:
+        return {
+        "trip_sched_id": self.trip_sched_id,
+        "route": f"{self.origin}-{self.destination}",
+        "departure_time": self.departure_time
+        }
+        
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+      
+    # @model_validator(mode='after')
+    # def calculate_tax_and_total(self):
+    #     self.tax_amount = self.base_price * self.tax_percentage
+    #     self.total_price = self.base_price + self.tax_amount
+    #     return self
 
 class TripSearchResponse(BaseModel):
     status: str
     departure_trips: List[FerryTripDisplay]
-    return_trips: Optional[List[Dict[str, Any]]] = None  
+    return_trips: Optional[List[FerryTripDisplay]] = None  
     
        
 #create booking

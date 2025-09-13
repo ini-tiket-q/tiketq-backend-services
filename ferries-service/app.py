@@ -1,3 +1,4 @@
+import sys
 from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
 import os
@@ -8,7 +9,10 @@ import logging
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 # Load .env variables
