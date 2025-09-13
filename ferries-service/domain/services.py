@@ -448,46 +448,113 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         or "Unknown Passenger"
     )
 
-    # --- Hitung total amount ---
-    total_amount = sum(
-        price_map.get(
+    # Coba ambil booking header (supaya dapat departureCoreApiTrip.date)
+    booking_header = {}
+    try:
+        header_resp = sindo_client.get_sindo_booking(booking_id)
+        booking_header = header_resp.get("data", {}) if header_resp else {}
+    except Exception as e:
+        logger.warning("Gagal ambil booking header untuk %s: %s", booking_id, e)
+        booking_header = {}
+
+    # helper untuk normalisasi tanggal ke YYYY-MM-DD
+    def _normalize_date(date_str):
+        if not date_str:
+            return None
+        for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y%m%d"):
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                return dt.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        # fallback sederhana
+        if "T" in date_str:
+            return date_str.split("T")[0]
+        return date_str.split(" ")[0]
+
+    # Coba beberapa key yang mungkin mengandung tanggal trip
+    trip_date = None
+    # biasanya: booking_header.get("departureCoreApiTrip", {}).get("date")
+    possible_keys = ["departureCoreApiTrip", "departureTrip", "departure", "coreApiTrip"]
+    for k in possible_keys:
+        trip = booking_header.get(k)
+        if isinstance(trip, dict):
+            trip_date = _normalize_date(trip.get("date"))
+            if trip_date:
+                break
+
+    # fallback: jika header berisi list trips / coreApiTrips
+    if not trip_date:
+        for list_key in ("trips", "coreApiTrips", "departureCoreApiTrips"):
+            items = booking_header.get(list_key)
+            if isinstance(items, list) and items:
+                trip_date = _normalize_date(items[0].get("date"))
+                if trip_date:
+                    break
+
+    # terakhir fallback: pakai identification.issueDate dari passenger (sebelumnya dipakai)
+    passenger = records[0]
+    id_issue_date = passenger.get("identification", {}).get("issueDate")
+    departure_date = trip_date or _normalize_date(id_issue_date)
+
+
+    # --- Ambil harga tiap penumpang (sementara 1 flight saja) ---
+    items = []
+    subtotal = 0
+    for i, rec in enumerate(records):
+        price = price_map.get(
             rec.get("bookingType", {}).get("name"),
             default_price
         )
-        for rec in records
-    )
+        subtotal += price
 
-    # --- Mapping ke payment payload ---
-    mapped_response = {
-        "order_id": booking_id,
-        "amount": total_amount,
-        "payment_method": "credit_card",
-        "customer_details": {
-            "name": passenger_name,
-            "email": "customer@example.com",
-            "phone": "081234567890"
-        },
-        "item_details": [
-            {
-                "item_id": f"{booking_id}_{i+1}",
-                "name": (
-                    rec.get("passengerName")
-                    or rec.get("identification", {}).get("fullName")
-                    or f"Passenger {i+1}"
-                ),
-                "price": price_map.get(
-                    rec.get("bookingType", {}).get("name"),
-                    default_price
-                ),
-                "quantity": 1
+        items.append({
+            "name": f"Ferry Ticket {i+1}",
+            "price": price,
+            "quantity": 1,
+            "description": f"Ferry ticket for passenger {passenger_name}",
+            "metadata": {
+                "departure_date": departure_date,   # TODO: ambil dari rec kalau ada
+                "ferry_number": "SF-123",         # TODO: mapping ke data asli
+                "operator": "Sindo Ferry",        # fixed untuk sekarang
+                "class": "Economy"                # default sementara
             }
-            for i, rec in enumerate(records)
-        ],
-        "description": f"Ferry booking {booking_id} for {passenger_count} passenger(s)",
-        "expiry_duration": 1
+        })
+
+
+    # --- Hitung tax & discount ---
+    tax = int(subtotal * 0.1)    # contoh 10% pajak
+    discount = 0                 # sementara belum ada diskon
+    total = subtotal + tax - discount
+
+    # --- Mapping ke format baru ---
+    mapped_response = {
+        "email": "customer@example.com",
+        "transaction_type": "BOOKING",
+        "currency": "IDR",
+        "service_type": "FERRIES",
+        "items": items,
+        "subtotal": subtotal,
+        "tax": tax,
+        "discount": discount,
+        "total": total,
+        "payment_method": "credit_card",
+        "payment_gateway": "MIDTRANS",  # default sementara
+        "transaction_metadata": {
+            "order_id": booking_id,
+            "passenger_name": passenger_name,
+            "booking_reference": f"TQ-FR-{booking_id[:6]}",  # contoh reference
+            "ip_address": "192.168.1.100"
+        },
+        "payment_metadata": {
+            "bank_name": "BCA",
+            "card_last_digits": "1234",
+            "card_type": "visa"
+        }
     }
 
     return mapped_response
+
 
 
 
