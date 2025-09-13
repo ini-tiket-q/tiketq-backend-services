@@ -1,10 +1,13 @@
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Body, BackgroundTasks
+from pydantic import ValidationError
 from domain.models import (
     FerryBookingRequest, 
     FerryBookingResponse, 
-    TripSearchRequest
+    TripSearchRequest,
+    TripSearchResponse
 )
+from domain.services import search_ferry_trips
 from domain import services
 import logging
 
@@ -58,43 +61,50 @@ def list_trips(
         raise HTTPException(status_code=500, detail=str(e))
 
     
-@router.get("/trips/oneway")
-def search_oneway_trips(
+@router.get("/trips/search/oneway")
+async def search_oneway_trips(
     nationality: str = Query(..., description="Passenger nationality (country code)"),
-    departure: str = Query(..., description="Departure port code"), 
+    origin: str = Query(..., description="Departure port code"), 
     destination: str = Query(..., description="Arrival port code"), 
     date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
     pax: int = Query(1, description="Number of passengers"),
     ferry_class: str = Query("Economy Class", description="Ferry class")
 ):
     try:
-        # Convert string date to date object
-        depart_date = datetime.strptime(date, "%Y-%m-%d").date()
-        
-        # Create search request
+        logger.info(f"Received search request: nationality={nationality}, origin={origin}, destination={destination}, date={date}, pax={pax}, ferry_class={ferry_class}")
+
         search_request = TripSearchRequest(
             nationality=nationality,
-            departure=departure,
+            origin=origin,
             destination=destination,
-            depart_date=depart_date,
+            depart_date=date,
             pax=pax,
             ferry_class=ferry_class,
             is_round_trip=False
         )
-        
-        # Use the search function
-        result = services.search_ferry_trips(search_request)
-        return result
+        logger.info(f"Created search request: {search_request.dict()}")
+        result = search_ferry_trips(search_request)
+        logger.info(f"Found {len(result)} trips")       
+        # Create the response object
+        response= TripSearchResponse(
+            status="success",
+            departure_trips=result,
+            return_trips=None
+        )
+        return response
+    except ValidationError as e:
+        logger.error(f"Validation error for trip data: {e}")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=422, detail=e.errors())
     except Exception as e:
-        # logger.error(f"Error in search_oneway_trips: {str(e)}", exc_info=True)
+        logger.error(f"Unhandled error in search_oneway_trips: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/trips/search/roundtrip")
-def search_roundtrip_trips(
+async def search_roundtrip_trips(
     nationality: str = Query(..., description="Passenger nationality (country code)"),
-    departure: str = Query(..., description="Departure port code"), 
+    origin: str = Query(..., description="Departure port code"), 
     destination: str = Query(..., description="Arrival port code"), 
     depart_date: str = Query(..., description="Departure date in YYYY-MM-DD format"),
     return_date: str = Query(..., description="Return date in YYYY-MM-DD format"),
@@ -102,29 +112,35 @@ def search_roundtrip_trips(
     ferry_class: str = Query("Economy Class", description="Ferry class")
 ):
     try:
-        # Convert string dates to date objects
-        depart_date_obj = datetime.strptime(depart_date, "%Y-%m-%d").date()
-        return_date_obj = datetime.strptime(return_date, "%Y-%m-%d").date()
-        
+        print("DEBUG: Starting roundtrip search")
         # Create search request
         search_request = TripSearchRequest(
             nationality=nationality,
-            departure=departure,
+            origin=origin,
             destination=destination,
-            depart_date=depart_date_obj,
+            depart_date=depart_date,
+            return_date=return_date,
             pax=pax,
             ferry_class=ferry_class,
             is_round_trip=True,
-            return_date=return_date_obj
         )
-        
-        # Use the search function
+        print("DEBUG: Calling search_ferry_trips")
         result = services.search_ferry_trips(search_request)
-        return result
+        print("DEBUG: Creating TripSearchResponse")
+        response = TripSearchResponse(
+            status="success",
+            departure_trips=result["departure_trips"],
+            return_trips=result["return_trips"]
+        )
+        print("DEBUG: Roundtrip search completed successfully")
+        return response
     except ValueError as e:
+        print(f"DEBUG: ValueError in roundtrip route: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        print(f"DEBUG: Exception in roundtrip route: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 # Create booking
 @router.post("/bookings", response_model=FerryBookingResponse)
