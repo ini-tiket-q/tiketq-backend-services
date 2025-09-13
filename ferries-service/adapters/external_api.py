@@ -149,6 +149,13 @@ class SindoClient:
         }
         return self._request("GET", f"/Booking/Bookings/{booking_id}/Details", params=params)
         
+    # mengambil booking header
+    def get_sindo_booking(self, booking_id: str):
+        """
+        Ambil booking header/info (yang biasanya berisi departureCoreApiTrip).
+        """
+        return self._request("GET", f"/Booking/Bookings/{booking_id}")
+
     
     def get_sindo_countries(self, search: str = None):
         """Get list of countries"""

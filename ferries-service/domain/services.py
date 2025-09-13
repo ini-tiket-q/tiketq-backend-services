@@ -311,8 +311,6 @@ def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
 
 
 # Get Booking details 
-# ferries-service/domain/services.py
-
 def get_ferry_booking_details(booking_id: str, search: str = None):
     data = sindo_client.get_sindo_booking_details(booking_id, search=search)
     records = data.get("data", {}).get("records", [])
@@ -340,6 +338,56 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         or "Unknown Passenger"
     )
 
+    # Coba ambil booking header (supaya dapat departureCoreApiTrip.date)
+    booking_header = {}
+    try:
+        header_resp = sindo_client.get_sindo_booking(booking_id)
+        booking_header = header_resp.get("data", {}) if header_resp else {}
+    except Exception as e:
+        logger.warning("Gagal ambil booking header untuk %s: %s", booking_id, e)
+        booking_header = {}
+
+    # helper untuk normalisasi tanggal ke YYYY-MM-DD
+    def _normalize_date(date_str):
+        if not date_str:
+            return None
+        for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y%m%d"):
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                return dt.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        # fallback sederhana
+        if "T" in date_str:
+            return date_str.split("T")[0]
+        return date_str.split(" ")[0]
+
+    # Coba beberapa key yang mungkin mengandung tanggal trip
+    trip_date = None
+    # biasanya: booking_header.get("departureCoreApiTrip", {}).get("date")
+    possible_keys = ["departureCoreApiTrip", "departureTrip", "departure", "coreApiTrip"]
+    for k in possible_keys:
+        trip = booking_header.get(k)
+        if isinstance(trip, dict):
+            trip_date = _normalize_date(trip.get("date"))
+            if trip_date:
+                break
+
+    # fallback: jika header berisi list trips / coreApiTrips
+    if not trip_date:
+        for list_key in ("trips", "coreApiTrips", "departureCoreApiTrips"):
+            items = booking_header.get(list_key)
+            if isinstance(items, list) and items:
+                trip_date = _normalize_date(items[0].get("date"))
+                if trip_date:
+                    break
+
+    # terakhir fallback: pakai identification.issueDate dari passenger (sebelumnya dipakai)
+    passenger = records[0]
+    id_issue_date = passenger.get("identification", {}).get("issueDate")
+    departure_date = trip_date or _normalize_date(id_issue_date)
+
+
     # --- Ambil harga tiap penumpang (sementara 1 flight saja) ---
     items = []
     subtotal = 0
@@ -356,12 +404,13 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
             "quantity": 1,
             "description": f"Ferry ticket for passenger {passenger_name}",
             "metadata": {
-                "departure_date": "2025-09-15",   # TODO: ambil dari rec kalau ada
+                "departure_date": departure_date,   # TODO: ambil dari rec kalau ada
                 "ferry_number": "SF-123",         # TODO: mapping ke data asli
                 "operator": "Sindo Ferry",        # fixed untuk sekarang
                 "class": "Economy"                # default sementara
             }
         })
+
 
     # --- Hitung tax & discount ---
     tax = int(subtotal * 0.1)    # contoh 10% pajak
