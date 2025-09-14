@@ -29,7 +29,7 @@ def list_routes(search: str = Query(None, description="Search route by name or c
 # Simple trip listing endpoint (for basic use cases)
 @router.get("/trips")
 def list_trips(
-    departure: str = Query(..., description="Origin port code (ex: BTC)"),
+    origin: str = Query(..., description="Origin port code (ex: BTC)"),
     destination: str = Query(..., description="Destination port code (ex: HFC)"),
     date: str = Query(..., description="Departure date (YYYY-MM-DD)")
 ):
@@ -38,23 +38,8 @@ def list_trips(
     - Wajib isi origin, destination, dan date.
     """
     try:
-        # Convert string date to date object
-        depart_date = datetime.strptime(date, "%Y-%m-%d").date()
-        
-        # Create a basic search request
-        search_request = TripSearchRequest(
-            nationality="ID",  # Default value
-            departure=departure,
-            destination=destination,
-            depart_date=depart_date,
-            pax=1,
-            ferry_class="Economy Class",
-            is_round_trip=False
-        )
-        
-        # Use the search function
-        result = services.search_ferry_trips(search_request)
-        return result
+         return services.search_ferry_trips(origin, destination, date)
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
