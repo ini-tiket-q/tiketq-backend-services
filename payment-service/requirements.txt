@@ -7,7 +7,4 @@ sqlalchemy
 psycopg2-binary
 midtransclient
 logger
-PyJWT
-jwt
-jose
 python-jose

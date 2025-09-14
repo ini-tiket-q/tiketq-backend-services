@@ -2,12 +2,7 @@ import logging
 from fastapi import APIRouter, HTTPException, status, Body, Depends, Request
 from typing import Dict, Any
 from datetime import datetime
-# GANTI IMPORT JWT INI:
-# import jwt
-# DENGAN:
-# import PyJWT as jwt
-# ATAU:
-from jose import jwt
+from jose import jwt, JWTError
 import requests
 import os
 
@@ -20,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-payment-key")
+SECRET_KEY = os.getenv("JWT_SECRET", "your-secret-payment-key")
 ALGORITHM = "HS256"
 
 # Create router instance
@@ -29,39 +24,16 @@ router = APIRouter()
 def create_payment_token(order_id: str, transaction_status: str):
     """Create JWT token for payment confirmation"""
     try:
-        logger.info(f"Creating payment token for order: {order_id}")
-        logger.info(f"SECRET_KEY available: {'Yes' if SECRET_KEY else 'No'}")
-        logger.info(f"SECRET_KEY length: {len(SECRET_KEY) if SECRET_KEY else 0}")
-        logger.info(f"ALGORITHM: {ALGORITHM}")
-
+        logger.info("Creating payment token")
         payload = {
-            "order_id": order_id,
-            "status": transaction_status,
-            "token_type": "payment_confirmation",
-            "timestamp": datetime.now().isoformat()
+            "token": "success"
         }
-
-        logger.info(f"Token payload: {payload}")
-
-        # Test which JWT library is available
-        try:
-            token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-            logger.info(f"Token created successfully for order: {order_id}")
-            logger.info(f"Token preview: {token[:50]}...")
-            return token
-        except AttributeError as attr_error:
-            logger.error(f"JWT encode AttributeError: {attr_error}")
-            # Try alternative approach
-            import PyJWT
-            token = PyJWT.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-            logger.info(f"Token created with PyJWT for order: {order_id}")
-            return token
-
+        return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     except Exception as e:
         logger.error(f"Error creating payment token: {str(e)}", exc_info=True)
-        logger.error(f"SECRET_KEY: {SECRET_KEY}")
-        logger.error(f"Exception type: {type(e).__name__}")
         return None
+
+
 
 async def confirm_payment(order_id: str, payment_token: str):
     """Send POST request to transaction-service payments/{order_id}/confirm endpoint"""
@@ -83,10 +55,10 @@ async def confirm_payment(order_id: str, payment_token: str):
 
             logger.info(f"🚀 Attempt {attempt}: Trying transaction-service URL: {confirm_url}")
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {payment_token}"
-            }
+            # headers = {
+            #     "Content-Type": "application/json",
+            #     "Authorization": f"Bearer {payment_token}"
+            # }
 
             payload = {
                 "gateway_response": {
@@ -103,11 +75,12 @@ async def confirm_payment(order_id: str, payment_token: str):
                 },
                 "token": payment_token
             }
+            logger.info(f"Payload for confirmation: {payload}")
 
             try:
-                response = requests.post(confirm_url, json=payload, headers=headers, timeout=5)
+                response = requests.post(confirm_url, json=payload, timeout=5)
 
-                logger.info(f"📡 Response status from {base_url}: {response.status_code}")
+                logger.info(f"📡 Response status from {base_url}: {response.status_code},{response.json()}")
 
                 if response.status_code == 200:
                     logger.info(f"✅ Payment confirmation successful for order: {order_id} via {base_url}")
