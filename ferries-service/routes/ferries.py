@@ -38,8 +38,8 @@ def list_trips(
     - Wajib isi origin, destination, dan date.
     """
     try:
-        #  return services.get_ferry_trips(origin, destination, date)
-         return services.search_ferry_trips(origin, destination, date)
+         return services.get_ferry_trips(origin, destination, date)
+        #  return services.search_ferry_trips(origin, destination, date)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
