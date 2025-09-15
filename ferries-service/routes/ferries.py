@@ -7,7 +7,7 @@ from domain.models import (
     TripSearchRequest,
     TripSearchResponse
 )
-from domain.services import search_ferry_trips
+from domain.services import search_ferry_trips, create_ferry_booking
 from domain import services
 import logging
 
@@ -127,8 +127,8 @@ async def search_roundtrip_trips(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# Create booking
-@router.post("/bookings", response_model=FerryBookingResponse)
+# Create booking v2
+@router.post("/bookings/v2", response_model=FerryBookingResponse)
 async def create_booking(
     booking_data: FerryBookingRequest,
     background_tasks: BackgroundTasks
@@ -161,12 +161,16 @@ async def create_booking(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# @router.post("/bookings/v2")
-# def create_booking_v2(booking_request: FerryBookingRequest):
-#     try:
-#         return services.create_ferry_booking_v2(booking_request)
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
+# create booking
+@router.post("/bookings")
+def create_booking(booking_data: dict = Body(...)):
+    """
+    Buat booking baru ke Sindo API.
+    """
+    try:
+        return services.create_ferry_booking(booking_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Add booking details
 @router.post("/bookings/{booking_id}/details")

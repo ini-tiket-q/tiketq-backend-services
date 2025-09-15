@@ -342,17 +342,18 @@ def prepare_transaction_data(booking_data: FerryBookingRequest,
         "expiry_duration":24  # 24 hours
     }
 
-# def create_ferry_booking_v2(booking_data: dict):
-#     """
-#     Kirim booking ke API Sindo.
-#     """
-#     data = sindo_client.create_sindo_booking(booking_data)
+#Create Booking
+def create_ferry_booking(booking_data: dict):
+    """
+    Kirim booking ke API Sindo.
+    """
+    data = sindo_client.create_sindo_booking(booking_data)
     # return the full response here 
     # so frontend can get booking ID and other info
-    # return data
+    return data
     
 #booking---------------------------------------------------------------------------------------    
-async def create_ferry_booking(booking_data: FerryBookingRequest) -> FerryBookingResponse:
+async def create_ferry_bookingv2(booking_data: FerryBookingRequest) -> FerryBookingResponse:
     """
     Create a ferry booking with transaction service integration
     """
