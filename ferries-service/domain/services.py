@@ -41,11 +41,11 @@ def get_ferry_routes(search: str = None):
 
 # Get All Trips for users to choose
 # raw shedules from Sindo API
-def get_ferry_trips(departure: str, destination: str, date: str):
+def get_ferry_trips(origin: str, destination: str, date: str):
     """
     Ambil daftar trip / jadwal ferry dari API Sindo.
     """
-    data = sindo_client.get_sindo_trips(departure, destination, date)
+    data = sindo_client.get_sindo_trips(origin, destination, date)
 
     # Kalau API balikin list langsung
     if isinstance(data, list):
