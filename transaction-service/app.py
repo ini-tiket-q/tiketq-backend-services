@@ -2,14 +2,24 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
+from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 import logging
 
 from adapters.db import Base, engine
+from adapters.audit_middleware import AuditLoggingMiddleware, TransactionContextMiddleware
+from adapters.audit_logger import audit_logger, AuditEventType
 from routes import payments, transactions, orders, reports
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure comprehensive logging with structured format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('/tmp/transaction-service.log') if os.getenv("LOG_FILE") else logging.NullHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Security scheme for JWT Bearer token
@@ -20,19 +30,37 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting Transaction Service...")
+    audit_logger.log_security_event(
+        event_type=AuditEventType.AUTHENTICATION_SUCCESS,
+        message="Transaction Service starting up",
+        details={"service": "transaction-service", "version": "1.0.0"}
+    )
     
     # Create database tables
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
+        audit_logger.log_security_event(
+            event_type=AuditEventType.AUTHENTICATION_SUCCESS,
+            message="Database initialization completed",
+            details={"database_status": "ready"}
+        )
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
+        audit_logger.log_error(
+            error=e,
+            context={"operation": "database_initialization"}
+        )
         raise
     
     yield
     
     # Shutdown
     logger.info("Shutting down Transaction Service...")
+    audit_logger.log_security_event(
+        event_type=AuditEventType.AUTHENTICATION_SUCCESS,
+        message="Transaction Service shutting down gracefully"
+    )
 
 # Create FastAPI application
 app = FastAPI(
@@ -41,8 +69,39 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan
+    lifespan=lifespan,
+    swagger_ui_parameters={"syntaxHighlight.theme": "obsidian"}
 )
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="Transaction Service",
+        version="1.0.0",
+        description="Transaction management service for TiketQ platform",
+        routes=app.routes,
+    )
+    
+    # Add security definitions
+    openapi_schema["components"]["securitySchemes"] = {
+        "Bearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter JWT token in the format: Bearer <token>"
+        }
+    }
+    
+    # Apply security globally to all endpoints
+    openapi_schema["security"] = [{"Bearer": []}]
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+# Set the custom OpenAPI schema
+app.openapi = custom_openapi
 
 # Configure CORS
 app.add_middleware(
@@ -52,6 +111,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add audit logging middleware
+app.add_middleware(
+    AuditLoggingMiddleware,
+    excluded_paths=["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico", "/"]
+)
+
+# Add transaction context middleware  
+app.add_middleware(TransactionContextMiddleware)
 
 # Register routers
 app.include_router(payments.router)

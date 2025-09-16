@@ -1,87 +1,60 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from domain.models import (
     OrderInDB, OrderStatus,
-    OrderCreateRequest, OrderStatusUpdateRequest
+    OrderCreateRequest, OrderStatusUpdateRequest,
+    UserRole
 )
 from domain.services import (
     OrderService,
     get_database_session,
-    create_order_service
+    create_order_service,
+    require_admin,
+    require_user_or_admin
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["orders"])
-
-# Security scheme for JWT Bearer token
-security = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Mock authentication - replace with real auth service integration"""
-    if not credentials or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
-        )
-    
-    # For now, return a mock user - this should integrate with auth service
-    # The API Gateway should handle authentication and pass user info
-    return {"id": 1, "role": "user", "email": "test@example.com"}
 
 def get_order_service(db: Session = Depends(get_database_session)) -> OrderService:
     """Dependency injection for OrderService"""
     return create_order_service(db)
 
 # Order Endpoints based on documentation
-@router.post(
-    "/orders/", 
-    response_model=OrderInDB,
-    status_code=status.HTTP_201_CREATED
-)
-async def create_order(
-    order_request: OrderCreateRequest,
-    current_user: dict = Depends(get_current_user),
-    service: OrderService = Depends(get_order_service)
-):
-    """Create a new order - USER/ADMIN access"""
-    try:
-        # Create order using validated request model
-        order = service.create_order(order_request, current_user["id"])
-        
-        if not order:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create order"
-            )
-            
-        return order
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create order"
-        )
 
 @router.get(
     "/orders/", 
-    response_model=List[OrderInDB]
+    response_model=List[OrderInDB],
+    summary="List orders",
+    description="""
+    Retrieve a list of orders based on filters.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only see their own orders
+    - Admins can see all orders
+    
+    ### Query Parameters:
+    - skip: Number of records to skip (pagination)
+    - limit: Maximum number of records to return (pagination)
+    - status_filter: Optional filter by order status
+    """
 )
 async def list_orders(
     skip: int = 0,
     limit: int = 100,
     status_filter: Optional[OrderStatus] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """List orders for the current user - USER/ADMIN access"""
     try:
-        if current_user["role"] == "admin":
+        if current_user.role == "admin":
             # Admin can see all orders
             orders = service.get_orders(
                 skip=skip, 
@@ -91,7 +64,7 @@ async def list_orders(
         else:
             # Regular users can only see their own orders
             orders = service.get_orders_by_user(
-                user_id=current_user["id"],
+                email=current_user.email,
                 status=status_filter,
                 skip=skip,
                 limit=limit
@@ -100,23 +73,31 @@ async def list_orders(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve orders"
+            detail=f"Failed to retrieve orders {str(e)}"
         )
 
 @router.get(
     "/orders/{order_id}", 
-    response_model=OrderInDB
+    response_model=OrderInDB,
+    summary="Get order by ID",
+    description="""
+    Retrieve details of a specific order by its ID.
+    
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only view their own orders
+    - Admins can view any order
+    """
 )
 async def get_order(
     order_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(require_user_or_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Get order details by ID - USER/ADMIN access"""
     try:
         order = service.get_order(
             order_id=order_id,
-            user_id=current_user["id"]
         )
         
         if not order:
@@ -126,7 +107,7 @@ async def get_order(
             )
         
         # Check access rights - users can only see their own orders
-        if current_user["role"] != "admin" and order.user_id != current_user["id"]:
+        if current_user.role != UserRole.ADMIN and order.email != current_user.email:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this order"
@@ -138,34 +119,73 @@ async def get_order(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve order"
+            detail=f"Failed to retrieve order {str(e)}"
+        )
+
+@router.get(
+    "/orders/public/{order_number}", 
+    response_model=OrderInDB,
+    summary="Get order by order number (public)",
+    description="""
+    Retrieve order details by order number.
+    
+    ### Access Level: Public
+    - No authentication required
+    - Limited information may be shown for public access
+    """
+)
+async def get_order_by_number(
+    order_number: str,
+    service: OrderService = Depends(get_order_service),
+):
+    """Get order details by order number - public access"""
+    try:
+        order = service.get_order_by_number(order_number=order_number)
+
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+            )
+
+        return order
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve order {str(e)}",
         )
 
 @router.put(
     "/orders/{order_id}/status", 
-    response_model=OrderInDB
+    response_model=OrderInDB,
+    summary="Update order status",
+    description="""
+    Update the status of an existing order.
+    
+    ### Access Level: Admin Only
+    - Requires admin privileges
+    - Used for order status management
+    """
 )
 async def update_order_status(
     order_id: int,
     status_request: OrderStatusUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(require_admin),
     service: OrderService = Depends(get_order_service)
 ):
     """Update order status - ADMIN access only"""
     try:
-        # Check admin access
-        if current_user["role"] != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin access required for order status updates"
-            )
+        # Admin access already checked by require_admin decorator
         
         # Check if order exists
         existing_order = service.get_order(
             order_id=order_id,
-            user_id=current_user["id"]  # Admin can access any order
         )
-        
+
+        logger.info("Existing order: %s", existing_order)
+
         if not existing_order:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -176,7 +196,6 @@ async def update_order_status(
         updated_order = service.update_order_status(
             order_id=order_id,
             status_request=status_request,
-            user_id=current_user["id"]
         )
         
         if not updated_order:
@@ -196,5 +215,5 @@ async def update_order_status(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update order status"
+            detail=f"Failed to update order status {str(e)}"
         )

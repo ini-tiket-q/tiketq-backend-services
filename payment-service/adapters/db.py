@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Optional, List
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, DateTime, Enum, Text, DECIMAL, text
+from sqlalchemy import create_engine, Column, String, DateTime, Enum, Text, DECIMAL, text, types
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -42,12 +42,36 @@ class PaymentRecord(Base):
     """SQLAlchemy model for payment records"""
     __tablename__ = "payments"  # Table name in shared database
 
+    # Create a custom enum type that ensures lowercase values
+    class LowercaseStringEnum(types.TypeDecorator):
+        """Converts lowercase strings to enum values on the way in and out of the database"""
+
+        impl = types.String
+        cache_ok = True
+
+        def __init__(self, enum_type, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.enum_type = enum_type
+            self._value_cache = {e.value.lower(): e for e in enum_type}
+
+        def process_bind_param(self, value, dialect):
+            if value is None:
+                return None
+            if isinstance(value, self.enum_type):
+                return value.value.lower()
+            return str(value).lower()
+
+        def process_result_value(self, value, dialect):
+            if value is None:
+                return None
+            return self._value_cache.get(value.lower())
+
     # Use UUID for primary key
     payment_id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
     order_id = Column(String(255), index=True, nullable=False)
     status = Column(Enum(PaymentStatus), nullable=False, index=True)
     amount = Column(DECIMAL(15, 2), nullable=False)
-    payment_method = Column(Enum(PaymentMethod), nullable=False)
+    payment_method = Column(LowercaseStringEnum(PaymentMethod), nullable=False)
     transaction_time = Column(DateTime, nullable=False)
     expiry_time = Column(DateTime, nullable=True)
     payment_url = Column(Text, nullable=True)
@@ -105,6 +129,72 @@ class DatabaseAdapter(PaymentStorageRepository):
             metadata=metadata if metadata else None
         )
 
+    # ===== TAMBAHAN METHOD UNTUK WEBHOOK =====
+    def get_payment_by_order_id(self, order_id: str) -> Optional[PaymentResponse]:
+        """Get payment by order ID - Required by WebhookHandler"""
+        try:
+            record = self.db.query(PaymentRecord).filter_by(order_id=order_id).first()
+
+            if record:
+                return self._payment_record_to_response(record)
+            return None
+
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting payment by order_id {order_id}: {e}")
+            return None
+
+    def update_payment_status_by_order(self, order_id: str, status: str, gateway_response: dict = None) -> bool:
+        """Update payment status by order ID - Required by WebhookHandler"""
+        try:
+            logger.info(f"🔍 Attempting to update payment status for order: {order_id} to status: {status}")
+
+            record = self.db.query(PaymentRecord).filter_by(order_id=order_id).first()
+
+            if record:
+                logger.info(f"✅ Found payment record for order {order_id}, current status: {record.status}")
+
+                # Map string status to PaymentStatus enum
+                status_mapping = {
+                    "completed": PaymentStatus.COMPLETED,
+                    "pending": PaymentStatus.PENDING,
+                    "failed": PaymentStatus.FAILED,
+                    "cancelled": PaymentStatus.CANCELLED,
+                    "expired": PaymentStatus.EXPIRED,
+                    "unknown": PaymentStatus.PENDING  # fallback
+                }
+
+                mapped_status = status_mapping.get(status.lower(), PaymentStatus.PENDING)
+                logger.info(f"🔄 Mapped status '{status}' to enum: {mapped_status}")
+
+                old_status = record.status
+                record.status = mapped_status
+                record.updated_at = datetime.utcnow()
+
+                # Update additional data with gateway response
+                if gateway_response:
+                    record.additional_data = json.dumps(gateway_response)
+                    logger.info(f"📝 Updated gateway response data for order {order_id}")
+
+                # Commit transaction
+                self.db.commit()
+                logger.info(f"✅ Payment status SUCCESSFULLY updated for order {order_id}: {old_status} -> {mapped_status}")
+                return True
+            else:
+                logger.warning(f"❌ Payment record NOT FOUND for order_id: {order_id}")
+                return False
+
+        except Exception as e:
+            logger.error(f"💥 EXCEPTION updating payment status for order {order_id}: {e}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Exception details: {str(e)}")
+            try:
+                self.db.rollback()
+                logger.info(f"🔙 Database rollback completed for order {order_id}")
+            except Exception as rollback_error:
+                logger.error(f"💥 Rollback failed: {rollback_error}")
+            return False
+
+    # ===== EXISTING METHODS =====
     async def save_payment(self, payment: PaymentResponse) -> None:
         """Save payment record to shared database"""
         try:
@@ -152,14 +242,12 @@ class DatabaseAdapter(PaymentStorageRepository):
                 self.db.add(new_payment)
 
             self.db.commit()
-            print(f"Payment saved to shared database: {payment.id}")
+            logger.info(f"Payment saved to shared database: {payment.id}")
 
         except SQLAlchemyError as e:
             self.db.rollback()
-            print(f"Database error saving payment: {e}")
+            logger.error(f"Database error saving payment: {e}")
             raise ValueError(f"Failed to save payment: {str(e)}")
-        finally:
-            self.db.close()
 
     async def get_payment(self, payment_id: str) -> Optional[PaymentResponse]:
         """Retrieve payment record from shared database"""
@@ -172,13 +260,11 @@ class DatabaseAdapter(PaymentStorageRepository):
             return None
 
         except SQLAlchemyError as e:
-            print(f"Database error getting payment: {e}")
+            logger.error(f"Database error getting payment: {e}")
             raise ValueError(f"Failed to get payment: {str(e)}")
-        finally:
-            self.db.close()
 
     async def update_payment_status(self, payment_id: str, status: PaymentStatus) -> None:
-        """Update payment status in shared database"""
+        """Update payment status in shared database by payment_id"""
         try:
             record = self.db.query(PaymentRecord).filter_by(payment_id=payment_id).first()
 
@@ -186,16 +272,14 @@ class DatabaseAdapter(PaymentStorageRepository):
                 record.status = status
                 record.updated_at = datetime.utcnow()
                 self.db.commit()
-                print(f"Payment status updated in shared DB: {payment_id} -> {status}")
+                logger.info(f"Payment status updated in shared DB: {payment_id} -> {status}")
             else:
                 raise ValueError(f"Payment with ID {payment_id} not found")
 
         except SQLAlchemyError as e:
             self.db.rollback()
-            print(f"Database error updating payment status: {e}")
+            logger.error(f"Database error updating payment status: {e}")
             raise ValueError(f"Failed to update payment status: {str(e)}")
-        finally:
-            self.db.close()
 
     async def get_payments_by_order(self, order_id: str) -> List[PaymentResponse]:
         """Get all payments associated with an order from shared database"""
@@ -205,10 +289,8 @@ class DatabaseAdapter(PaymentStorageRepository):
             return [self._payment_record_to_response(record) for record in records]
 
         except SQLAlchemyError as e:
-            print(f"Database error getting payments by order: {e}")
+            logger.error(f"Database error getting payments by order: {e}")
             raise ValueError(f"Failed to get payments by order ID: {str(e)}")
-        finally:
-            self.db.close()
 
     async def get_payments_by_order_id(self, order_id: str) -> List[PaymentResponse]:
         """Alias method for compatibility"""

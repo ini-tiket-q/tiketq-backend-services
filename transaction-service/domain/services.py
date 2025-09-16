@@ -2,19 +2,19 @@ from typing import Optional, List, Dict, Any, Generator
 from uuid import uuid4
 from datetime import datetime, timezone
 import logging
-from functools import lru_cache
-from fastapi import Depends
 from sqlalchemy.orm import Session
-
-logger = logging.getLogger(__name__)
+import os
+from fastapi import HTTPException, status, Depends, Header
+from adapters.external_api import (get_user_info, create_payment_url)
+from jose import jwt, JWTError
 
 from domain.models import (
-    TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus, TransactionType,
-    OrderInDB, OrderCreate, OrderUpdate, OrderStatus, ServiceType,
-    PaymentInDB, PaymentCreate, PaymentStatus, PaymentMethod, PaymentGateway,
-    RefundInDB, RefundCreate, RefundStatus, Currency,
+    TransactionInDB, TransactionCreate, TransactionUpdate, TransactionStatus,
+    OrderInDB, OrderCreate, OrderUpdate, OrderStatus,
+    PaymentInDB, PaymentCreate, PaymentStatus, Currency,
+    TransactionItem,
     # Payment request models
-    PaymentCreateRequest, PaymentConfirmRequest, PaymentRefundRequest, PaymentWebhookRequest,
+    PaymentCreateRequest, PaymentConfirmRequest, PaymentWebhookRequest,
     # Order request models
     OrderCreateRequest, OrderStatusUpdateRequest,
     # Transaction request models
@@ -23,15 +23,26 @@ from domain.models import (
     TransactionReportRequest, TransactionReportResponse, TransactionReportData,
     RevenueReportRequest, RevenueReportResponse, RevenueDataPoint,
     RefundReportRequest, RefundReportResponse, RefundReportData,
-    ReportDateRange
+    # Refund models
+    RefundCreate, RefundStatus,
+    # Auth models
+    UserRole, UserResponse
 )
 
 from adapters.db import (
-    DBTransactionRepository, DBOrderRepository, 
-    DBPaymentRepository, DBRefundRepository
+    DBTransactionRepository,
+    DBOrderRepository,
+    DBPaymentRepository,
+    DBRefundRepository,
+    DatabaseSessionProvider,
 )
 
 # Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
+)
 logger = logging.getLogger(__name__)
 
 class TransactionService:
@@ -45,16 +56,18 @@ class TransactionService:
         self, 
         transaction_repo: DBTransactionRepository,
         order_repo: DBOrderRepository,
+        payment_repo: DBPaymentRepository,
     ):
         self.transaction_repo = transaction_repo
         self.order_repo = order_repo
+        self.payment_repo = payment_repo
     
-    def create_transaction(self, transaction_request: TransactionCreateRequest, user_id: int) -> Optional[TransactionInDB]:
+    def create_transaction(self, transaction_request: TransactionCreateRequest, email: str) -> Optional[TransactionInDB]:
         """Create a new transaction with validated request model.
         
         Args:
             transaction_request: Validated TransactionCreateRequest model
-            user_id: ID of the user creating the transaction
+            email: Email of the user creating the transaction
             
         Returns:
             TransactionInDB if successful, None otherwise
@@ -63,52 +76,124 @@ class TransactionService:
             ValueError: If validation fails or required data is missing
         """
         try:
-            # Generate order number
-            order_number = f"ORD-{str(uuid4())[:8].upper()}"
+            # Generate unique order number
+            while True:
+                order_number = f"ORD-{str(uuid4())[:8].upper()}"
+                # Check if order number already exists
+                if not self.order_repo.get_order_by_order_number(order_number):
+                    break
             
             # Use validated amounts from request
             subtotal = transaction_request.subtotal
             tax = transaction_request.tax
             discount = transaction_request.discount
             total = transaction_request.total
+
+            items_as_dicts = []
+            item_details_for_payment = []
             
-            # Create order first
+            # Convert TransactionItem objects to dictionaries
+            for item in transaction_request.items:
+                items_as_dicts.append(item.model_dump() if hasattr(item, 'model_dump') else dict(item))
+                item_details_for_payment.append({
+                    "id": order_number,
+                    "price": item.price,
+                    "quantity": item.quantity,
+                    "name": item.name,
+                })
+
+            item_details_for_payment.append({
+                "id": order_number,
+                "price": tax - discount,
+                "quantity": 1,
+                "name": "Tax and discount",
+            })
+
+            # Create order data with email
             order_data = {
-                'user_id': user_id,
+                'email': email,
                 'order_number': order_number,
                 'service_type': transaction_request.service_type,
-                'items': transaction_request.items,
+                'items': items_as_dicts,
                 'subtotal': subtotal,
                 'tax': tax,
                 'discount': discount,
                 'total': total,
-                'status': OrderStatus.DRAFT,
-                'metadata': transaction_request.metadata
+                'status': OrderStatus.CONFIRMED,
+                'metadata': transaction_request.transaction_metadata
             }
             
             order = self.order_repo.create_order(OrderCreate(**order_data))
             if not order:
                 logger.error("Failed to create order")
                 return None
-            
+
+
+            # create payment gateway url from payment service
+            payment_body = {
+                "order_id": order_number,
+                "amount": float(total),  # Ensure amount is a float
+                "payment_method": transaction_request.payment_method.value.lower(),  # Ensure lowercase for payment method
+                "customer_details": {
+                    "email": email,
+                },
+                "item_details": item_details_for_payment,
+                "description": "Payment for order " + order.order_number,
+            }
+
+            payment_url_body = create_payment_url(payment_body)
+            if not payment_url_body:
+                logger.error("Failed to create payment")
+                return None
+
             # Create transaction using validated request data
             transaction = TransactionCreate(
-                user_id=user_id,
-                order_id=order.order_number,
+                email=email,
+                order_number=order.order_number,
                 transaction_type=transaction_request.transaction_type,
-                amount=transaction_request.amount,
+                amount=total,
                 currency=transaction_request.currency,
-                status=TransactionStatus.PENDING,
+                status=TransactionStatus.PROCESSING,
                 payment_method=transaction_request.payment_method,
                 payment_gateway=transaction_request.payment_gateway,
-                gateway_transaction_id=None,  # Set later during payment processing
-                metadata=transaction_request.metadata
+                gateway_transaction_id= payment_url_body.get("transaction_id"),
+                metadata=transaction_request.transaction_metadata
             )
-            
+
             db_transaction = self.transaction_repo.create_transaction(transaction)
             if not db_transaction:
                 logger.error("Failed to create transaction")
                 return None
+            # create payment in db
+            payment = PaymentCreate(
+                transaction_id=db_transaction.id,
+                amount=transaction_request.total,
+                currency=transaction_request.currency,
+                payment_method=transaction_request.payment_method,
+                payment_gateway=transaction_request.payment_gateway,
+                gateway_transaction_id=payment_url_body.get("transaction_id"),
+                status=PaymentStatus.PENDING,
+                meta_data=transaction_request.payment_metadata
+            )
+
+            db_payment = self.payment_repo.create_payment(payment)
+            if not db_payment:
+                logger.error("Failed to create payment")
+                return None
+
+            # Log successful transaction creation
+            logger.info(
+                f"Transaction created successfully - ID: {db_transaction.id}, "
+                f"Email: {email}, Amount: {db_transaction.amount} {db_transaction.currency}, " 
+                f"Service: {transaction_request.service_type.value}, "
+                f"Order: {order.order_number}, "
+                f"Method: {transaction_request.payment_method.value if transaction_request.payment_method else 'Not set'}, "
+                f"Gateway: {transaction_request.payment_gateway.value if transaction_request.payment_gateway else 'Not set'}, "
+                f"Items: {len(transaction_request.items)}"
+            )
+
+            # add payment url to transaction
+            db_transaction.payment_url = payment_url_body.get("payment_url")
                 
             return db_transaction
             
@@ -116,28 +201,32 @@ class TransactionService:
             logger.error(f"Error creating transaction: {str(e)}", exc_info=True)
             return None
     
-    def get_transaction(self, transaction_id: int, user_id: int) -> Optional[TransactionInDB]:
+    def get_transaction(self, transaction_id: int, email: str, role: UserRole) -> Optional[TransactionInDB]:
         """Get a transaction by ID with authorization check.
         
         Args:
             transaction_id: ID of the transaction to retrieve
-            user_id: ID of the user making the request
+            email: Email of the user making the request
             
         Returns:
             TransactionInDB if found and authorized, None otherwise
         """
         try:
             transaction = self.transaction_repo.get_transaction(transaction_id)
-            if not transaction or transaction.user_id != user_id:
-                return None
-            return transaction
+            if role == UserRole.ADMIN and transaction:
+                return transaction
+            else:
+                if not transaction or transaction.email != email:
+                    logger.info(f"Unauthorized access to transaction {transaction_id} - User: {email}")
+                    return None
+                return transaction
         except Exception as e:
             logger.error(f"Error retrieving transaction {transaction_id}: {str(e)}")
             return None
 
     def get_transactions_by_user(
         self, 
-        user_id: int, 
+        email: str, 
         status: Optional[TransactionStatus] = None,
         skip: int = 0, 
         limit: int = 100
@@ -145,7 +234,7 @@ class TransactionService:
         """Get paginated list of transactions for a user.
         
         Args:
-            user_id: ID of the user
+            email: Email of the user
             status: Optional status filter
             skip: Number of records to skip
             limit: Maximum number of records to return
@@ -155,13 +244,13 @@ class TransactionService:
         """
         try:
             return self.transaction_repo.get_transactions_by_user(
-                user_id=user_id,
+                email=email,
                 status=status,
                 skip=skip,
                 limit=limit
             )
         except Exception as e:
-            logger.error(f"Error retrieving transactions for user {user_id}: {str(e)}")
+            logger.error(f"Error retrieving transactions for user {email}: {str(e)}")
             return []
     
     def get_all_transactions(
@@ -187,18 +276,93 @@ class TransactionService:
             logger.error(f"Error retrieving all transactions: {str(e)}")
             return []
     
+    def search_transactions_by_email(
+        self,
+        search_email: str,
+        status_filter: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+        admin_email: str = None
+    ) -> List[TransactionInDB]:
+        """Search transactions by email with validation (admin function).
+        
+        Args:
+            search_email: Email address to search for transactions
+            status_filter: Optional status string to filter by
+            skip: Number of records to skip for pagination
+            limit: Maximum number of records to return
+            admin_email: Email of the admin performing the search (for logging)
+            
+        Returns:
+            List of TransactionInDB objects
+            
+        Raises:
+            ValueError: If validation fails (invalid status, email format, etc.)
+        """
+        try:
+            # Validate email format
+            if not search_email or not search_email.strip():
+                raise ValueError("Search email cannot be empty")
+            
+            # Basic email format validation
+            import re
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, search_email.strip()):
+                raise ValueError(f"Invalid email format: {search_email}")
+            
+            # Validate and convert status filter
+            status_enum = None
+            if status_filter:
+                try:
+                    status_enum = TransactionStatus(status_filter.upper())
+                except ValueError:
+                    valid_statuses = [s.value for s in TransactionStatus]
+                    raise ValueError(f"Invalid status value: {status_filter}. Valid values are: {valid_statuses}")
+            
+            # Validate pagination parameters
+            if skip < 0:
+                raise ValueError("Skip parameter cannot be negative")
+            if limit <= 0 or limit > 1000:  # Set reasonable upper limit
+                raise ValueError("Limit must be between 1 and 1000")
+            
+            # Get transactions using existing service method with validation
+            transactions = self.get_transactions_by_user(
+                email=search_email.strip().lower(),
+                status=status_enum,
+                skip=skip,
+                limit=limit
+            )
+            
+            # Log successful search for audit purposes
+            logger.info(
+                f"Admin search completed - Admin: {admin_email}, "
+                f"Search email: {search_email}, Status: {status_filter}, "
+                f"Results: {len(transactions)}, Skip: {skip}, Limit: {limit}"
+            )
+            
+            return transactions
+            
+        except ValueError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            logger.error(
+                f"Error in admin transaction search - Admin: {admin_email}, "
+                f"Search email: {search_email}, Error: {str(e)}"
+            )
+            raise ValueError(f"Failed to search transactions: {str(e)}")
+    
     def update_transaction(
         self, 
         transaction_id: int, 
         update_request: TransactionUpdateRequest,
-        user_id: int,  
     ) -> Optional[TransactionInDB]:
         """Update transaction with validated request model.
         
         Args:
             transaction_id: ID of the transaction to update
             update_request: Validated TransactionUpdateRequest model
-            user_id: User ID for authorization
+            email: Email of the user making the request
             
         Returns:
             Updated TransactionInDB if successful, None otherwise
@@ -208,7 +372,7 @@ class TransactionService:
         """
         try:
             transaction_check = self.transaction_repo.get_transaction(transaction_id)
-            if not transaction_check or transaction_check.user_id != user_id:
+            if not transaction_check:
                 raise ValueError("Transaction not found or access denied")
 
             # Create update data from validated request
@@ -226,20 +390,54 @@ class TransactionService:
                 update_data["metadata"] = update_request.metadata
 
             transaction_update = TransactionUpdate(**update_data)
+            
+            # Store original transaction for audit logging
+            original_transaction = transaction_check
                 
-            return self.transaction_repo.update_transaction(
+            updated_transaction = self.transaction_repo.update_transaction(
                 transaction_id, 
                 transaction_update
             )
+            
+            # Log successful transaction update
+            if updated_transaction:
+                logger.info(
+                    f"Transaction updated successfully - ID: {transaction_id}, "
+                    f"Status changed: {original_transaction.status.value if original_transaction.status else 'None'} -> "
+                    f"{updated_transaction.status.value if updated_transaction.status else 'None'}, "
+                    f"Order: {original_transaction.order_number}, "
+                    f"Amount: {original_transaction.amount}, "
+                    f"Changes: {update_data}"
+                )
+            
+            return updated_transaction
         except Exception as e:
             logger.error(f"Error updating transaction {transaction_id}: {str(e)}")
             return None
     
+    def cancel_transaction(self, transaction_id: int) -> Optional[TransactionInDB]:
+        """Cancel a transaction with logging"""
+        try:
+            from domain.models import TransactionStatus
+            
+            # Create an update request to set status to cancelled
+            cancel_request = TransactionUpdateRequest(status=TransactionStatus.CANCELLED)
+            
+            result = self.update_transaction(transaction_id, cancel_request)
+            
+            if result:
+                logger.info(f"Transaction cancelled: transaction_id={transaction_id}")
+                
+            return result
+        except Exception as e:
+            logger.error(f"Failed to cancel transaction {transaction_id}: {str(e)}")
+            raise
+    
     # Delete transaction with authorization check (should be admin)
-    # def delete_transaction(self, transaction_id: int, user_id: int) -> bool:
+    # def delete_transaction(self, transaction_id: int, email: str) -> bool:
     #     """Delete a transaction with authorization check"""
     #     transaction = self.transaction_repo.get_transaction(transaction_id)
-    #     if not transaction or transaction.user_id != user_id:
+    #     if not transaction or transaction.email != email:
     #         return False
             
     #     return self.transaction_repo.delete_transaction(transaction_id)
@@ -257,28 +455,50 @@ class OrderService:
     ):
         self.order_repo = order_repo
     
-    def get_order(self, order_id: int, user_id: int) -> Optional[OrderInDB]:
+    def get_order(self, order_id: int) -> Optional[OrderInDB]:
         """Get an order by ID with optional authorization check.
         
         Args:
             order_id: ID of the order to retrieve
-            user_id: Optional user ID for authorization
+            email: Optional user email for authorization
             
         Returns:
-            OrderInDB if found (and authorized if user_id provided), None otherwise
+            OrderInDB if found (and authorized if email provided), None otherwise
         """
         try:
             order = self.order_repo.get_order(order_id)
-            if not order or order.user_id != user_id:
+            if not order:
                 return None
+
             return order
+            
         except Exception as e:
             logger.error(f"Error retrieving order {order_id}: {str(e)}")
+            return None
+
+    def get_order_by_number(self, order_number: str) -> Optional[OrderInDB]:
+        """Get an order by order number with optional authorization check.
+        
+        Args:
+            order_number: order number to retrieve
+            
+        Returns:
+            OrderInDB if found (and authorized if email provided), None otherwise
+        """
+        try:
+            order = self.order_repo.get_order_by_order_number(order_number)
+            if not order:
+                return None
+             
+            return order
+            
+        except Exception as e:
+            logger.error(f"Error retrieving order {order_number}: {str(e)}")
             return None
     
     def get_orders_by_user(
         self, 
-        user_id: int, 
+        email: str, 
         status: Optional[OrderStatus] = None,
         skip: int = 0, 
         limit: int = 100
@@ -286,7 +506,7 @@ class OrderService:
         """Get paginated list of orders for a user.
         
         Args:
-            user_id: ID of the user
+            email: Email of the user
             status: Optional status filter
             skip: Number of records to skip
             limit: Maximum number of records to return
@@ -296,21 +516,21 @@ class OrderService:
         """
         try:
             return self.order_repo.get_orders_by_user(
-                user_id=user_id,
+                email=email,
                 status=status,
                 skip=skip,
                 limit=limit
             )
         except Exception as e:
-            logger.error(f"Error retrieving orders for user {user_id}: {str(e)}")
+            logger.error(f"Error retrieving orders for user {email}: {str(e)}")
             return []
     
-    def create_order(self, order_request: "OrderCreateRequest", user_id: int) -> Optional[OrderInDB]:
+    def create_order(self, order_request: "OrderCreateRequest", email: str) -> Optional[OrderInDB]:
         """Create a new order with Pydantic validation.
         
         Args:
             order_request: Validated OrderCreateRequest model
-            user_id: ID of the user creating the order
+            email: Email of the user creating the order
             
         Returns:
             OrderInDB if created successfully, None otherwise
@@ -321,14 +541,27 @@ class OrderService:
         try:
             # Calculate totals from validated items
             items = order_request.items
-            subtotal = sum(item.get("price", 0) * item.get("quantity", 1) for item in items)
+            subtotal = sum(item.price * item.quantity for item in items)
             total = subtotal + order_request.tax - order_request.discount
+            
+            # Convert dictionary items to TransactionItem objects
+            transaction_items = []
+            for item in items:
+                print(f"DEBUG: Processing item: {item}, type: {type(item)}")
+                transaction_item = TransactionItem(
+                    name=item.name,
+                    price=item.price,
+                    quantity=item.quantity,
+                    description=item.description,
+                    metadata=item.metadata
+                )
+                transaction_items.append(transaction_item)
             
             # Prepare order data
             order_create_data = {
-                "user_id": user_id,
+                "email": email,
                 "service_type": order_request.service_type,
-                "items": order_request.items,
+                "items": transaction_items,
                 "subtotal": subtotal,
                 "tax": order_request.tax,
                 "discount": order_request.discount,
@@ -338,10 +571,15 @@ class OrderService:
             }
             
             order_create = OrderCreate(**order_create_data)
+            
             return self.order_repo.create_order(order_create)
             
         except Exception as e:
-            logger.error(f"Error creating order for user {user_id}: {str(e)}")
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"Error creating order for user {email}: {str(e)}")
+            logger.error(f"Full traceback: {tb}")
+            print(f"TRACEBACK: {tb}")
             return None
     
     def get_orders(
@@ -374,14 +612,13 @@ class OrderService:
         self, 
         order_id: int, 
         status_request: "OrderStatusUpdateRequest",
-        user_id: int
     ) -> Optional[OrderInDB]:
         """Update order status with Pydantic validation.
         
         Args:
             order_id: ID of the order to update
             status_request: Validated OrderStatusUpdateRequest model
-            user_id: User ID for authorization
+            email: Email of the user making the request
             
         Returns:
             Updated OrderInDB if successful, None otherwise
@@ -390,10 +627,6 @@ class OrderService:
             ValueError: If validation fails or unauthorized access
         """
         try:
-            order_check = self.order_repo.get_order(order_id)
-            if not order_check or order_check.user_id != user_id:
-                raise ValueError("Order not found or access denied")
-                
             # Create update data from validated request
             update_data = {
                 "status": status_request.status
@@ -417,7 +650,7 @@ class OrderService:
             logger.error(f"Error updating order {order_id}: {str(e)}")
             return None
 
-    # def delete_order(self, order_id: int, user_id: int) -> bool:
+    # def delete_order(self, order_id: int, email: str) -> bool:
                 
 
 class PaymentService:
@@ -431,22 +664,24 @@ class PaymentService:
         self, 
         transaction_repo: DBTransactionRepository,
         payment_repo: DBPaymentRepository,
+        order_repo: DBOrderRepository,
     ):
         self.transaction_repo = transaction_repo
         self.payment_repo = payment_repo
+        self.order_repo = order_repo
     
     def create_payment(
         self, 
         transaction_id: int,
-        payment_data: Dict[str, Any],
-        user_id: int
+        payment_data: PaymentCreateRequest,
+        email: str
     ) -> Optional[PaymentInDB]:
         """Create a new payment record for a transaction.
         
         Args:
             transaction_id: ID of the transaction to create payment for
             payment_data: Dictionary containing payment details
-            user_id: ID of the user making the payment
+            email: Email of the user making the payment
             
         Returns:
             PaymentInDB if successful, None otherwise
@@ -454,41 +689,39 @@ class PaymentService:
         Raises:
             ValueError: If payment data validation fails
         """
-        # Validate request data using Pydantic model
-        request_dict = {
-            "transaction_id": transaction_id,
-            **payment_data
-        }
-        
-        try:
-            validated_request = PaymentCreateRequest(**request_dict)
-        except Exception as e:
-            logger.error(f"Payment validation failed: {str(e)}")
-            raise ValueError(f"Payment validation failed: {str(e)}")
-        
         try:
             # Get and validate transaction
             transaction = self.transaction_repo.get_transaction(transaction_id)
-            if not transaction or transaction.user_id != user_id:
+            if not transaction or transaction.email != email:
                 logger.error(f"Transaction {transaction_id} not found or unauthorized")
-                return None
+                raise ValueError("Transaction not found or unauthorized")
+            
+            # Validate payment amount matches transaction amount
+            if payment_data.amount != transaction.amount:
+                logger.error(
+                    f"Payment amount {payment_data.amount} does not match "
+                    f"transaction amount {transaction.amount} for transaction {transaction_id}"
+                )
+                raise ValueError("Payment amount does not match transaction amount")
                 
             # Check if transaction is already completed
             if transaction.status == TransactionStatus.COMPLETED:
                 logger.warning(f"Transaction {transaction_id} is already completed")
                 payments = self.payment_repo.get_payments_by_transaction(transaction_id)
-                return payments[0] if payments else None
+                raise ValueError(f"Transaction is already completed, {payments[0]}")
             
             # Create payment record using validated data
             payment = PaymentCreate(
-                transaction_id=validated_request.transaction_id,
-                amount=validated_request.amount,
-                currency=Currency(validated_request.currency) if validated_request.currency else transaction.currency,
-                payment_method=validated_request.payment_method,
-                payment_gateway=validated_request.gateway,
-                gateway_transaction_id=validated_request.gateway_transaction_id,
+                transaction_id=payment_data.transaction_id,
+                amount=payment_data.amount,
+                currency=Currency(payment_data.currency)
+                if payment_data.currency
+                else transaction.currency,
+                payment_method=payment_data.payment_method,
+                payment_gateway=payment_data.payment_gateway,
+                gateway_transaction_id=payment_data.gateway_transaction_id,
                 status=PaymentStatus.PENDING,
-                metadata=validated_request.metadata or {}
+                metadata=payment_data.metadata or {},
             )
             
             # Save payment to database
@@ -496,6 +729,15 @@ class PaymentService:
             if not db_payment:
                 logger.error(f"Failed to create payment for transaction {transaction_id}")
                 return None
+                
+            # Log successful payment creation
+            logger.info(
+                f"Payment created successfully - ID: {db_payment.id}, "
+                f"Transaction: {transaction_id}, Email: {email}, "
+                f"Amount: {db_payment.amount} {db_payment.currency}, "
+                f"Method: {db_payment.payment_method.value}, "
+                f"Gateway: {db_payment.payment_gateway.value}"
+            )
                 
             # Update transaction status
             self.transaction_repo.update_transaction(
@@ -507,7 +749,29 @@ class PaymentService:
                     gateway_transaction_id=payment.gateway_transaction_id
                 )
             )
-            
+            logger.info(
+                f"Transaction {transaction_id} status updated to PROCESSING "
+            )
+
+            # Get the order using order_number from transaction
+            order = self.order_repo.get_order_by_order_number(transaction.order_number)
+
+            if order:
+                # Update order status to CONFIRMED
+                self.order_repo.update_order_status(
+                    order.id,
+                    OrderStatus.CONFIRMED
+                )
+                logger.info(
+                    f"Order {order.order_number} status updated to CONFIRMED "
+                    f"after payment creation for transaction {transaction_id}"
+                )
+
+            else:
+                logger.error(
+                    f"Order {transaction.order_number} not found for transaction {transaction_id}"
+                )
+
             return db_payment
             
         except Exception as e:
@@ -516,9 +780,8 @@ class PaymentService:
     
     def confirm_payment(
         self, 
-        payment_id: int, 
-        gateway_response: Dict[str, Any],
-        confirmed_by: Optional[int] = None
+        order_number: str, 
+        gateway_response: PaymentConfirmRequest,
     ) -> Optional[PaymentInDB]:
         """Confirm a payment with gateway response data.
         
@@ -533,34 +796,42 @@ class PaymentService:
         Raises:
             ValueError: If payment confirmation data validation fails
         """
-        # Validate request data using Pydantic model
-        request_dict = {
-            "payment_id": payment_id,
-            "gateway_response": gateway_response,
-            "confirmed_by": confirmed_by
-        }
-        
+    
         try:
-            validated_request = PaymentConfirmRequest(**request_dict)
-        except Exception as e:
-            logger.error(f"Payment confirmation validation failed: {str(e)}")
-            raise ValueError(f"Payment confirmation validation failed: {str(e)}")
-        
-        try:
-            # Get payment with transaction
-            payment = self.payment_repo.get_payment(validated_request.payment_id)
+            # Validate payment token
+            if not self.validate_payment_token(gateway_response.token):
+                logger.error("Invalid payment token")
+                raise ValueError("Invalid payment token")
+
+            # Get payment with order number
+            payment = self.payment_repo.get_payment_by_order_number(order_number)
             if not payment:
-                logger.error(f"Payment {payment_id} not found")
+                logger.error(f"Payment {order_number} not found")
                 return None
-                
+
+            payment_id = payment.id
+            
+            # Get payment with transaction
+            logger.info(f"Payment {payment_id} found")
+            payment = self.payment_repo.get_payment(payment_id)
+            transaction = self.transaction_repo.get_transaction(payment.transaction_id)
+            order = self.order_repo.get_order_by_order_number(transaction.order_number)
+
+            if not payment or not transaction or not order:
+                logger.error(f"Payment {payment_id} not found or transaction not found or order not found")
+                return None
+            
             # Update payment status
-            status = PaymentStatus.COMPLETED if validated_request.gateway_response.get('success', False) else PaymentStatus.FAILED
+            logger.info(
+                f"Payment {gateway_response.gateway_response.get('success', False)}"
+            )
+            status = PaymentStatus.COMPLETED if gateway_response.gateway_response.get('success', False) else PaymentStatus.FAILED
             
             # Update payment record
             updated_payment = self.payment_repo.update_payment_status(
-                payment_id=validated_request.payment_id,
+                payment_id=payment_id,
                 status=status,
-                gateway_transaction_id=validated_request.gateway_response.get('transaction_id')
+                gateway_transaction_id=gateway_response.gateway_response.get('transaction_id')
             )
             
             if not updated_payment:
@@ -578,337 +849,58 @@ class PaymentService:
                 transaction_id=payment.transaction_id,
                 transaction=TransactionUpdate(
                     status=transaction_status,
-                    gateway_transaction_id=validated_request.gateway_response.get('transaction_id'),
+                    gateway_transaction_id=gateway_response.gateway_response.get('transaction_id'),
                     metadata={
-                        **payment.transaction.metadata,
-                        'gateway_response': validated_request.gateway_response,
-                        'confirmed_by': validated_request.confirmed_by,
-                        'confirmed_at': datetime.utcnow().isoformat()
+                        **payment.metadata,
+                        'gateway_response': gateway_response.gateway_response,
+                        'confirmed_at': datetime.now(timezone.utc)
                     }
                 )
             )
             
-            return updated_payment
-            
-        except Exception as e:
-            logger.error(f"Error confirming payment {payment_id}: {str(e)}", exc_info=True)
-            return None
-
-    def process_refund(
-        self,
-        payment_id: int,
-        refund_data: Dict[str, Any],
-        refunded_by: int
-    ) -> Optional[PaymentInDB]:
-        """Process a payment refund with validation.
-        
-        Args:
-            payment_id: ID of the payment to refund
-            refund_data: Dictionary containing refund details
-            refunded_by: ID of the user processing the refund
-            
-        Returns:
-            Updated PaymentInDB if successful, None otherwise
-            
-        Raises:
-            ValueError: If refund data validation fails
-        """
-        # Validate request data using Pydantic model
-        request_dict = {
-            "payment_id": payment_id,
-            "refunded_by": refunded_by,
-            **refund_data
-        }
-        
-        try:
-            validated_request = PaymentRefundRequest(**request_dict)
-        except Exception as e:
-            logger.error(f"Payment refund validation failed: {str(e)}")
-            raise ValueError(f"Payment refund validation failed: {str(e)}")
-        
-        try:
-            # Get the payment first
-            payment = self.payment_repo.get_payment(validated_request.payment_id)
-            if not payment:
-                logger.error(f"Payment {payment_id} not found")
-                return None
-            
-            # Check if payment can be refunded
-            if payment.status != PaymentStatus.COMPLETED:
-                raise ValueError("Only completed payments can be refunded")
-            
-            # Update payment status to refunded
-            # Note: This is a simplified implementation
-            # In a real system, you'd integrate with payment gateway APIs
-            updated_payment = self.payment_repo.update_payment(
-                payment_id=validated_request.payment_id,
-                payment_data={
-                    "status": PaymentStatus.REFUNDED.value,
-                    "metadata": {
-                        **payment.metadata,
-                        "refund_reason": validated_request.reason,
-                        "refunded_by": validated_request.refunded_by,
-                        "refund_amount": validated_request.amount or payment.amount
-                    }
-                }
+            self.order_repo.update_order_status(
+                order_id=order.id,
+                status=OrderStatus.PAID,
             )
             
             return updated_payment
             
-        except ValueError:
-            # Re-raise validation errors
-            raise
         except Exception as e:
-            logger.error(f"Error processing refund for payment {payment_id}: {str(e)}", exc_info=True)
+            logger.error(f"Error confirming payment with order number {order_number}: {str(e)}", exc_info=True)
             return None
 
-    def process_webhook(
-        self,
-        webhook_data: Dict[str, Any]
-    ) -> Optional[PaymentInDB]:
-        """Process a payment webhook with validation.
-        
-        Args:
-            webhook_data: Dictionary containing webhook data
-            
-        Returns:
-            Updated PaymentInDB if successful, None otherwise
-            
-        Raises:
-            ValueError: If webhook data validation fails
-        """
+    def validate_payment_token(self, token: str) -> bool:
         try:
-            validated_request = PaymentWebhookRequest(**webhook_data)
-        except Exception as e:
-            logger.error(f"Payment webhook validation failed: {str(e)}")
-            raise ValueError(f"Payment webhook validation failed: {str(e)}")
-        
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            status: str = payload.get("token")
+            if status == "success":
+                return True
+            return False
+        except JWTError:
+            return False
+
+    def create_payment_token(self):
         try:
-            # Update payment status based on webhook
-            payment = self.payment_repo.update_payment(
-                payment_id=validated_request.payment_id,
-                payment_data={
-                    "status": validated_request.status,
-                    "gateway_response": validated_request.gateway_response
-                }
-            )
-            
-            if not payment:
-                logger.error(f"Payment {validated_request.payment_id} not found for webhook processing")
-                return None
-            
-            return payment
-            
+            logger.info("Creating payment token")
+            payload = {
+                "token": "success"
+            }
+            return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
         except Exception as e:
-            logger.error(f"Error processing webhook for payment {validated_request.payment_id}: {str(e)}", exc_info=True)
+            logger.error(f"Error creating payment token: {str(e)}", exc_info=True)
             return None
-
-
-# class RefundService:
-#     """Service for handling refund-related business logic.
-    
-#     This service manages the refund process including request, approval,
-#     and processing while ensuring data consistency.
-#     """
-    
-#     def __init__(
-#         self, 
-#         transaction_repo: DBTransactionRepository,
-#         order_repo: DBOrderRepository,
-#         refund_repo: DBRefundRepository,
-#     ):
-#         self.transaction_repo = transaction_repo
-#         self.order_repo = order_repo
-#         self.refund_repo = refund_repo
-    
-#     def request_refund(
-#         self, 
-#         transaction_id: int, 
-#         amount: float,
-#         reason: str,
-#         user_id: int,
-#         **metadata
-#     ) -> Optional[RefundInDB]:
-#         """Request a refund for a transaction.
-        
-#         Args:
-#             transaction_id: ID of the transaction to refund
-#             amount: Amount to refund (must be <= transaction amount)
-#             reason: Reason for the refund
-#             user_id: ID of the user requesting the refund
-#             **metadata: Additional metadata for the refund
-            
-#         Returns:
-#             RefundInDB if successful, None otherwise
-#         """
-#         try:
-#             # Get and validate transaction
-#             transaction = self.transaction_repo.get_transaction(transaction_id)
-#             if not transaction or transaction.user_id != user_id:
-#                 logger.error(f"Transaction {transaction_id} not found or unauthorized")
-#                 return None
-                
-#             # Check if transaction is refundable
-#             if transaction.status != TransactionStatus.COMPLETED:
-#                 logger.error(f"Transaction {transaction_id} is not in a refundable state")
-#                 return None
-                
-#             # Validate amount
-#             if amount <= 0 or amount > transaction.amount:
-#                 logger.error(f"Invalid refund amount {amount} for transaction {transaction_id}")
-#                 return None
-                
-#             # Check for existing pending refunds
-#             existing_refunds = self.refund_repo.get_refunds_by_transaction(transaction_id)
-#             if any(refund.status == RefundStatus.PENDING for refund in existing_refunds):
-#                 logger.warning(f"Transaction {transaction_id} already has a pending refund")
-#                 return None
-                
-#             # Create refund request
-#             refund = RefundCreate(
-#                 transaction_id=transaction_id,
-#                 amount=amount,
-#                 reason=reason,
-#                 status=RefundStatus.PENDING,
-#                 metadata={
-#                     'requested_by': user_id,
-#                     'requested_at': datetime.utcnow().isoformat(),
-#                     **metadata
-#                 }
-#             )
-            
-#             # Save refund to database
-#             db_refund = self.refund_repo.create_refund(refund)
-#             if not db_refund:
-#                 logger.error(f"Failed to create refund for transaction {transaction_id}")
-#                 return None
-                
-#             # Update transaction status
-#             self.transaction_repo.update_transaction(
-#                 transaction_id=transaction_id,
-#                 transaction=TransactionUpdate(
-#                     status=TransactionStatus.REFUND_PENDING,
-#                     metadata={
-#                         **transaction.metadata,
-#                         'refund_requested_at': datetime.utcnow().isoformat(),
-#                         'refund_requested_by': user_id,
-#                         'refund_reason': reason
-#                     }
-#                 )
-#             )
-            
-#             return db_refund
-            
-#         except Exception as e:
-#             logger.error(f"Error requesting refund for transaction {transaction_id}: {str(e)}", exc_info=True)
-#             return None
-    
-#     def process_refund(
-#         self, 
-#         refund_id: int, 
-#         action: str, 
-#         processed_by: int,
-#         notes: Optional[str] = None,
-#         **metadata
-#     ) -> Optional[RefundInDB]:
-#         """Process a refund request (approve/reject).
-        
-#         Args:
-#             refund_id: ID of the refund to process
-#             action: Action to take ('approve' or 'reject')
-#             processed_by: ID of the user processing the refund
-#             notes: Optional notes about the processing
-#             **metadata: Additional metadata for the refund
-            
-#         Returns:
-#             Updated RefundInDB if successful, None otherwise
-#         """
-#         try:
-#             # Get and validate refund
-#             refund = self.refund_repo.get_refund(refund_id)
-#             if not refund:
-#                 logger.error(f"Refund {refund_id} not found")
-#                 return None
-                
-#             # Check if refund is in a processable state
-#             if refund.status != RefundStatus.PENDING:
-#                 logger.warning(f"Refund {refund_id} is not in a processable state")
-#                 return None
-                
-#             # Get transaction
-#             transaction = self.transaction_repo.get_transaction(refund.transaction_id)
-#             if not transaction:
-#                 logger.error(f"Transaction {refund.transaction_id} not found for refund {refund_id}")
-#                 return None
-                
-#             # Determine new status based on action
-#             action = action.lower()
-#             if action == 'approve':
-#                 new_status = RefundStatus.COMPLETED
-#                 transaction_status = TransactionStatus.REFUNDED
-#             elif action == 'reject':
-#                 new_status = RefundStatus.REJECTED
-#                 transaction_status = transaction.status
-#             else:
-#                 logger.error(f"Invalid action '{action}' for refund {refund_id}")
-#                 return None
-            
-#             # Update refund record
-#             updated_refund = self.refund_repo.update_refund_status(
-#                 refund_id=refund_id,
-#                 status=new_status,
-#                 processed_by=processed_by,
-#                 processed_at=datetime.utcnow(),
-#                 notes=notes,
-#                 metadata={
-#                     **refund.metadata,
-#                     'processed_at': datetime.utcnow().isoformat(),
-#                     'processed_by': processed_by,
-#                     'notes': notes,
-#                     **metadata
-#                 }
-#             )
-            
-#             if not updated_refund:
-#                 logger.error(f"Failed to update refund {refund_id}")
-#                 return None
-            
-#             # Update transaction status if refund was approved
-#             if new_status == RefundStatus.COMPLETED:
-#                 self.transaction_repo.update_transaction(
-#                     transaction_id=transaction.id,
-#                     transaction=TransactionUpdate(
-#                         status=transaction_status,
-#                         metadata={
-#                             **transaction.metadata,
-#                             'refund_processed_at': datetime.utcnow().isoformat(),
-#                             'refund_processed_by': processed_by,
-#                             'refund_notes': notes
-#                         }
-#                     )
-#                 )
-            
-#             return updated_refund
-            
-#         except Exception as e:
-#             logger.error(f"Error processing refund {refund_id}: {str(e)}", exc_info=True)
-#             return None
 
 
 # =============================================================================
 # Dependency Injection and Service Factories
 # =============================================================================
 
-from functools import lru_cache
-from typing import Generator
-from sqlalchemy.orm import Session
 
 def get_database_session() -> Generator[Session, None, None]:
     """
     FastAPI dependency that provides database sessions.
     This is the only place where FastAPI directly interacts with the database.
     """
-    from adapters.db import DatabaseSessionProvider
     
     _session_provider = DatabaseSessionProvider()
     session = _session_provider.get_session()
@@ -923,7 +915,6 @@ def create_payment_service(db_session: Session) -> PaymentService:
     Factory function to create PaymentService with all its dependencies.
     This is where we compose the hexagonal architecture.
     """
-    from adapters.db import DBPaymentRepository, DBTransactionRepository
     
     # Infrastructure adapters (ports implementations)
     transaction_repo = DBTransactionRepository(db_session)
@@ -939,7 +930,6 @@ def create_transaction_service(db_session: Session) -> TransactionService:
     """
     Factory function to create TransactionService with all its dependencies.
     """
-    from adapters.db import DBTransactionRepository, DBOrderRepository
     
     # Infrastructure adapters
     transaction_repo = DBTransactionRepository(db_session)
@@ -955,7 +945,6 @@ def create_order_service(db_session: Session) -> OrderService:
     """
     Factory function to create OrderService with all its dependencies.
     """
-    from adapters.db import DBOrderRepository
     
     # Infrastructure adapters
     order_repo = DBOrderRepository(db_session)
@@ -966,10 +955,179 @@ def create_order_service(db_session: Session) -> OrderService:
     )
 
 
+class RefundService:
+    """Service for handling refund-related business logic.
+    
+    This service manages the refund process including validation, status updates,
+    and integration with payment gateways.
+    """
+    
+    def __init__(
+        self,
+        transaction_repo: DBTransactionRepository,
+        refund_repo: DBRefundRepository,
+        payment_repo: DBPaymentRepository
+    ):
+        self.transaction_repo = transaction_repo
+        self.refund_repo = refund_repo
+        self.payment_repo = payment_repo
+    
+    def create_refund(
+        self,
+        transaction_id: int,
+        refund_request: "TransactionRefundRequest",
+        processed_by: str
+    ) -> Dict[str, Any]:
+        """Create a new refund for a transaction.
+        
+        Args:
+            transaction_id: ID of the transaction to refund
+            refund_request: Validated refund request data
+            processed_by: Email of the admin processing the refund
+            
+        Returns:
+            Dict containing refund details if successful, None otherwise
+            
+        Raises:
+            ValueError: If validation fails or refund cannot be processed
+        """
+        try:
+            # Get the transaction
+            transaction = self.transaction_repo.get_transaction(transaction_id)
+            if not transaction:
+                raise ValueError("Transaction not found")
+                
+            # Validate transaction status
+            if transaction.status != TransactionStatus.COMPLETED:
+                raise ValueError("Only completed transactions can be refunded")
+                
+            # Get the payment for this transaction
+            payments = self.payment_repo.get_payments_by_transaction(transaction_id)
+            if not payments:
+                raise ValueError("No payment found for this transaction")
+                
+            payment = payments[0]  # Get the first payment (assuming one payment per transaction)
+            
+            # Calculate refund amount (default to full amount if not specified)
+            refund_amount = refund_request.amount if refund_request.amount else transaction.amount
+            
+            if refund_amount <= 0:
+                raise ValueError("Refund amount must be greater than 0")
+                
+            if refund_amount > transaction.amount:
+                raise ValueError("Refund amount cannot exceed transaction amount")
+                
+            # Create refund record
+            refund_data = {
+                "transaction_id": transaction_id,
+                "amount": refund_amount,
+                "reason": refund_request.reason,
+                "status": RefundStatus.PROCESSING,
+                "processed_by": processed_by,
+                "processed_at": datetime.now(timezone.utc),
+                "notes": refund_request.notes
+            }
+            
+            refund = self.refund_repo.create_refund(RefundCreate(**refund_data))
+            if not refund:
+                raise ValueError("Failed to create refund record")
+                
+            # Update transaction status
+            self.transaction_repo.update_transaction(
+                transaction_id,
+                TransactionUpdate(status=TransactionStatus.REFUNDED)
+            )
+            
+            # Here you would typically integrate with payment gateway to process the refund
+            # For example: payment_gateway.process_refund(payment.gateway_transaction_id, refund_amount)
+            
+            # Update refund status to completed
+            refund = self.refund_repo.update_refund_status(
+                refund_id=refund.id,
+                status=RefundStatus.COMPLETED,
+                processed_by=processed_by,
+                notes="Refund processed successfully"
+            )
+            
+            # Log successful refund processing
+            logger.info(
+                f"Refund processed successfully - ID: {refund.id}, "
+                f"Transaction: {transaction_id}, "
+                f"Amount: {refund_amount}, "
+                f"Processed by: {processed_by}, "
+                f"Reason: {refund_request.reason}"
+            )
+            
+            return {
+                "refund_id": refund.id,
+                "transaction_id": refund.transaction_id,
+                "amount": refund.amount,
+                "status": refund.status,
+                "reason": refund.reason,
+                "processed_at": refund.processed_at
+            }
+            
+        except Exception as e:
+            # Update refund status to failed if it was created
+            if 'refund' in locals():
+                self.refund_repo.update_refund_status(
+                    refund_id=refund.id,
+                    status=RefundStatus.FAILED,
+                    processed_by=processed_by,
+                    notes=f"Refund failed: {str(e)}"
+                )
+            raise ValueError(f"Failed to process refund: {str(e)}")
+    
+    def get_refund(self, refund_id: int) -> Optional[Dict[str, Any]]:
+        """Get refund details by ID.
+        
+        Args:
+            refund_id: ID of the refund to retrieve
+            
+        Returns:
+            Dict containing refund details if found, None otherwise
+        """
+        refund = self.refund_repo.get_refund(refund_id)
+        if not refund:
+            return None
+            
+        return {
+            "id": refund.id,
+            "transaction_id": refund.transaction_id,
+            "amount": refund.amount,
+            "status": refund.status,
+            "reason": refund.reason,
+            "processed_by": refund.processed_by,
+            "processed_at": refund.processed_at,
+            "notes": refund.notes,
+            "created_at": refund.created_at
+        }
+    
+    def get_refunds_by_transaction(self, transaction_id: int) -> List[Dict[str, Any]]:
+        """Get all refunds for a transaction.
+        
+        Args:
+            transaction_id: ID of the transaction
+            
+        Returns:
+            List of refund details
+        """
+        refunds = self.refund_repo.get_refunds_by_transaction(transaction_id)
+        return [
+            {
+                "id": refund.id,
+                "amount": refund.amount,
+                "status": refund.status,
+                "reason": refund.reason,
+                "processed_at": refund.processed_at,
+                "created_at": refund.created_at
+            }
+            for refund in refunds
+        ]
+
 # =============================================================================
 # REPORTS SERVICE
 # =============================================================================
-
 class ReportsService:
     """Service for handling reports and analytics operations"""
     
@@ -988,7 +1146,7 @@ class ReportsService:
                 transaction_type_filter=report_request.transaction_type,
                 min_amount=report_request.min_amount,
                 max_amount=report_request.max_amount,
-                user_id=report_request.user_id,
+                email=report_request.email,
                 currency=report_request.currency
             )
             
@@ -1020,7 +1178,7 @@ class ReportsService:
             transaction_data = [
                 TransactionReportData(
                     transaction_id=t.id,
-                    user_id=t.user_id,
+                    email=t.email,
                     order_id=t.order_id,
                     transaction_type=t.transaction_type,
                     amount=t.amount,
@@ -1137,7 +1295,7 @@ class ReportsService:
                 RefundReportData(
                     refund_id=r.id,
                     transaction_id=r.transaction_id,
-                    user_id=r.user_id if hasattr(r, 'user_id') else 0,  # Get from transaction if needed
+                    email=r.email if hasattr(r, 'email') else None,  # Get from transaction if needed
                     amount=r.amount,
                     reason=r.reason,
                     status=r.status,
@@ -1160,26 +1318,51 @@ class ReportsService:
 
 
 # Service factory for reports
-def get_reports_service(db: Session = Depends(get_database_session)) -> ReportsService:
-    """Factory function to create ReportsService with proper dependencies"""
-    # Infrastructure adapters
-    from adapters.db import DBTransactionRepository, DBRefundRepository
+def get_refund_service(db: Session = Depends(get_database_session)) -> RefundService:
+    """Factory function to create RefundService with all its dependencies"""
     transaction_repo = DBTransactionRepository(db)
     refund_repo = DBRefundRepository(db)
-    
-    # Domain service
+    payment_repo = DBPaymentRepository(db)
+    return RefundService(transaction_repo, refund_repo, payment_repo)
+
+
+def get_reports_service(db: Session = Depends(get_database_session)) -> ReportsService:
+    """Factory function to create ReportsService with proper dependencies"""
+    transaction_repo = DBTransactionRepository(db)
+    refund_repo = DBRefundRepository(db)
     return ReportsService(transaction_repo, refund_repo)
 
 
-# Authentication service placeholder
-@lru_cache()
-def get_auth_service():
-    """
-    TODO: Implement proper authentication service
-    This should return the actual auth service that validates tokens
-    """
-    class MockAuthService:
-        def get_current_user(self):
-            return {"id": 1, "role": "admin"}
-    
-    return MockAuthService()
+# AUTH SERVICE
+SECRET_KEY = os.getenv("JWT_SECRET", "secret")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+
+def get_current_user(authorization: Optional[str] = Header(None)) -> UserResponse:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user_info = get_user_info(authorization)
+    return UserResponse(**user_info)
+
+
+def require_admin(current_user: UserResponse = Depends(get_current_user)) -> UserResponse:
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        )
+    return current_user
+
+
+def require_user_or_admin(
+    current_user: UserResponse = Depends(get_current_user),
+) -> UserResponse:
+    if current_user.role not in [UserRole.USER, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User or admin access required",
+        )
+    return current_user

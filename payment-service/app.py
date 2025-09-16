@@ -7,6 +7,7 @@ import logging
 
 from adapters.db import Base, engine
 from routes.payment import router as payment_router
+from routes.webhook import router as webhook_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +21,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting Payment Service...")
-    
+
     # Create database tables
     try:
         Base.metadata.create_all(bind=engine)
@@ -28,9 +29,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
         raise
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down Payment Service...")
 
@@ -55,6 +56,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(payment_router, prefix="/payments", tags=["payments"])
+app.include_router(webhook_router, prefix="/webhook", tags=["webhooks"])
 
 # Health check endpoint
 @app.get("/health")
@@ -79,12 +81,12 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     # Get configuration from environment variables
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
     debug = os.getenv("DEBUG", "false").lower() == "true"
-    
+
     uvicorn.run(
         "app:app",
         host=host,

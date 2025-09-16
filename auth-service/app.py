@@ -1,12 +1,10 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
 from pathlib import Path
-import os
+from routes.auth_routes import router
 
 # Load all env vars from root .env
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
-
-from routes.auth_routes import router
 
 app = FastAPI(
     title="TiketQ Auth Service",
