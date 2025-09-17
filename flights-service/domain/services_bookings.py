@@ -123,10 +123,32 @@ async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.
             },
         }
 
+        # ✅ Normalize payment status BEFORE sending to transaction-service
+        raw_status = result.get("status", "PENDING")  # From MMBC/mock
+        status_mapping = {
+            "COMPLETED": "SUCCESS",
+            "SETTLED": "SUCCESS",
+            "SETTLEMENT": "SUCCESS",     # Midtrans (if used upstream)
+            "CAPTURE": "SUCCESS",        # Midtrans (credit card)
+            "PAID": "SUCCESS",
+            "PENDING": "PROCESSING",
+            "IN_PROGRESS": "PROCESSING",
+            "EXPIRE": "EXPIRED",
+            "CANCEL": "FAILED",
+            "FAILURE": "FAILED",
+            "DENY": "FAILED",
+        }
+        normalized_status = status_mapping.get(raw_status.upper(), "PROCESSING")
+        transaction_payload["status"] = normalized_status
+
+        # 🧪 Debug
+        print(f"[DEBUG] Raw Status = {raw_status}, Normalized = {normalized_status}")
+
         # 🔗 Send to transaction-service
         transaction_response = await create_transaction(transaction_payload)
 
-        result["payment_status"] = "initiated"
+        # Store in result
+        result["payment_status"] = normalized_status
         result["payment_response"] = transaction_response
 
     except Exception as e:
@@ -147,10 +169,16 @@ def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) ->
     if not pay_status:
         return current_status
 
-    if pay_status.upper() in ("SUCCESS", "PAID"):
-        return "PAID"
-    elif pay_status.upper() in ("FAILED", "EXPIRED"):
-        return pay_status.upper()
+    normalized = pay_status.upper()
+    mapping = {
+        "COMPLETED": "SUCCESS",
+        "SETTLED": "SUCCESS",
+        "PAID": "SUCCESS",
+    }
+    normalized = mapping.get(normalized, normalized)
+
+    if normalized in ("SUCCESS", "FAILED", "EXPIRED", "PROCESSING", "PENDING"):
+        return normalized
 
     return current_status
 
