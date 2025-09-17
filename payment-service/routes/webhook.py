@@ -187,12 +187,6 @@ async def handle_midtrans_webhook(
             if payment_token:
                 logger.info(f"Token created successfully, attempting confirmation for order: {order_id}")
 
-                # INI SALAH - confirm_payment_with_amount belum didefinisikan di line ini
-                # payment_confirmation_result = await confirm_payment_with_amount(
-                #     order_id, payment_token, gross_amount, notification_data
-                # )
-
-                # GANTI DENGAN confirm_payment yang sudah ada di line 65:
                 payment_confirmation_result = await confirm_payment(order_id, payment_token)
 
                 if payment_confirmation_result:
