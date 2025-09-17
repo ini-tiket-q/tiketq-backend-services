@@ -126,23 +126,29 @@ async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.
         # ✅ Normalize payment status BEFORE sending to transaction-service
         raw_status = result.get("status", "PENDING")  # From MMBC/mock
         status_mapping = {
-            "COMPLETED": "SUCCESS",
-            "SETTLED": "SUCCESS",
-            "SETTLEMENT": "SUCCESS",     # Midtrans (if used upstream)
-            "CAPTURE": "SUCCESS",        # Midtrans (credit card)
-            "PAID": "SUCCESS",
-            "PENDING": "PROCESSING",
-            "IN_PROGRESS": "PROCESSING",
-            "EXPIRE": "EXPIRED",
-            "CANCEL": "FAILED",
-            "FAILURE": "FAILED",
-            "DENY": "FAILED",
-        }
+                    "COMPLETED": "SUCCESS",
+                    "SETTLED": "SUCCESS",
+                    "SETTLEMENT": "SUCCESS",   # Midtrans
+                    "CAPTURE": "SUCCESS",      # Midtrans
+                    "PAID": "SUCCESS",
+
+                    "PENDING": "PROCESSING",
+                    "IN_PROGRESS": "PROCESSING",
+
+                    "EXPIRE": "EXPIRED",       # fix → matches DB exactly
+                    "EXPIRED": "EXPIRED",
+
+                    "CANCEL": "CANCELED",      # fix → matches DB spelling
+                    "CANCELLED": "CANCELED",   # extra safeguard
+                    "FAILURE": "FAILED",
+                    "DENY": "FAILED",
+                }
+
         normalized_status = status_mapping.get(raw_status.upper(), "PROCESSING")
         transaction_payload["status"] = normalized_status
 
-        # 🧪 Debug
         print(f"[DEBUG] Raw Status = {raw_status}, Normalized = {normalized_status}")
+
 
         # 🔗 Send to transaction-service
         transaction_response = await create_transaction(transaction_payload)
@@ -171,11 +177,22 @@ def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) ->
     mapping = {
         "COMPLETED": "SUCCESS",
         "SETTLED": "SUCCESS",
+        "SETTLEMENT": "SUCCESS",
+        "CAPTURE": "SUCCESS",
         "PAID": "SUCCESS",
+
+        "EXPIRE": "EXPIRED",
+        "EXPIRED": "EXPIRED",
+
+        "CANCEL": "CANCELED",
+        "CANCELLED": "CANCELED",
+
+        "FAILURE": "FAILED",
+        "DENY": "FAILED",
     }
     normalized = mapping.get(normalized, normalized)
 
-    if normalized in ("SUCCESS", "FAILED", "EXPIRED", "PROCESSING", "PENDING"):
+    if normalized in ("SUCCESS", "FAILED", "EXPIRED", "PROCESSING", "PENDING", "CANCELED", "REFUNDED"):
         return normalized
 
     return current_status
