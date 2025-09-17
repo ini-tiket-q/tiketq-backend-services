@@ -58,10 +58,13 @@ class RefundStatus(str, Enum):
 class PaymentStatus(str, Enum):
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
-    COMPLETED = "COMPLETED"
+    SUCCESS = "SUCCESS"        # ✅ Use SUCCESS instead of COMPLETED
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
     REFUNDED = "REFUNDED"
+
+    # ❌ Remove COMPLETED if it exists
+    # COMPLETED = "COMPLETED"
 
 
 class ServiceType(str, Enum):

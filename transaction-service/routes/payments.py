@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime
+from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
@@ -30,12 +32,12 @@ def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentS
 
 
 @router.get(
-    "/payments/{order_number}", 
+    "/payments/{order_number}",
     response_model=PaymentInDB,
     summary="Get transaction payment details by order number",
     description="""
     Retrieve details of a specific payment by its order number.
-    
+
     ### Access Level: User/Admin
     - Requires authentication
     - Users can only view their own payments
@@ -50,7 +52,7 @@ async def get_payment_details(
     """Get payment details - USER/ADMIN access"""
     try:
         payment = payment_service.payment_repo.get_payment_by_order_number(order_number)
-        
+
         if not payment:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -68,9 +70,9 @@ async def get_payment_details(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to view this payment"
                 )
-        
+
         return payment
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -85,7 +87,7 @@ async def get_payment_details(
     summary="Confirm a transaction payment",
     description="""
     Confirm a transaction payment that was initiated.
-    
+
     ### Access Level: Public (with token)
     - Used to confirm successful payments
     """
@@ -115,15 +117,15 @@ async def confirm_payment(
             order_number=order_number,
             gateway_response=confirm_data,
         )
-        
+
         if not payment:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Payment not found or cannot be confirmed"
             )
-            
+
         return payment
-        
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -135,7 +137,7 @@ async def confirm_payment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to confirm payment"
         )
-        
+
 
 @router.get(
     "/payments/admin/get-token",
@@ -143,7 +145,7 @@ async def confirm_payment(
     summary="Payment token endpoint",
     description="""
     Create payment token for admin test.
-    
+
     ### Access Level: Admin
     - No authentication required
     - create payment token for admin test
@@ -157,7 +159,7 @@ async def payment_token(
     try:
         logger.info("Creating payment token route")
         return payment_service.create_payment_token()
-        
+
     except ValueError as e:
         # Service layer validation errors
         raise HTTPException(
@@ -168,4 +170,51 @@ async def payment_token(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process payment token {str(e)}"
+        )
+
+@router.post("/{order_id}/confirm")
+async def confirm_payment(
+    order_id: str,
+    request_data: Dict[str, Any],
+    payment_service: PaymentService = Depends(get_payment_service)
+):
+    try:
+        gateway_response = request_data.get("gateway_response", {})
+        token = request_data.get("token")
+
+        logger.info(f"Confirming payment for order: {order_id}")
+        logger.info(f"Request data: {request_data}")
+
+        result = payment_service.confirm_payment(
+            order_number=order_id,
+            gateway_response=gateway_response,
+            token=token
+        )
+
+        if result:
+            logger.info(f"✅ Payment confirmed successfully for order: {order_id}")
+            return {
+                "status": "success",
+                "message": "Payment confirmed successfully",
+                "data": {
+                    "order_id": order_id,
+                    "payment_id": result.id if hasattr(result, 'id') else None,
+                    "status": result.status if hasattr(result, 'status') else "SUCCESS",
+                    "confirmed_at": datetime.now().isoformat()
+                }
+            }
+        else:
+            logger.error(f"❌ Payment confirmation failed for order: {order_id}")
+            raise HTTPException(
+                status_code=404,
+                detail="Payment not found or cannot be confirmed"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"💥 Error confirming payment for order {order_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
         )
