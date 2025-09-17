@@ -14,7 +14,7 @@ from domain.models import (
     PaymentInDB, PaymentCreate, PaymentStatus, Currency,
     TransactionItem,
     # Payment request models
-    PaymentCreateRequest, PaymentConfirmRequest, PaymentWebhookRequest,
+    PaymentCreateRequest, PaymentConfirmRequest,
     # Order request models
     OrderCreateRequest, OrderStatusUpdateRequest,
     # Transaction request models
@@ -173,13 +173,22 @@ class TransactionService:
                 payment_gateway=transaction_request.payment_gateway,
                 gateway_transaction_id=payment_url_body.get("transaction_id"),
                 status=PaymentStatus.PENDING,
-                meta_data=transaction_request.payment_metadata
+                metadata=transaction_request.payment_metadata
             )
 
             db_payment = self.payment_repo.create_payment(payment)
             if not db_payment:
                 logger.error("Failed to create payment")
                 return None
+
+            logger.info(
+                f"Payment created successfully - ID: {db_payment.id}, "
+                f"Transaction ID: {db_payment.transaction_id}, "
+                f"Amount: {db_payment.amount} {db_payment.currency}, "
+                f"Method: {db_payment.payment_method.value if db_payment.payment_method else 'Not set'}, "
+                f"Gateway: {db_payment.payment_gateway.value if db_payment.payment_gateway else 'Not set'}"
+                f"Metadata: {db_payment.metadata}!!!"
+            )
 
             # Log successful transaction creation
             logger.info(
