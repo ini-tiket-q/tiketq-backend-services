@@ -158,8 +158,6 @@ async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.
     return result
 
 
-
-
 def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
     order_id = f"FLIGHT-{kodebooking}"
     pay_status = get_payment_status_by_order_id(order_id)
