@@ -1,4 +1,3 @@
-from math import log
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
 from typing import List, Optional
 from sqlalchemy.orm import Session
