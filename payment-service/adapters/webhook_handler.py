@@ -30,6 +30,24 @@ class WebhookHandler:
             logger.error(f"Error verifying signature: {e}")
             return False
 
+    def map_transaction_status_to_payment_status(self, transaction_status: str) -> str:
+        """Map Midtrans transaction status to internal payment status"""
+        status_mapping = {
+            "capture": "SUCCESS",      # ✅ Changed from "completed" to "SUCCESS"
+            "settlement": "SUCCESS",   # ✅ Changed from "completed" to "SUCCESS"
+            "pending": "PENDING",
+            "deny": "FAILED",
+            "cancel": "CANCELLED",
+            "expire": "EXPIRED",
+            "failure": "FAILED",
+            "refund": "REFUNDED",
+            "partial_refund": "REFUNDED"
+        }
+
+        mapped_status = status_mapping.get(transaction_status, "PENDING")
+        logger.info(f"Mapped transaction_status '{transaction_status}' to '{mapped_status}'")
+        return mapped_status
+
     async def process_webhook(self, notification_data: Dict[str, Any], payment_repository, verify_signature: bool = True) -> Dict[str, Any]:
         """Process webhook notification from Midtrans"""
         try:
@@ -56,19 +74,7 @@ class WebhookHandler:
             except Exception as get_error:
                 logger.error(f"Error getting payment: {get_error}")
 
-            # Map Midtrans status to internal status
-            status_mapping = {
-                "capture": "completed",
-                "settlement": "completed",
-                "pending": "pending",
-                "deny": "failed",
-                "cancel": "cancelled",
-                "expire": "expired",
-                "failure": "failed"
-            }
-
-            new_status = status_mapping.get(transaction_status, "unknown")
-            logger.info(f"Mapped transaction_status '{transaction_status}' to '{new_status}'")
+            new_status = self.map_transaction_status_to_payment_status(transaction_status)
 
             # Update payment status
             gateway_response = {

@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException, status, Body, Depends, Request
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from jose import jwt, JWTError
 import requests
 import os
@@ -24,30 +24,36 @@ router = APIRouter()
 def create_payment_token(order_id: str, transaction_status: str):
     """Create JWT token for payment confirmation"""
     try:
-        logger.info("Creating payment token")
+        logger.info(f"Creating payment token for order: {order_id}")
         payload = {
-            "token": "success"
+            "order_id": order_id,
+            "transaction_status": transaction_status,
+            "token": "success",
+            "service": "payment-service",
+            "iat": datetime.now().timestamp(),
+            "exp": (datetime.now() + timedelta(hours=1)).timestamp()
         }
-        return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+        token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+        logger.info(f"✅ Token created successfully for order: {order_id}")
+        return token
     except Exception as e:
-        logger.error(f"Error creating payment token: {str(e)}", exc_info=True)
+        logger.error(f"❌ Error creating payment token: {str(e)}", exc_info=True)
         return None
-
-
 
 async def confirm_payment(order_id: str, payment_token: str):
     """Send POST request to transaction-service payments/{order_id}/confirm endpoint"""
     try:
-        # Try multiple URLs for different environments
-        TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "http://localhost:8004")
+        # Use ngrok URL as primary - FIXED PORT
+        TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "https://e3cd5cb1013c.ngrok-free.app")
 
-        # Fallback URLs for different environments
+        # Fallback URLs for different environments - FIXED PORTS
         urls_to_try = [
-            TRANSACTION_SERVICE_URL,                # From environment
-            "http://transaction-service:8004",      # Docker service name
-            "http://localhost:8004",                # Local development
-            "http://127.0.0.1:8004",               # Alternative localhost
-            "http://host.docker.internal:8004"     # Docker Desktop
+            TRANSACTION_SERVICE_URL,                        # Primary ngrok URL
+            "https://e3cd5cb1013c.ngrok-free.app",         # Direct ngrok URL
+            "http://localhost:8000",                        # ✅ Changed from 8004 to 8000
+            "http://127.0.0.1:8000",                       # ✅ Changed from 8004 to 8000
+            "http://transaction-service:8000",              # ✅ Changed from 8004 to 8000
+            "http://host.docker.internal:8000"             # ✅ Changed from 8004 to 8000
         ]
 
         for attempt, base_url in enumerate(urls_to_try, 1):
@@ -55,10 +61,15 @@ async def confirm_payment(order_id: str, payment_token: str):
 
             logger.info(f"🚀 Attempt {attempt}: Trying transaction-service URL: {confirm_url}")
 
-            # headers = {
-            #     "Content-Type": "application/json",
-            #     "Authorization": f"Bearer {payment_token}"
-            # }
+            # Headers for ngrok and regular requests
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "TiketQ-Payment-Service/1.0"
+            }
+
+            # Add ngrok specific headers
+            if "ngrok" in base_url:
+                headers["ngrok-skip-browser-warning"] = "true"
 
             payload = {
                 "gateway_response": {
@@ -67,20 +78,26 @@ async def confirm_payment(order_id: str, payment_token: str):
                     "amount": 0,
                     "currency": "IDR",
                     "payment_method": "midtrans",
+                    "status": "SUCCESS",  # Use database enum value
                     "metadata": {
                         "payment_token": payment_token,
                         "confirmed_at": datetime.now().isoformat(),
                         "webhook_source": "midtrans"
                     }
                 },
-                "token": payment_token
+                "token": payment_token,
+                "status": "SUCCESS"
             }
-            logger.info(f"Payload for confirmation: {payload}")
+
+            logger.info(f"📤 Sending payload: {payload}")
 
             try:
-                response = requests.post(confirm_url, json=payload, timeout=5)
+                # Increase timeout for ngrok requests
+                timeout = 30 if "ngrok" in base_url else 15
+                response = requests.post(confirm_url, json=payload, headers=headers, timeout=timeout)
 
-                logger.info(f"📡 Response status from {base_url}: {response.status_code},{response.json()}")
+                logger.info(f"📡 Response status from {base_url}: {response.status_code}")
+                logger.info(f"📄 Response content: {response.text}")
 
                 if response.status_code == 200:
                     logger.info(f"✅ Payment confirmation successful for order: {order_id} via {base_url}")
@@ -94,25 +111,89 @@ async def confirm_payment(order_id: str, payment_token: str):
                 else:
                     logger.warning(f"❌ Payment confirmation failed from {base_url}. Status: {response.status_code}")
                     logger.warning(f"Response: {response.text}")
-                    continue  # Try next URL
+                    continue
 
             except requests.exceptions.ConnectionError as e:
-                logger.warning(f"🔌 Connection failed to {base_url}: Connection refused")
-                continue  # Try next URL
+                logger.warning(f"🔌 Connection failed to {base_url}: {str(e)}")
+                continue
             except requests.exceptions.Timeout as e:
                 logger.warning(f"⏰ Timeout to {base_url}")
-                continue  # Try next URL
+                continue
             except Exception as e:
                 logger.warning(f"💥 Request error to {base_url}: {str(e)}")
-                continue  # Try next URL
+                continue
 
-        # If all URLs failed
         logger.error(f"❌ All transaction-service URLs failed for order: {order_id}")
-        logger.error(f"Tried URLs: {urls_to_try}")
         return None
 
     except Exception as e:
         logger.error(f"💥 Error confirming payment for order {order_id}: {str(e)}")
+        return None
+
+async def confirm_payment_with_amount(order_id: str, payment_token: str, gross_amount: str, notification_data: Dict):
+    """Enhanced confirm payment with amount and metadata from Midtrans notification"""
+    try:
+        TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "https://e3cd5cb1013c.ngrok-free.app")
+        confirm_url = f"{TRANSACTION_SERVICE_URL}/payments/{order_id}/confirm"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {payment_token}",
+            "User-Agent": "TiketQ-Payment-Service/1.0"
+        }
+
+        # Add ngrok specific header if using ngrok URL
+        if "ngrok" in TRANSACTION_SERVICE_URL:
+            headers["ngrok-skip-browser-warning"] = "true"
+
+        # Convert gross_amount to float
+        try:
+            amount = float(gross_amount.replace(",", "")) if isinstance(gross_amount, str) else float(gross_amount)
+        except:
+            amount = 0.0
+
+        payload = {
+            "gateway_response": {
+                "transaction_id": notification_data.get("transaction_id", order_id),
+                "success": True,
+                "amount": amount,
+                "currency": notification_data.get("currency", "IDR"),
+                "payment_method": notification_data.get("payment_type", "midtrans"),
+                "status": "SUCCESS",  # Use correct enum value
+                "metadata": {
+                    "midtrans_transaction_id": notification_data.get("transaction_id"),
+                    "midtrans_order_id": order_id,
+                    "transaction_status": notification_data.get("transaction_status"),
+                    "payment_token": payment_token,
+                    "confirmed_at": datetime.now().isoformat(),
+                    "webhook_source": "midtrans",
+                    "fraud_status": notification_data.get("fraud_status"),
+                    "status_code": notification_data.get("status_code"),
+                    "status_message": notification_data.get("status_message")
+                }
+            },
+            "token": payment_token,
+            "status": "SUCCESS"
+        }
+
+        logger.info(f"📤 Sending payment confirmation to transaction-service: {confirm_url}")
+        logger.info(f"📤 Payload: {payload}")
+
+        timeout = 30 if "ngrok" in TRANSACTION_SERVICE_URL else 15
+        response = requests.post(confirm_url, json=payload, headers=headers, timeout=timeout)
+
+        logger.info(f"📡 Response status: {response.status_code}")
+        logger.info(f"📄 Response content: {response.text}")
+
+        if response.status_code == 200:
+            logger.info(f"✅ Transaction-service payment confirmation successful for order: {order_id}")
+            return response.json()
+        else:
+            logger.error(f"❌ Transaction-service payment confirmation failed. Status: {response.status_code}, Response: {response.text}")
+            return None
+
+    except Exception as e:
+        logger.error(f"💥 Error confirming payment with transaction-service for order {order_id}: {str(e)}")
         return None
 
 def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentService:
@@ -155,9 +236,9 @@ async def handle_midtrans_webhook(
     """Handle webhook notifications from Midtrans"""
     try:
         # Log the incoming webhook
-        logger.info(f"Received Midtrans webhook notification")
-        logger.info(f"Headers: {dict(request.headers)}")
-        logger.info(f"Notification data: {notification_data}")
+        logger.info(f"🔔 Received Midtrans webhook notification")
+        logger.info(f"📋 Headers: {dict(request.headers)}")
+        logger.info(f"📋 Notification data: {notification_data}")
 
         # Process webhook and update payment status
         result = await webhook_handler.process_webhook(
@@ -166,7 +247,7 @@ async def handle_midtrans_webhook(
             verify_signature=False
         )
 
-        logger.info(f"Webhook processed successfully: {result}")
+        logger.info(f"✅ Webhook processed successfully: {result}")
 
         # Check if payment is successful and get order_id
         transaction_status = notification_data.get("transaction_status")
@@ -178,24 +259,30 @@ async def handle_midtrans_webhook(
 
         # If payment is successful, create token and confirm payment
         if transaction_status in ["settlement", "capture"] and order_id:
-            logger.info(f"Payment successful for order: {order_id}, creating token and confirming payment")
+            logger.info(f"💰 Payment successful for order: {order_id}, creating token and confirming payment")
 
             # Create payment token
             payment_token = create_payment_token(order_id, transaction_status)
-            logger.info(f"Token creation result for order {order_id}: {'SUCCESS' if payment_token else 'FAILED'}")
+            logger.info(f"🔑 Token creation result for order {order_id}: {'SUCCESS' if payment_token else 'FAILED'}")
 
             if payment_token:
-                logger.info(f"Token created successfully, attempting confirmation for order: {order_id}")
+                logger.info(f"🚀 Token created successfully, attempting confirmation for order: {order_id}")
 
-                payment_confirmation_result = await confirm_payment(order_id, payment_token)
+                # Use enhanced confirm with amount
+                payment_confirmation_result = await confirm_payment_with_amount(
+                    order_id, payment_token, gross_amount, notification_data
+                )
 
                 if payment_confirmation_result:
-                    logger.info(f"Payment confirmation sent successfully to transaction-service for order: {order_id}")
-                    logger.info(f"Confirmation response: {payment_confirmation_result}")
+                    logger.info(f"✅ Payment confirmation sent successfully to transaction-service for order: {order_id}")
+                    logger.info(f"📄 Confirmation response: {payment_confirmation_result}")
                 else:
-                    logger.warning(f"Failed to send payment confirmation to transaction-service for order: {order_id}")
+                    logger.warning(f"❌ Failed to send payment confirmation to transaction-service for order: {order_id}")
+                    # Try fallback method
+                    logger.info("🔄 Trying fallback confirmation method...")
+                    payment_confirmation_result = await confirm_payment(order_id, payment_token)
             else:
-                logger.error(f"Failed to create payment token for order: {order_id}")
+                logger.error(f"❌ Failed to create payment token for order: {order_id}")
 
         # Return success response that Midtrans expects
         response_data = {
@@ -212,7 +299,7 @@ async def handle_midtrans_webhook(
                 "payment_token": payment_token[:50] + "...",  # Truncate for security
                 "confirmation_result": payment_confirmation_result,
                 "confirmed_at": datetime.now().isoformat(),
-                "sent_to": "transaction-service:8004"
+                "sent_to": "transaction-service"
             }
         elif transaction_status in ["settlement", "capture"]:
             # More detailed error info
@@ -233,8 +320,8 @@ async def handle_midtrans_webhook(
         return response_data
 
     except Exception as e:
-        logger.error(f"Error handling webhook: {e}")
-        logger.error(f"Notification data: {notification_data}")
+        logger.error(f"💥 Error handling webhook: {e}")
+        logger.error(f"📋 Notification data: {notification_data}")
 
         # Still return 200 to prevent Midtrans from retrying
         return {
@@ -242,61 +329,6 @@ async def handle_midtrans_webhook(
             "message": f"Failed to process notification: {str(e)}",
             "timestamp": datetime.now().isoformat()
         }
-
-async def confirm_payment_with_amount(order_id: str, payment_token: str, gross_amount: str, notification_data: Dict):
-    """Enhanced confirm payment with amount and metadata from Midtrans notification"""
-    try:
-        TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "http://localhost:8004")
-        confirm_url = f"{TRANSACTION_SERVICE_URL}/payments/{order_id}/confirm"
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {payment_token}"
-        }
-
-        # Convert gross_amount to float
-        try:
-            amount = float(gross_amount.replace(",", "")) if isinstance(gross_amount, str) else float(gross_amount)
-        except:
-            amount = 0.0
-
-        payload = {
-            "gateway_response": {
-                "transaction_id": notification_data.get("transaction_id", order_id),
-                "success": True,
-                "amount": amount,
-                "currency": notification_data.get("currency", "IDR"),
-                "payment_method": notification_data.get("payment_type", "midtrans"),
-                "metadata": {
-                    "midtrans_transaction_id": notification_data.get("transaction_id"),
-                    "midtrans_order_id": order_id,
-                    "transaction_status": notification_data.get("transaction_status"),
-                    "payment_token": payment_token,
-                    "confirmed_at": datetime.now().isoformat(),
-                    "webhook_source": "midtrans",
-                    "fraud_status": notification_data.get("fraud_status"),
-                    "status_code": notification_data.get("status_code"),
-                    "status_message": notification_data.get("status_message")
-                }
-            },
-            "token": payment_token
-        }
-
-        logger.info(f"Sending payment confirmation to transaction-service: {confirm_url}")
-        logger.info(f"Payload: {payload}")
-
-        response = requests.post(confirm_url, json=payload, headers=headers, timeout=10)
-
-        if response.status_code == 200:
-            logger.info(f"Transaction-service payment confirmation successful for order: {order_id}")
-            return response.json()
-        else:
-            logger.error(f"Transaction-service payment confirmation failed. Status: {response.status_code}, Response: {response.text}")
-            return None
-
-    except Exception as e:
-        logger.error(f"Error confirming payment with transaction-service for order {order_id}: {str(e)}")
-        return None
 
 @router.get("/test",
     summary="Test webhook endpoint",
