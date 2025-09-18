@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any, Generator
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 from sqlalchemy.orm import Session
 import os
@@ -790,70 +790,165 @@ class PaymentService:
     def confirm_payment(
         self,
         order_number: str,
-        gateway_response: dict, token: str = None
+        gateway_response: dict,
+        token: str = None
     ):
         """Confirm payment and update status"""
         try:
-            logger.info(f"Confirming payment for order: {order_number}")
+            logger.info(f"🔄 Starting payment confirmation for order: {order_number}")
+            logger.info(f"📋 Gateway response: {gateway_response}")
+            logger.info(f"🔑 Token provided: {'Yes' if token else 'No'}")
 
-            # Find payment by order number
-            payment = self.payment_repo.get_payment_by_order_number(order_number)
-            if not payment:
-                logger.error(f"Payment not found for order: {order_number}")
-                return None
+            # Validate token if provided
+            if token and not self.validate_payment_token(token):
+                logger.error(f"❌ Invalid payment token for order: {order_number}")
+                raise ValueError("Invalid payment token")
 
-            logger.info(f"Payment {payment.id} found")
+            # Find transaction by order number
+            transaction = None
 
-            # ✅ FIX: Check if payment can be confirmed
-            if not self.payment_repo.can_confirm_payment(payment.id):
-                logger.error(f"Payment {payment.id} cannot be confirmed (current status: {payment.status})")
-                return None
+            # Try the new method first
+            if hasattr(self.transaction_repo, 'get_transaction_by_order_number'):
+                transaction = self.transaction_repo.get_transaction_by_order_number(order_number)
+            else:
+                # Fallback: get all transactions and find by order_number
+                logger.info(f"🔄 Using fallback method to find transaction for order: {order_number}")
+                all_transactions = self.transaction_repo.get_transactions(skip=0, limit=1000)
+                for t in all_transactions:
+                    if t.order_number == order_number:
+                        transaction = t
+                        break
 
-            logger.info(f"Payment {payment.id} can be confirmed")
+            if not transaction:
+                logger.error(f"❌ Transaction not found for order: {order_number}")
+                raise ValueError(f"Transaction not found for order: {order_number}")
 
-            # ✅ FIX: Extract gateway transaction ID from gateway_response
+            logger.info(f"✅ Transaction found: {transaction.id}")
+
+            # Get payment by transaction ID
+            payments = self.payment_repo.get_payments_by_transaction(transaction.id)
+            if not payments:
+                logger.error(f"❌ Payment not found for transaction: {transaction.id}")
+                raise ValueError(f"Payment not found for transaction: {transaction.id}")
+
+            payment = payments[0]  # Get the first payment
+            logger.info(f"✅ Payment found: {payment.id}, current status: {payment.status}")
+
+            # Check if payment can be confirmed
+            if payment.status not in [PaymentStatus.PENDING, PaymentStatus.PROCESSING]:
+                logger.warning(f"⚠️ Payment {payment.id} cannot be confirmed (current status: {payment.status})")
+                # If already successful, return the payment
+                if payment.status == PaymentStatus.SUCCESS:
+                    logger.info(f"✅ Payment {payment.id} already confirmed")
+                    return payment
+                else:
+                    raise ValueError(f"Payment cannot be confirmed (current status: {payment.status})")
+
+            # Extract gateway transaction ID from gateway_response
             gateway_transaction_id = None
             if gateway_response and isinstance(gateway_response, dict):
-                gateway_transaction_id = gateway_response.get("transaction_id")
+                gateway_transaction_id = (
+                    gateway_response.get("transaction_id") or
+                    gateway_response.get("metadata", {}).get("midtrans_transaction_id")
+                )
 
-            # ✅ FIX: Use SUCCESS instead of COMPLETED
+            logger.info(f"🔗 Gateway transaction ID: {gateway_transaction_id}")
+
+            # Update payment status to SUCCESS
             updated_payment = self.payment_repo.update_payment_status(
                 payment_id=payment.id,
-                status="SUCCESS",  # ✅ Use SUCCESS
+                status=PaymentStatus.SUCCESS,
                 gateway_transaction_id=gateway_transaction_id,
-                gateway_response=gateway_response  # ✅ Pass gateway_response
+                gateway_response=gateway_response
             )
 
-            if updated_payment:
-                logger.info(f"✅ Payment {payment.id} confirmed successfully with status SUCCESS")
-                return updated_payment
-            else:
+            if not updated_payment:
                 logger.error(f"❌ Failed to update payment {payment.id} status")
-                return None
+                raise ValueError("Failed to update payment status")
 
+            logger.info(f"✅ Payment {payment.id} status updated to SUCCESS")
+
+            # Update transaction status to COMPLETED
+            updated_transaction = self.transaction_repo.update_transaction(
+                transaction.id,
+                TransactionUpdate(
+                    status=TransactionStatus.COMPLETED,
+                    gateway_transaction_id=gateway_transaction_id
+                )
+            )
+
+            if updated_transaction:
+                logger.info(f"✅ Transaction {transaction.id} status updated to COMPLETED")
+            else:
+                logger.warning(f"⚠️ Failed to update transaction {transaction.id} status")
+
+            # Update order status to COMPLETED
+            order = self.order_repo.get_order_by_order_number(order_number)
+            if order:
+                updated_order = self.order_repo.update_order(
+                    order.id,
+                    OrderUpdate(
+                        status=OrderStatus.COMPLETED,
+                        completed_at=datetime.now(timezone.utc)
+                    )
+                )
+                if updated_order:
+                    logger.info(f"✅ Order {order_number} status updated to COMPLETED")
+                else:
+                    logger.warning(f"⚠️ Failed to update order {order_number} status")
+            else:
+                logger.warning(f"⚠️ Order {order_number} not found")
+
+            logger.info(f"🎉 Payment confirmation completed successfully for order: {order_number}")
+            return updated_payment
+
+        except ValueError as ve:
+            logger.error(f"❌ Validation error confirming payment for order {order_number}: {ve}")
+            raise
         except Exception as e:
-            logger.error(f"💥 Error confirming payment with order number {order_number}: {e}")
-            return None
+            logger.error(f"💥 Unexpected error confirming payment for order {order_number}: {e}", exc_info=True)
+            raise ValueError(f"Failed to confirm payment: {str(e)}")
 
     def validate_payment_token(self, token: str) -> bool:
+        """Validate JWT payment token"""
         try:
+            if not token:
+                return False
+
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            status: str = payload.get("token")
-            if status == "success":
+            token_status = payload.get("token")
+            order_id = payload.get("order_id")
+            service = payload.get("service")
+
+            logger.info(f"🔍 Token validation - Status: {token_status}, Order: {order_id}, Service: {service}")
+
+            # Check if token is valid
+            if token_status == "success" and service == "payment-service":
                 return True
             return False
-        except JWTError:
+        except JWTError as je:
+            logger.error(f"❌ JWT error validating token: {je}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error validating token: {e}")
             return False
 
-    def create_payment_token(self):
+    def create_payment_token(self, order_id: str = None):
+        """Create JWT payment token"""
         try:
-            logger.info("Creating payment token")
+            logger.info(f"🔑 Creating payment token for order: {order_id}")
             payload = {
-                "token": "success"
+                "token": "success",
+                "service": "transaction-service",
+                "order_id": order_id,
+                "iat": datetime.now().timestamp(),
+                "exp": (datetime.now() + timedelta(hours=1)).timestamp()
             }
-            return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+            token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+            logger.info(f"✅ Payment token created successfully")
+            return token
         except Exception as e:
-            logger.error(f"Error creating payment token: {str(e)}", exc_info=True)
+            logger.error(f"❌ Error creating payment token: {str(e)}", exc_info=True)
             return None
 
 
@@ -885,11 +980,13 @@ def create_payment_service(db_session: Session) -> PaymentService:
     # Infrastructure adapters (ports implementations)
     transaction_repo = DBTransactionRepository(db_session)
     payment_repo = DBPaymentRepository(db_session)
+    order_repo = DBOrderRepository(db_session)  # ✅ Added missing order_repo
 
     # Domain service
     return PaymentService(
         transaction_repo=transaction_repo,
-        payment_repo=payment_repo
+        payment_repo=payment_repo,
+        order_repo=order_repo  # ✅ Added missing parameter
     )
 
 def create_transaction_service(db_session: Session) -> TransactionService:

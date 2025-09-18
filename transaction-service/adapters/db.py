@@ -1,3 +1,4 @@
+import logging
 from sqlalchemy import (
     Column,
     Integer,
@@ -55,6 +56,7 @@ Base = declarative_base()
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 
+logger = logging.getLogger(__name__)
 
 # Database session provider - infrastructure concern
 class DatabaseSessionProvider:
@@ -161,11 +163,11 @@ class Refund(Base):
 
 
 # Repositories
-class DBTransactionRepository(TransactionRepository):
-    """SQLAlchemy implementation of TransactionRepository"""
+class DBTransactionRepository:
+    """Repository for transaction data access using SQLAlchemy."""
 
-    def __init__(self, db: Session):
-        self.db = db
+    def __init__(self, db_session: Session):
+        self.db = db_session
 
     def create_transaction(self, transaction: TransactionCreate) -> TransactionInDB:
         # Set current timestamp for created_at and updated_at
@@ -840,3 +842,25 @@ class DBRefundRepository(RefundRepository):
             created_at=db_refund.created_at,
             updated_at=db_refund.processed_at,  # Using processed_at as updated_at
         )
+
+    def get_transaction_by_order_number(self, order_number: str) -> Optional[TransactionInDB]:
+        """Get transaction by order number."""
+        try:
+            logger.info(f"🔍 Searching for transaction with order_number: {order_number}")
+
+            db_transaction = (
+                self.db.query(Transaction)
+                .filter(Transaction.order_number == order_number)
+                .first()
+            )
+
+            if db_transaction:
+                logger.info(f"✅ Transaction found: ID {db_transaction.id} for order {order_number}")
+                return TransactionInDB.from_orm(db_transaction)
+            else:
+                logger.warning(f"❌ No transaction found for order_number: {order_number}")
+                return None
+
+        except Exception as e:
+            logger.error(f"💥 Error getting transaction by order_number {order_number}: {str(e)}")
+            return None

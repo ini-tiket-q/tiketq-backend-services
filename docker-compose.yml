@@ -1,5 +1,4 @@
-
-# version: '3.9'
+version: "3.9"
 
 services:
   api-gateway:
@@ -7,9 +6,9 @@ services:
       context: ./api-gateway
     container_name: api-gateway
     ports:
-      - "8000:8000"
+      - "8080:8000"
     env_file:
-      - .env               # Your app configs (no secrets here)
+      - .env
     depends_on:
       - auth-service
       - user-service
@@ -28,7 +27,7 @@ services:
       context: ./auth-service
     container_name: auth-service
     ports:
-      - "8001:8000" # temporary expose for testing
+      - "8001:8000"
     env_file:
       - .env
     networks:
@@ -39,6 +38,8 @@ services:
     build:
       context: ./user-service
     container_name: user-service
+    ports:
+      - "8002:8000"
     env_file:
       - .env
     networks:
@@ -49,6 +50,10 @@ services:
     build:
       context: ./flights-service
     container_name: flights-service
+    ports:
+      - "8003:8000"
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -58,7 +63,7 @@ services:
       context: ./ferries-service
     container_name: ferries-service
     ports:
-      - "8005:8000" # temporary expose e.g. localhost:8003/docs
+      - "8004:8000"
     env_file:
       - .env
     networks:
@@ -69,6 +74,10 @@ services:
     build:
       context: ./hotels-service
     container_name: hotels-service
+    ports:
+      - "8005:8000"
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -77,6 +86,10 @@ services:
     build:
       context: ./ppob-service
     container_name: ppob-service
+    ports:
+      - "8006:8000"
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -86,75 +99,36 @@ services:
       context: ./payment-service
     container_name: payment-service
     ports:
-      - "8003:8000" # temporary expose e.g. localhost:8003/docs
+      - "8007:8000"
     env_file:
       - .env
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_DB=tiketq_db
-      - SERVICE_NAME=payment-service
-    depends_on:
-      - postgres
     networks:
       - tiketq-net
-    secrets:
-      - db_user
-      - db_password
     restart: unless-stopped
-    volumes:
-      - ./payment-service:/app # For development hot reload
 
   transaction-service:
     build:
       context: ./transaction-service
     container_name: transaction-service
     ports:
-      - "8004:8000" # temporary expose e.g. localhost:8004/docs
+      - "8008:8000"
     env_file:
       - .env
     networks:
       - tiketq-net
     restart: unless-stopped
 
-  postgres:
-    image: postgres:15
-    container_name: postgres
-    environment:
-      POSTGRES_DB: tiketq_db
-      POSTGRES_USER_FILE: /run/secrets/db_user
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
-    networks:
-      - tiketq-net
-    secrets:
-      - db_user
-      - db_password
-    restart: unless-stopped
-
   nginx:
-    image: nginx:latest
+    image: nginx:alpine
     container_name: nginx
     ports:
-      - "80:80"
+      - "80:80" # Disederhanakan, hanya port 80
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - tiketq-net
     restart: unless-stopped
 
-secrets:
-  db_user:
-    file: ./secrets/db_user.txt
-  db_password:
-    file: ./secrets/db_password.txt
-
 networks:
   tiketq-net:
     driver: bridge
-
-volumes:
-  postgres_data:
