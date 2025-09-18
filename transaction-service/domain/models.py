@@ -58,10 +58,11 @@ class RefundStatus(str, Enum):
 class PaymentStatus(str, Enum):
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
-    COMPLETED = "COMPLETED"
+    SUCCESS = "SUCCESS"  # Changed from COMPLETED to match database enum
     FAILED = "FAILED"
-    CANCELLED = "CANCELLED"
+    CANCELED = "CANCELED"  # Changed from CANCELLED to match database enum (single L)
     REFUNDED = "REFUNDED"
+    EXPIRED = "EXPIRED"  # Added to match database enum
 
 
 class ServiceType(str, Enum):
