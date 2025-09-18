@@ -834,7 +834,7 @@ class PaymentService:
             logger.info(
                 f"Payment {gateway_response.gateway_response.get('success', False)}"
             )
-            status = PaymentStatus.COMPLETED if gateway_response.gateway_response.get('success', False) else PaymentStatus.FAILED
+            status = PaymentStatus.SUCCESS if gateway_response.gateway_response.get('success', False) else PaymentStatus.FAILED
             
             # Update payment record
             updated_payment = self.payment_repo.update_payment_status(
@@ -850,7 +850,7 @@ class PaymentService:
             # Update transaction status based on payment status
             transaction_status = (
                 TransactionStatus.COMPLETED 
-                if status == PaymentStatus.COMPLETED 
+                if status == PaymentStatus.SUCCESS 
                 else TransactionStatus.FAILED
             )
             
