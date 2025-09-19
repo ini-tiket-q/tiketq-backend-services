@@ -1,5 +1,5 @@
 import re
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from domain.schemas_bookings import (
     GetPriceRequest, GetPriceResponse,
@@ -71,9 +71,10 @@ async def get_price(req: GetPriceRequest):
         500: {"description": "Internal server error"},
     },
 )
-async def post_booking(req: PostBookingRequest):
+async def post_booking(req: PostBookingRequest, request: Request):
+    client_ip = request.client.host
     try:
-        return await post_booking_service(req)
+        return await post_booking_service(req, client_ip)
     except BookingError as e:
         return JSONResponse(status_code=400, content=e.full_body)
 

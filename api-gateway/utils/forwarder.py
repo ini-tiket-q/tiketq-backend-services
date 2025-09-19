@@ -20,7 +20,7 @@ SERVICES = {
 ROUTE_SERVICE_MAP = {
     "api/v1/flights": "flights",
     "api/v1/bookings": "flights",
-    "/ferries": "ferries",
+    "api/v1/ferries": "ferries",
     "/hotels": "hotels",
     "/ppob": "ppob",
     "/payments": "payment",

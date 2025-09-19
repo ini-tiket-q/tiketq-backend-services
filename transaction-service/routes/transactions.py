@@ -1,4 +1,3 @@
-from math import log
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
 from typing import List, Optional
 from sqlalchemy.orm import Session
@@ -215,9 +214,10 @@ async def create_transaction(
     description="""
     Retrieve a list of transactions.
     
-    ### Access Level: Admin Only
-    - Requires admin privileges
-    - Regular users cannot access this endpoint
+    ### Access Level: User/Admin
+    - Requires authentication
+    - Users can only see their own transactions
+    - Admins can see all transactions
     """
 )
 async def list_transactions(
@@ -489,9 +489,10 @@ async def update_transaction(
         # First check if transaction exists and user has access
         existing_transaction = service.get_transaction(
             transaction_id=transaction_id,
-            email=current_user.email
+            email=current_user.email,
+            role=current_user.role
         )
-        
+
         if not existing_transaction:
             # Log unauthorized access
             audit_logger.log_security_event(
@@ -516,7 +517,6 @@ async def update_transaction(
         updated_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=update_request,
-            email=current_user.email
         )
         
         if not updated_transaction:
@@ -647,7 +647,8 @@ async def cancel_transaction(
         # First check if transaction exists and user has access
         existing_transaction = service.get_transaction(
             transaction_id=transaction_id,
-            email=current_user.email
+            email=current_user.email,
+            role=current_user.role
         )
         
         if not existing_transaction:
@@ -721,7 +722,6 @@ async def cancel_transaction(
         cancelled_transaction = service.update_transaction(
             transaction_id=transaction_id,
             update_request=cancel_request,
-            email=current_user.email
         )
         
         if not cancelled_transaction:

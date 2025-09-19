@@ -77,7 +77,6 @@ class Currency(str, Enum):
     # EUR = "EUR"
     # SGD = "SGD"
 
-
 # Transaction Item Model
 class TransactionItem(BaseModel):
     """Individual item in a transaction"""

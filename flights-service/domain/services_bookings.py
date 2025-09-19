@@ -1,7 +1,7 @@
 import os
 import inspect
 import json
-from adapters.payment_clients import create_payment
+from adapters.transaction_clients import create_transaction
 from adapters.mmbc_factory import mmbc
 from domain.schemas_bookings import (
     GetPriceRequest, GetPriceResponse,
@@ -59,10 +59,7 @@ async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
 
     return result
 
-
-
-
-async def post_booking_service(req: PostBookingRequest):
+async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.0.1"):
     kwargs = req.dict(by_alias=True)
 
     if inspect.iscoroutinefunction(mmbc.post_booking):
@@ -73,47 +70,99 @@ async def post_booking_service(req: PostBookingRequest):
     if result.get("result") == "no":
         raise BookingError(result.get("reason", "Booking failed"), result)
 
-    # 💳 Payment Integration
     try:
-        # Parse contact details from stringified JSON
+        # Parse contact + passengers
         contact_json = result.get("flight_contactdetails_json", "{}")
         contact_data = json.loads(contact_json)
 
-        # Optional: parse passenger count from passenger JSON
         passengers_json = result.get("flight_datapassengers_json", "[]")
         passengers = json.loads(passengers_json)
 
-        payment_payload = {
-            "order_id": f"FLIGHT-{result['kodebooking']}",
-            "amount": float(result["flight_totalfare"]),
-            "payment_method": "credit_card",  # or make this dynamic later
-            "customer_details": {
-                "first_name": contact_data.get("contact_fullname", "").split(" ")[0],
-                "last_name": " ".join(contact_data.get("contact_fullname", "").split(" ")[1:]),
-                "email": contact_data.get("contact_email"),
-                "phone": contact_data.get("contact_phone")
-            },
-            "item_details": [
+        # ✅ Fix totals
+        subtotal = float(result.get("publish", result["flight_totalfare"]))
+        tax = float(result.get("flight_tax", 0))
+        discount = 0
+        total = subtotal + tax - discount
+
+        # 🛒 Build transaction payload
+        transaction_payload = {
+            "email": contact_data.get("contact_email"),
+            "transaction_type": "BOOKING",
+            "currency": "IDR",
+            "service_type": "FLIGHTS",
+            "items": [
                 {
-                    "id": f"flight-{result['kodebooking']}",
-                    "price": float(result["flight_totalfare"]),
+                    "name": f"Flight {result.get('flight_code')} {result.get('flight_route')}",
+                    "price": subtotal,
                     "quantity": len(passengers),
-                    "name": f"Flight Ticket {result.get('flight_route', result['flight_code'])}"
+                    "description": f"Flight booking {result.get('flight_code')} on {result.get('flight_date')}",
+                    "metadata": {
+                        "departure_date": result.get("flight_date"),
+                        "flight_number": result.get("flight_code"),
+                        "airline": result.get("flight"),
+                        "class": result.get("flight_class"),
+                    },
                 }
             ],
-            "description": f"Flight booking payment for {result['flight_code']}"
+            "subtotal": subtotal,
+            "tax": tax,
+            "discount": discount,
+            "total": total,
+            "payment_method": "credit_card",
+            "payment_gateway": "MIDTRANS",
+            "transaction_metadata": {
+                "order_id": f"FLIGHT-{result['kodebooking']}",
+                "passenger_name": passengers[0]["passenger_fullname"] if passengers else None,
+                "booking_reference": result["kodebooking"],
+                "ip_address": client_ip,
+            },
+            "payment_metadata": {
+                "bank_name": "BCA",
+                "card_last_digits": "1234",
+                "card_type": "visa",
+            },
         }
 
-        payment_response = await create_payment(payment_payload)
+        # ✅ Normalize payment status BEFORE sending to transaction-service
+        raw_status = result.get("status", "PENDING")  # From MMBC/mock
+        status_mapping = {
+                    "COMPLETED": "SUCCESS",
+                    "SETTLED": "SUCCESS",
+                    "SETTLEMENT": "SUCCESS",   # Midtrans
+                    "CAPTURE": "SUCCESS",      # Midtrans
+                    "PAID": "SUCCESS",
 
-        result["payment_status"] = "initiated"
-        result["payment_response"] = payment_response
+                    "PENDING": "PROCESSING",
+                    "IN_PROGRESS": "PROCESSING",
+
+                    "EXPIRE": "EXPIRED",       # fix → matches DB exactly
+                    "EXPIRED": "EXPIRED",
+
+                    "CANCEL": "CANCELED",      # fix → matches DB spelling
+                    "CANCELLED": "CANCELED",   # extra safeguard
+                    "FAILURE": "FAILED",
+                    "DENY": "FAILED",
+                }
+
+        normalized_status = status_mapping.get(raw_status.upper(), "PROCESSING")
+        transaction_payload["status"] = normalized_status
+
+        print(f"[DEBUG] Raw Status = {raw_status}, Normalized = {normalized_status}")
+
+
+        # 🔗 Send to transaction-service
+        transaction_response = await create_transaction(transaction_payload)
+
+        # Store in result
+        result["payment_status"] = normalized_status
+        result["payment_response"] = transaction_response
 
     except Exception as e:
         result["payment_status"] = "failed"
         result["payment_error"] = str(e)
 
     return result
+
 
 def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
     order_id = f"FLIGHT-{kodebooking}"
@@ -124,10 +173,27 @@ def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) ->
     if not pay_status:
         return current_status
 
-    if pay_status.upper() in ("SUCCESS", "PAID"):
-        return "PAID"
-    elif pay_status.upper() in ("FAILED", "EXPIRED"):
-        return pay_status.upper()
+    normalized = pay_status.upper()
+    mapping = {
+        "COMPLETED": "SUCCESS",
+        "SETTLED": "SUCCESS",
+        "SETTLEMENT": "SUCCESS",
+        "CAPTURE": "SUCCESS",
+        "PAID": "SUCCESS",
+
+        "EXPIRE": "EXPIRED",
+        "EXPIRED": "EXPIRED",
+
+        "CANCEL": "CANCELED",
+        "CANCELLED": "CANCELED",
+
+        "FAILURE": "FAILED",
+        "DENY": "FAILED",
+    }
+    normalized = mapping.get(normalized, normalized)
+
+    if normalized in ("SUCCESS", "FAILED", "EXPIRED", "PROCESSING", "PENDING", "CANCELED", "REFUNDED"):
+        return normalized
 
     return current_status
 

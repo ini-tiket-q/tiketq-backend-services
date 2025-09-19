@@ -14,7 +14,7 @@ from domain.models import (
     PaymentInDB, PaymentCreate, PaymentStatus, Currency,
     TransactionItem,
     # Payment request models
-    PaymentCreateRequest, PaymentConfirmRequest, PaymentWebhookRequest,
+    PaymentCreateRequest, PaymentConfirmRequest,
     # Order request models
     OrderCreateRequest, OrderStatusUpdateRequest,
     # Transaction request models
@@ -173,13 +173,22 @@ class TransactionService:
                 payment_gateway=transaction_request.payment_gateway,
                 gateway_transaction_id=payment_url_body.get("transaction_id"),
                 status=PaymentStatus.PENDING,
-                meta_data=transaction_request.payment_metadata
+                metadata=transaction_request.payment_metadata
             )
 
             db_payment = self.payment_repo.create_payment(payment)
             if not db_payment:
                 logger.error("Failed to create payment")
                 return None
+
+            logger.info(
+                f"Payment created successfully - ID: {db_payment.id}, "
+                f"Transaction ID: {db_payment.transaction_id}, "
+                f"Amount: {db_payment.amount} {db_payment.currency}, "
+                f"Method: {db_payment.payment_method.value if db_payment.payment_method else 'Not set'}, "
+                f"Gateway: {db_payment.payment_gateway.value if db_payment.payment_gateway else 'Not set'}"
+                f"Metadata: {db_payment.metadata}!!!"
+            )
 
             # Log successful transaction creation
             logger.info(
@@ -217,6 +226,7 @@ class TransactionService:
                 return transaction
             else:
                 if not transaction or transaction.email != email:
+                    logger.info(f"Unauthorized access to transaction {transaction_id} - User: {email}")
                     return None
                 return transaction
         except Exception as e:
@@ -355,7 +365,6 @@ class TransactionService:
         self, 
         transaction_id: int, 
         update_request: TransactionUpdateRequest,
-        email: str
     ) -> Optional[TransactionInDB]:
         """Update transaction with validated request model.
         
@@ -372,7 +381,7 @@ class TransactionService:
         """
         try:
             transaction_check = self.transaction_repo.get_transaction(transaction_id)
-            if not transaction_check or transaction_check.email != email:
+            if not transaction_check:
                 raise ValueError("Transaction not found or access denied")
 
             # Create update data from validated request
@@ -403,10 +412,9 @@ class TransactionService:
             if updated_transaction:
                 logger.info(
                     f"Transaction updated successfully - ID: {transaction_id}, "
-                    f"Email: {email}, "
                     f"Status changed: {original_transaction.status.value if original_transaction.status else 'None'} -> "
                     f"{updated_transaction.status.value if updated_transaction.status else 'None'}, "
-                    f"Order: {original_transaction.order_id}, "
+                    f"Order: {original_transaction.order_number}, "
                     f"Amount: {original_transaction.amount}, "
                     f"Changes: {update_data}"
                 )
@@ -416,7 +424,7 @@ class TransactionService:
             logger.error(f"Error updating transaction {transaction_id}: {str(e)}")
             return None
     
-    def cancel_transaction(self, transaction_id: int, email: str) -> Optional[TransactionInDB]:
+    def cancel_transaction(self, transaction_id: int) -> Optional[TransactionInDB]:
         """Cancel a transaction with logging"""
         try:
             from domain.models import TransactionStatus
@@ -424,14 +432,14 @@ class TransactionService:
             # Create an update request to set status to cancelled
             cancel_request = TransactionUpdateRequest(status=TransactionStatus.CANCELLED)
             
-            result = self.update_transaction(transaction_id, cancel_request, email)
+            result = self.update_transaction(transaction_id, cancel_request)
             
             if result:
-                logger.info(f"Transaction cancelled: transaction_id={transaction_id}, email={email}")
+                logger.info(f"Transaction cancelled: transaction_id={transaction_id}")
                 
             return result
         except Exception as e:
-            logger.error(f"Failed to cancel transaction {transaction_id} for user {email}: {str(e)}")
+            logger.error(f"Failed to cancel transaction {transaction_id}: {str(e)}")
             raise
     
     # Delete transaction with authorization check (should be admin)
@@ -456,7 +464,7 @@ class OrderService:
     ):
         self.order_repo = order_repo
     
-    def get_order(self, order_id: int, email: Optional[str] = None) -> Optional[OrderInDB]:
+    def get_order(self, order_id: int) -> Optional[OrderInDB]:
         """Get an order by ID with optional authorization check.
         
         Args:
@@ -470,14 +478,7 @@ class OrderService:
             order = self.order_repo.get_order(order_id)
             if not order:
                 return None
-                
-            # If email is provided, verify the order belongs to this user
-            if email is not None and order.email != email:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this order"
-                )
-                
+
             return order
             
         except Exception as e:
@@ -620,7 +621,6 @@ class OrderService:
         self, 
         order_id: int, 
         status_request: "OrderStatusUpdateRequest",
-        email: str
     ) -> Optional[OrderInDB]:
         """Update order status with Pydantic validation.
         
@@ -636,10 +636,6 @@ class OrderService:
             ValueError: If validation fails or unauthorized access
         """
         try:
-            order_check = self.order_repo.get_order(order_id)
-            if not order_check or order_check.email != email:
-                raise ValueError("Order not found or access denied")
-                
             # Create update data from validated request
             update_data = {
                 "status": status_request.status

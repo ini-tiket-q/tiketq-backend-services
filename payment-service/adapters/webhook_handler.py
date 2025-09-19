@@ -1,8 +1,8 @@
-import hashlib
-import logging
 from typing import Dict, Any, Optional
-from domain.models import WebhookNotification, PaymentStatus
-from adapters.midtrans.models import MidtransMapper
+import hashlib
+import hmac
+import json
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -14,66 +14,105 @@ class WebhookHandler:
     def __init__(self, server_key: str):
         self.server_key = server_key
 
-    def verify_signature(self, notification_data: Dict[str, Any]) -> bool:
-        """Verify Midtrans webhook signature"""
+    def verify_signature(self, notification_data: Dict[str, Any], signature: str) -> bool:
+        """Verify Midtrans signature"""
         try:
-            order_id = notification_data.get('order_id', '')
-            status_code = notification_data.get('status_code', '')
-            gross_amount = notification_data.get('gross_amount', '')
-            signature_key = notification_data.get('signature_key', '')
+            # Create signature key for verification
+            order_id = notification_data.get("order_id", "")
+            status_code = notification_data.get("status_code", "")
+            gross_amount = notification_data.get("gross_amount", "")
 
-            # Create signature string
             signature_string = f"{order_id}{status_code}{gross_amount}{self.server_key}"
+            calculated_signature = hashlib.sha512(signature_string.encode()).hexdigest()
 
-            # Generate hash
-            generated_signature = hashlib.sha512(signature_string.encode()).hexdigest()
-
-            return generated_signature == signature_key
-
+            return hmac.compare_digest(calculated_signature, signature)
         except Exception as e:
-            logger.error(f"Signature verification failed: {e}")
+            logger.error(f"Error verifying signature: {e}")
             return False
 
-    async def process_webhook(
-        self,
-        notification_data: Dict[str, Any],
-        payment_repository,
-        verify_signature: bool = True
-    ) -> Dict[str, Any]:
-        """Process Midtrans webhook notification"""
+    async def process_webhook(self, notification_data: Dict[str, Any], payment_repository, verify_signature: bool = True) -> Dict[str, Any]:
+        """Process webhook notification from Midtrans"""
         try:
-            # Verify signature if required
-            if verify_signature and not self.verify_signature(notification_data):
-                raise ValueError("Invalid signature")
+            order_id = notification_data.get("order_id")
+            transaction_status = notification_data.get("transaction_status")
 
-            # Parse notification
-            webhook_notification = WebhookNotification(**notification_data)
+            logger.info(f"Processing webhook for order: {order_id}, status: {transaction_status}")
 
-            # Map status
-            new_status = MidtransMapper.map_status_from_midtrans(
-                webhook_notification.transaction_status,
-                webhook_notification.fraud_status
-            )
+            if not order_id:
+                raise ValueError("order_id is required")
 
-            # Get payment by order_id or transaction_id
-            payment = await payment_repository.get_payment_by_order_id(webhook_notification.order_id)
-            if not payment:
-                logger.warning(f"Payment not found for order_id: {webhook_notification.order_id}")
-                return {"status": "payment_not_found", "order_id": webhook_notification.order_id}
+            # Get existing payment
+            payment = None
+            old_status = "not_found"
 
-            # Update payment status if changed
-            if payment.status != new_status:
-                await payment_repository.update_payment_status(payment.id, new_status)
-                logger.info(f"Payment status updated: {payment.id} -> {new_status}")
+            try:
+                payment = payment_repository.get_payment_by_order_id(order_id)
+                if payment:
+                    # Handle enum status safely
+                    old_status = getattr(payment.status, 'value', str(payment.status))
+                    logger.info(f"Found payment for order {order_id}, current status: {old_status}")
+                else:
+                    logger.warning(f"Payment not found for order_id: {order_id}")
+            except Exception as get_error:
+                logger.error(f"Error getting payment: {get_error}")
+
+            # Map Midtrans status to internal status
+            status_mapping = {
+                "capture": "completed",
+                "settlement": "completed",
+                "pending": "pending",
+                "deny": "failed",
+                "cancel": "cancelled",
+                "expire": "expired",
+                "failure": "failed"
+            }
+
+            new_status = status_mapping.get(transaction_status, "unknown")
+            logger.info(f"Mapped transaction_status '{transaction_status}' to '{new_status}'")
+
+            # Update payment status
+            gateway_response = {
+                "transaction_id": notification_data.get("transaction_id"),
+                "transaction_status": transaction_status,
+                "fraud_status": notification_data.get("fraud_status"),
+                "status_code": notification_data.get("status_code"),
+                "status_message": notification_data.get("status_message"),
+                "payment_type": notification_data.get("payment_type"),
+                "gross_amount": notification_data.get("gross_amount"),
+                "currency": notification_data.get("currency", "IDR"),
+                "settlement_time": notification_data.get("settlement_time"),
+                "transaction_time": notification_data.get("transaction_time")
+            }
+
+            success = False
+            if payment:  # Only update if payment exists
+                try:
+                    success = payment_repository.update_payment_status_by_order(
+                        order_id=order_id,
+                        status=new_status,
+                        gateway_response=gateway_response
+                    )
+
+                    if success:
+                        logger.info(f"Payment status updated for order {order_id}: {old_status} -> {new_status}")
+                    else:
+                        logger.error(f"Failed to update payment status for order {order_id}")
+
+                except Exception as update_error:
+                    logger.error(f"Error updating payment status: {update_error}")
+                    success = False
 
             return {
-                "status": "success",
-                "order_id": webhook_notification.order_id,
-                "transaction_id": webhook_notification.transaction_id,
-                "new_status": new_status.value,
-                "processed_at": notification_data.get('transaction_time')
+                "order_id": order_id,
+                "old_status": old_status,
+                "new_status": new_status,
+                "transaction_status": transaction_status,
+                "updated": success,
+                "payment_found": payment is not None
             }
 
         except Exception as e:
-            logger.error(f"Webhook processing failed: {e}")
-            raise
+            logger.error(f"Error processing webhook: {e}")
+            logger.error(f"Notification data: {notification_data}")
+            # Instead of re-raising, return error details
+            raise Exception(f"Webhook processing failed for order {notification_data.get('order_id', 'unknown')}: {str(e)}")
