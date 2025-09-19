@@ -125,10 +125,10 @@ app.add_middleware(TransactionContextMiddleware)
 app.include_router(payments.router)
 app.include_router(transactions.router)
 app.include_router(orders.router)
-app.include_router(reports.router, prefix="/reports")
+app.include_router(reports.router)
 
 # Health check endpoint
-@app.get("/health")
+@app.get("/transactions/health")
 async def health_check():
     """Health check endpoint"""
     return {
@@ -138,7 +138,7 @@ async def health_check():
     }
 
 # Root endpoint
-@app.get("/")
+@app.get("/transactions")
 async def root():
     """Root endpoint with service information"""
     return {
