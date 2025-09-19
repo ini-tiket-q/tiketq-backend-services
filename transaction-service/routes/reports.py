@@ -16,7 +16,7 @@ router = APIRouter()
 # Set up logging
 logger = logging.getLogger(__name__)
 
-@router.get("/transactions", 
+@router.get("/transactions/reports", 
     response_model=TransactionReportResponse,
     summary="Generate transaction report",
     description="Generate detailed transaction report with filtering options. Admin access required.",
@@ -96,7 +96,7 @@ async def get_transaction_report(
         )
 
 
-@router.get("/revenue", 
+@router.get("/transactions/reports/revenue", 
     response_model=RevenueReportResponse,
     summary="Generate revenue analytics report",
     description="Generate revenue analytics with time-series data. Admin access required.",
@@ -171,7 +171,7 @@ async def get_revenue_report(
         )
 
 
-@router.get("/refunds", 
+@router.get("/transactions/reports/refunds", 
     response_model=RefundReportResponse,
     summary="Generate refund report",
     description="Generate detailed refund report with filtering options. Admin access required.",
