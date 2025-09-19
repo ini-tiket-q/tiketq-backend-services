@@ -30,7 +30,7 @@ def get_payment_service(db: Session = Depends(get_database_session)) -> PaymentS
 
 
 @router.get(
-    "/payments/{order_number}", 
+    "/transactions/payments/{order_number}", 
     response_model=PaymentInDB,
     summary="Get transaction payment details by order number",
     description="""
@@ -80,7 +80,7 @@ async def get_payment_details(
         )
 
 @router.post(
-    "/payments/{order_number}/confirm",
+    "/transactions/payments/{order_number}/confirm",
     response_model=PaymentInDB,
     summary="Confirm a transaction payment",
     description="""
@@ -88,7 +88,7 @@ async def get_payment_details(
     
     ### Access Level: Public (with token)
     - Used to confirm successful payments
-    """
+    """,
 )
 async def confirm_payment(
     order_number: str,
@@ -138,7 +138,7 @@ async def confirm_payment(
         
 
 @router.get(
-    "/payments/admin/get-token",
+    "/transactions/payments/admin/get-token",
     status_code=status.HTTP_200_OK,
     summary="Payment token endpoint",
     description="""
@@ -147,7 +147,7 @@ async def confirm_payment(
     ### Access Level: Admin
     - No authentication required
     - create payment token for admin test
-    """
+    """,
 )
 async def payment_token(
     payment_service: PaymentService = Depends(get_payment_service),
