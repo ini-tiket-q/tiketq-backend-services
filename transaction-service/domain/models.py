@@ -60,7 +60,7 @@ class PaymentStatus(str, Enum):
     PROCESSING = "PROCESSING"
     SUCCESS = "SUCCESS"  # Changed from COMPLETED to match database enum
     FAILED = "FAILED"
-    CANCELED = "CANCELED"  # Changed from CANCELLED to match database enum (single L)
+    CANCELLED = "CANCELLED"
     REFUNDED = "REFUNDED"
     EXPIRED = "EXPIRED"  # Added to match database enum
 
