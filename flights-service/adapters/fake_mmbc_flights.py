@@ -20,7 +20,7 @@ class ExternalFlightAPI:
             {"code": "SUB", "city": "Surabaya"},
             {"code": "DPS", "city": "Denpasar"},
         ]
-
+    
     def get_code_flights(self) -> List[Dict[str, str]]:
         """
         Mock data kode dan nama maskapai serta logo.
