@@ -25,3 +25,11 @@ async def create_transaction(transaction_payload: dict):
             raise
 
         return response.json()
+
+async def get_transaction_by_order_number(order_number: str):
+    url = f"http://transaction-service:8000/transactions/orders/public/{order_number}"
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, timeout=10)
+        response.raise_for_status()
+        return response.json()
+

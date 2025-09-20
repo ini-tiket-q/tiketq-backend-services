@@ -12,7 +12,9 @@ from domain.schemas_bookings import (
     GetStatusBookingResponse, GetETicketRequest, GetETicketResponse
 )
 from fastapi import HTTPException
-from adapters.payment_db_reader import get_payment_status_by_order_id
+from adapters.transaction_clients import get_transaction_by_order_number
+
+kodebooking_to_order_number = {}
 
 
 class PriceError(Exception):
@@ -36,6 +38,11 @@ class ETicketError(Exception):
     def __init__(self, reason: str):
         self.reason = reason        
 
+async def store_booking_mapping(kodebooking: str, order_number: str):
+    kodebooking_to_order_number[kodebooking] = order_number
+
+async def get_order_number_by_kodebooking(kodebooking: str) -> str:
+    return kodebooking_to_order_number.get(kodebooking)
 
 async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
     call_args = dict(
@@ -153,6 +160,11 @@ async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.
         # 🔗 Send to transaction-service
         transaction_response = await create_transaction(transaction_payload)
 
+        order_number = transaction_response.get("order_number")
+
+        if order_number:
+            kodebooking_to_order_number[result["kodebooking"]] = order_number
+
         # Store in result
         result["payment_status"] = normalized_status
         result["payment_response"] = transaction_response
@@ -164,39 +176,39 @@ async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.
     return result
 
 
-def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
-    order_id = f"FLIGHT-{kodebooking}"
-    pay_status = get_payment_status_by_order_id(order_id)
+async def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
+    order_number = await get_order_number_by_kodebooking(kodebooking)
 
-    print(f"[DEBUG] reconcile: order_id={order_id}, pay_status={pay_status}, current_status={current_status}")
-
-    if not pay_status:
+    if not order_number:
+        print(f"[WARN] No order_number found for {kodebooking}")
         return current_status
 
-    normalized = pay_status.upper()
+    try:
+        trx = await get_transaction_by_order_number(order_number)
+        pay_status = trx.get("status", "").upper()
+        print(f"[DEBUG] reconcile: order_number={order_number}, pay_status={pay_status}, current_status={current_status}")
+    except Exception as e:
+        print(f"[WARN] Failed to fetch transaction for {order_number}: {e}")
+        return current_status  # Early return if error
+
+    # ✅ Only run this if pay_status was successfully set
     mapping = {
+        "PAID": "SUCCESS",
         "COMPLETED": "SUCCESS",
         "SETTLED": "SUCCESS",
         "SETTLEMENT": "SUCCESS",
         "CAPTURE": "SUCCESS",
-        "PAID": "SUCCESS",
-
+        "PENDING": "PROCESSING",
+        "IN_PROGRESS": "PROCESSING",
         "EXPIRE": "EXPIRED",
         "EXPIRED": "EXPIRED",
-
         "CANCEL": "CANCELED",
         "CANCELLED": "CANCELED",
-
         "FAILURE": "FAILED",
         "DENY": "FAILED",
     }
-    normalized = mapping.get(normalized, normalized)
 
-    if normalized in ("SUCCESS", "FAILED", "EXPIRED", "PROCESSING", "PENDING", "CANCELED", "REFUNDED"):
-        return normalized
-
-    return current_status
-
+    return mapping.get(pay_status, current_status)
 
 
 async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
@@ -209,7 +221,7 @@ async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
     mm_status = result.get("flight_statusbooking", "waiting")
 
     # Check payment status via payment-service
-    pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
+    pay_status = await reconcile_payment_status_if_needed(kodebooking, mm_status)
 
     # Build response aligned with schema
     response = GetStatusBookingResponse(
@@ -230,9 +242,9 @@ async def get_issued_service(kodebooking: str) -> GetIssuedResponseSuccess:
 
     # Reconcile payment first
     mm_status = status_resp.get("flight_statusbooking", "waiting")
-    pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
+    pay_status = await reconcile_payment_status_if_needed(kodebooking, mm_status)
 
-    if pay_status != "PAID":
+    if pay_status != "SUCCESS":
         raise HTTPException(status_code=402, detail="Payment not completed")
 
     # Call MMBC to issue ticket
@@ -278,11 +290,6 @@ async def get_issued_service(kodebooking: str) -> GetIssuedResponseSuccess:
     return response
 
 
-
-
-
-
-
 async def get_eticket_service(kodebooking: str) -> GetETicketResponse:
     result = await mmbc.get_eticket(kodebooking=kodebooking)
 
@@ -295,7 +302,6 @@ async def get_eticket_service(kodebooking: str) -> GetETicketResponse:
         reason=result.get("reason", "")
     )
     return response
-
 
 
 async def reset_password_service(req: ResetPasswordRequest) -> ResetPasswordResponse:
