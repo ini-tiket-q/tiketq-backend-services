@@ -65,6 +65,11 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path.lower()
     print(f"DEBUG: Processing request to path: {path}")
 
+    # Bypass preflight CORS request
+    if request.method == "OPTIONS":
+        print("DEBUG: OPTIONS request bypassed for CORS preflight")
+        return await call_next(request)
+
     # Check if request path starts with any public route prefix
     if any(path.startswith(route) for route in PUBLIC_ROUTES):
         print(f"DEBUG: Public route, skipping auth")
