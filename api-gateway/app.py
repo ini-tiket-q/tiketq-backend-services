@@ -3,13 +3,27 @@ from fastapi import FastAPI, Request, Response
 from dotenv import load_dotenv
 from pathlib import Path
 import httpx
-
+from fastapi.middleware.cors import CORSMiddleware
 from utils.forwarder import forward_request
 
 # Load .env from root directory
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
+
+# ✅ Setup CORS
+origins = [
+    "http://localhost:3000",   # Next.js dev
+    "http://127.0.0.1:3000",   # alternatif local dev
+    # Tambahin domain produksi kalau sudah deploy
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 PUBLIC_ROUTES = {
     "/auth/login",
