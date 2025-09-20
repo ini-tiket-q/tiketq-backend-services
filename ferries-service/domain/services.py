@@ -438,13 +438,28 @@ async def create_ferry_bookingv2(booking_data: FerryBookingRequest) -> FerryBook
         raise
              
 
-# Add passenger details to an already created booking
+# Add passenger details to an already created booking 
 def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
     """
-    Tambahkan detail penumpang ke booking Sindo.
+    Tambahkan detail penumpang ke booking Sindo + Booking Requirements.
     """
+    # Booking detail ke Sindo API
     data = sindo_client.add_sindo_booking_detail(booking_id, passenger_data)
-    return data
+
+    # Simpan info tambahan dari frontend (booking requirements)
+    booking_requirements = {
+        "email": passenger_data.get("email"),
+        "confirmation_email": passenger_data.get("confirmation_email"),
+        "mobile_phone": passenger_data.get("mobile_phone"),
+        "whatsapp_no": passenger_data.get("whatsapp_no"),
+    }
+
+    # Bungkus response supaya bisa dipakai lagi di get_ferry_booking_details
+    return {
+        "status": data.get("status", "Ok"),
+        "data": data.get("data"),
+        "booking_requirements": booking_requirements
+    }
 
 
 # Get Booking details 
@@ -457,7 +472,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
 
     passenger_count = len(records)
 
-    # --- Ambil harga tiket dari BookingTypePricings ---
+    # Ambil harga tiket dari BookingTypePricings
     pricing_data = sindo_client.get_booking_type_pricings()
     pricing_items = pricing_data.get("data", {}).get("records", [])
     default_price = 654000
@@ -467,7 +482,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         if isinstance(item.get("bookingType"), dict)
     }
 
-    # --- Nama penumpang utama ---
+    # Nama penumpang utama
     first_record = records[0]
     passenger_name = (
         first_record.get("passengerName")
@@ -475,7 +490,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         or "Unknown Passenger"
     )
 
-    # Coba ambil booking header (supaya dapat departureCoreApiTrip.date)
+    # Ambil booking header (departureCoreApiTrip.date)
     booking_header = {}
     try:
         header_resp = sindo_client.get_sindo_booking(booking_id)
@@ -484,7 +499,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         logger.warning("Gagal ambil booking header untuk %s: %s", booking_id, e)
         booking_header = {}
 
-    # helper untuk normalisasi tanggal ke YYYY-MM-DD
+    # Normalisasi tanggal
     def _normalize_date(date_str):
         if not date_str:
             return None
@@ -494,14 +509,11 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
                 return dt.strftime("%Y-%m-%d")
             except Exception:
                 pass
-        # fallback sederhana
         if "T" in date_str:
             return date_str.split("T")[0]
         return date_str.split(" ")[0]
 
-    # Coba beberapa key yang mungkin mengandung tanggal trip
     trip_date = None
-    # biasanya: booking_header.get("departureCoreApiTrip", {}).get("date")
     possible_keys = ["departureCoreApiTrip", "departureTrip", "departure", "coreApiTrip"]
     for k in possible_keys:
         trip = booking_header.get(k)
@@ -509,8 +521,6 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
             trip_date = _normalize_date(trip.get("date"))
             if trip_date:
                 break
-
-    # fallback: jika header berisi list trips / coreApiTrips
     if not trip_date:
         for list_key in ("trips", "coreApiTrips", "departureCoreApiTrips"):
             items = booking_header.get(list_key)
@@ -519,13 +529,15 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
                 if trip_date:
                     break
 
-    # terakhir fallback: pakai identification.issueDate dari passenger (sebelumnya dipakai)
     passenger = records[0]
     id_issue_date = passenger.get("identification", {}).get("issueDate")
     departure_date = trip_date or _normalize_date(id_issue_date)
 
+    # Cari email dari passenger record (hasil add_booking_detail)
+    booking_requirements = passenger.get("booking_requirements", {})
+    customer_email = booking_requirements.get("email", "customer@example.com")
 
-    # --- Ambil harga tiap penumpang (sementara 1 flight saja) ---
+    # Buat item list
     items = []
     subtotal = 0
     for i, rec in enumerate(records):
@@ -534,29 +546,25 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
             default_price
         )
         subtotal += price
-
         items.append({
             "name": f"Ferry Ticket {i+1}",
             "price": price,
             "quantity": 1,
             "description": f"Ferry ticket for passenger {passenger_name}",
             "metadata": {
-                "departure_date": departure_date,   # TODO: ambil dari rec kalau ada
-                "ferry_number": "SF-123",         # TODO: mapping ke data asli
-                "operator": "Sindo Ferry",        # fixed untuk sekarang
-                "class": "Economy"                # default sementara
+                "departure_date": departure_date,
+                "ferry_number": "SF-123",
+                "operator": "Sindo Ferry",
+                "class": "Economy"
             }
         })
 
-
-    # --- Hitung tax & discount ---
-    tax = int(subtotal * 0.1)    # contoh 10% pajak
-    discount = 0                 # sementara belum ada diskon
+    tax = int(subtotal * 0.1)
+    discount = 0
     total = subtotal + tax - discount
 
-    # --- Mapping ke format baru ---
     mapped_response = {
-        "email": "customer@example.com",
+        "email": customer_email,  # pakai dari add_booking_detail
         "transaction_type": "BOOKING",
         "currency": "IDR",
         "service_type": "FERRIES",
@@ -566,11 +574,11 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         "discount": discount,
         "total": total,
         "payment_method": "credit_card",
-        "payment_gateway": "MIDTRANS",  # default sementara
+        "payment_gateway": "MIDTRANS",
         "transaction_metadata": {
             "order_id": booking_id,
             "passenger_name": passenger_name,
-            "booking_reference": f"TQ-FR-{booking_id[:6]}",  # contoh reference
+            "booking_reference": f"TQ-FR-{booking_id[:6]}",
             "ip_address": "192.168.1.100"
         },
         "payment_metadata": {
