@@ -55,6 +55,19 @@ def get_ferry_trips(origin: str, destination: str, date: str):
         records = data.get("data", {}).get("records", [])
     return {"trips": records}
 
+def find_route_id(origin: str, destination: str) -> str:
+    """
+    Cari route_id berdasarkan origin & destination code.
+    """
+    routes_data = get_ferry_routes()
+    for route in routes_data.get("routes", []):
+        embark = route.get("embarkationPort", {}).get("code")
+        dest = route.get("destinationPort", {}).get("code")
+        if embark == origin and dest == destination:
+            return route.get("id")
+    return None
+
+
 def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
     """
     Calculate base price based on item and ferry class.
@@ -80,54 +93,38 @@ def get_ferry_oneway(search_request: TripSearchRequest):
             raise ValueError("Number of passengers must be at least 1")
        
         sindo_date = search_request.depart_date.strftime("%Y%m%d")
-        
-        # Get raw data from Sindo API 
         trips = get_ferry_trips(search_request.origin, search_request.destination, sindo_date)
-        # Check if API returned an error
+
         if trips.get("status") == "error":
-            raise ValueError(trips.get("message", "Error fetching ferry data")) 
-        
+            raise ValueError(trips.get("message", "Error fetching ferry data"))
+
         trips_list = trips.get("trips", [])
-            
-        # Transform data for frontend consumption
-        display_trips = []      
+        display_trips = []
+
+        # cari route_id sesuai origin & destination
+        route_id = find_route_id(search_request.origin, search_request.destination)
+
         for trip_data in trips_list:
-            # Convert date objects to strings
-            depart_date_str = search_request.depart_date.isoformat()
-            return_date_str = search_request.return_date.isoformat() if search_request.return_date else None
-            
-            # Create a dictionary with all the data
-            model_data = {}
-            
-            # Convert API response fields from camelCase to snake_case
-            for key, value in trip_data.items():
-                snake_key = camel_to_snake(key)
-                model_data[snake_key] = value
-            
-            # Add search request fields (already in snake_case)
+            model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
-                'nationality': search_request.nationality,
-                'origin': search_request.origin,
-                'destination': search_request.destination,
-                'depart_date': depart_date_str,
-                'return_date': return_date_str,
-                'pax': search_request.pax,
-                'ferry_class': search_request.ferry_class.value,
-                'is_round_trip': search_request.is_round_trip,
+                "nationality": search_request.nationality,
+                "origin": search_request.origin,
+                "destination": search_request.destination,
+                "depart_date": search_request.depart_date.isoformat(),
+                "return_date": search_request.return_date.isoformat() if search_request.return_date else None,
+                "pax": search_request.pax,
+                "ferry_class": search_request.ferry_class.value,
+                "is_round_trip": search_request.is_round_trip,
+                "route_id": route_id   # <---- tambahkan ini
             })
-            
-            # Ensure all required fields have values
-            model_data.setdefault('trip_sched_id', '')
-            model_data.setdefault('departure_time', '')
-            model_data.setdefault('trip_id', '')
-            model_data.setdefault('used_seat', '0')
-            
-            
-            try:
-                display_trip = FerryTripDisplay(**model_data)
-                display_trips.append(display_trip)
-            except ValidationError as e:
-                raise     
+
+            model_data.setdefault("trip_sched_id", "")
+            model_data.setdefault("departure_time", "")
+            model_data.setdefault("trip_id", "")
+            model_data.setdefault("used_seat", "0")
+
+            display_trips.append(FerryTripDisplay(**model_data))
+
         return display_trips
     except ValidationError as e:
         logger.error(f"Validation error: {e.errors()}")
@@ -153,84 +150,61 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
         # Format and validate dates
         sindo_depart_date = search_request.depart_date.strftime("%Y%m%d")
         sindo_return_date = search_request.return_date.strftime("%Y%m%d")
-       
-        # Get departure trips (origin → destination)
-        depart_trips = get_ferry_trips(
-            search_request.origin, 
-            search_request.destination, 
-            sindo_depart_date
-        )
-        
-        # Get return trips (destination → origin)
-        return_trips = get_ferry_trips(
-            search_request.destination, 
-            search_request.origin, 
-            sindo_return_date
-        )
-        
-        # Check if API returned errors
+
+        depart_trips = get_ferry_trips(search_request.origin, search_request.destination, sindo_depart_date)
+        return_trips = get_ferry_trips(search_request.destination, search_request.origin, sindo_return_date)
+
         if depart_trips.get("status") == "error":
             raise ValueError(depart_trips.get("message", "Error fetching departure ferry data"))
-            
         if return_trips.get("status") == "error":
             raise ValueError(return_trips.get("message", "Error fetching return ferry data"))
-        
-        # Transform departure trips
+
+        # route_id untuk depart & return
+        depart_route_id = find_route_id(search_request.origin, search_request.destination)
+        return_route_id = find_route_id(search_request.destination, search_request.origin)
+
+        # transform departure trips
         depart_display_trips = []
-      
         for trip_data in depart_trips.get("trips", []):
-            model_data = {}
-            for key, value in trip_data.items():
-                snake_key = camel_to_snake(key)
-                model_data[snake_key] = value
-        
+            model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
-                'nationality': search_request.nationality,
-                'origin': search_request.origin,
-                'destination': search_request.destination,
-                'depart_date': search_request.depart_date.isoformat(),
-                'return_date': search_request.return_date.isoformat(),
-                'pax': search_request.pax,
-                'ferry_class': search_request.ferry_class.value,
-                'is_round_trip': search_request.is_round_trip,
+                "nationality": search_request.nationality,
+                "origin": search_request.origin,
+                "destination": search_request.destination,
+                "depart_date": search_request.depart_date.isoformat(),
+                "return_date": search_request.return_date.isoformat(),
+                "pax": search_request.pax,
+                "ferry_class": search_request.ferry_class.value,
+                "is_round_trip": search_request.is_round_trip,
+                "route_id": depart_route_id   # <---- ditambahkan
             })
-            
-            # Ensure required fields
-            model_data.setdefault('trip_sched_id', '')
-            model_data.setdefault('departure_time', '')
-            model_data.setdefault('trip_id', '')
-            model_data.setdefault('used_seat', '0')
-            
-            display_trip = FerryTripDisplay(**model_data)
-            depart_display_trips.append(display_trip)
-        
-        # Transform return trips
+            model_data.setdefault("trip_sched_id", "")
+            model_data.setdefault("departure_time", "")
+            model_data.setdefault("trip_id", "")
+            model_data.setdefault("used_seat", "0")
+            depart_display_trips.append(FerryTripDisplay(**model_data))
+
+        # transform return trips
         return_display_trips = []
         for trip_data in return_trips.get("trips", []):
-            model_data = {}
-            for key, value in trip_data.items():
-                snake_key = camel_to_snake(key)
-                model_data[snake_key] = value
-                
+            model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
-                'nationality': search_request.nationality,
-                'origin': search_request.destination,  # Note: swapped for return trip
-                'destination': search_request.origin,   # Note: swapped for return trip
-                'depart_date': search_request.return_date.isoformat(),  # Use return date for departure
-                'return_date': None,
-                'pax': search_request.pax,
-                'ferry_class': search_request.ferry_class.value,
-                'is_round_trip': search_request.is_round_trip,
+                "nationality": search_request.nationality,
+                "origin": search_request.destination,
+                "destination": search_request.origin,
+                "depart_date": search_request.return_date.isoformat(),
+                "return_date": None,
+                "pax": search_request.pax,
+                "ferry_class": search_request.ferry_class.value,
+                "is_round_trip": search_request.is_round_trip,
+                "route_id": return_route_id   # <---- ditambahkan
             })
-            
-            # Ensure required fields
-            model_data.setdefault('trip_sched_id', '')
-            model_data.setdefault('departure_time', '')
-            model_data.setdefault('trip_id', '')
-            model_data.setdefault('used_seat', '0')
-            
-            display_trip = FerryTripDisplay(**model_data)
-            return_display_trips.append(display_trip)
+            model_data.setdefault("trip_sched_id", "")
+            model_data.setdefault("departure_time", "")
+            model_data.setdefault("trip_id", "")
+            model_data.setdefault("used_seat", "0")
+            return_display_trips.append(FerryTripDisplay(**model_data))
+
         return {
             "departure_trips": depart_display_trips,
             "return_trips": return_display_trips
