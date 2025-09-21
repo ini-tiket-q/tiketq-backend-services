@@ -11,7 +11,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()
 
-# ✅ Setup CORS
+# Setup CORS
 origins = [
     "http://localhost:3000",   # Next.js dev
     "http://127.0.0.1:3000",   # alternatif local dev
