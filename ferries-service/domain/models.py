@@ -132,8 +132,9 @@ class FerryTripDisplay(BaseModel):
     pax: int
     ferry_class: str
     is_round_trip: bool
+    route_id: Optional[str] = None
     
-     # Add a validator to convert numeric fields to strings
+    # Add a validator to convert numeric fields to strings
     @field_validator('trip_sched_id', 'used_seat', mode='before')
     @classmethod
     def convert_to_string(cls, v):

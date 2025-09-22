@@ -1,5 +1,6 @@
 import sys
 from fastapi import FastAPI, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 from routes.ferries import router as ferries_router
@@ -30,9 +31,17 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],           # asal request yang diizinkan
+    allow_credentials=True,
+    allow_methods=["*"],             # izinkan semua HTTP method (GET, POST, PUT, DELETE, dll)
+    allow_headers=["*"],             # izinkan semua header
+)
+
+# Routers
 app.include_router(ferries_router, prefix="/api/v1/ferries")
 # app.include_router(ferries_router_mock)
-
 
 health_router = APIRouter(prefix="/ferries")
 
@@ -40,7 +49,6 @@ health_router = APIRouter(prefix="/ferries")
 async def root():
     return {"service": "Ferries Service", "status": "running", "version": "1.0.0"}
 
-# @app.get("/health")
 @health_router.get("/health")
 async def health_check():
     return {
@@ -51,6 +59,3 @@ async def health_check():
     }
 
 app.include_router(health_router, prefix="/api/v1/ferries")  # ✅ Important
-
-
-

@@ -60,7 +60,8 @@ async def forward_request(request: Request, full_path: str) -> Response:
                 method=request.method,
                 url=target_url,
                 headers=headers,
-                content=body,
+                params=request.query_params,
+                content=body if request.method.upper() != "GET" else None,
                 timeout=30
             )
             return Response(
