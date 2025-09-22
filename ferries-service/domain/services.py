@@ -24,6 +24,9 @@ BOOKING_EXPIRY_HOURS = 1
 # Booking list local cache (opsional, bisa dipakai untuk debug)
 # _local_bookings = []
 
+# Simpan booking_requirements secara lokal
+BOOKING_REQUIREMENTS_STORE = {}
+
 def camel_to_snake(name):
     """Convert camelCase to snake_case"""
     import re
@@ -316,6 +319,7 @@ def prepare_transaction_data(booking_data: FerryBookingRequest,
         "expiry_duration":24  # 24 hours
     }
 
+#booking---------------------------------------------------------------------------------------    
 #Create Booking
 def create_ferry_booking(booking_data: dict):
     """
@@ -325,92 +329,6 @@ def create_ferry_booking(booking_data: dict):
     # return the full response here 
     # so frontend can get booking ID and other info
     return data
-    
-#booking---------------------------------------------------------------------------------------    
-async def create_ferry_bookingv2(booking_data: FerryBookingRequest) -> FerryBookingResponse:
-    """
-    Create a ferry booking with transaction service integration
-    """
-    try:
-        # 1. Validate availability (pseudo-code)
-        # if not validate_availability(booking_data.departure_schedule_id, len(booking_data.passengers)):
-        #     raise ValueError("Not enough available seats")
-        
-        # if booking_data.is_round_trip and booking_data.return_schedule_id:
-        #     if not validate_availability(booking_data.return_schedule_id, len(booking_data.passengers)):
-        #         raise ValueError("Not enough available seats for return trip")
-        
-        # 2. Get trip details and calculate price (pseudo-code)
-        # departure_trip = get_trip_details(booking_data.departure_schedule_id)
-        # return_trip = None
-        # if booking_data.is_round_trip and booking_data.return_schedule_id:
-        #     return_trip = get_trip_details(booking_data.return_schedule_id)
-        
-        # For demonstration, create mock trip details
-        departure_trip = {
-            "departure_port": "BTC",
-            "arrival_port": "HFC", 
-            "vessel_name": "Fast Ferry",
-            "departure_time": "08:00",
-            "arrival_time": "10:00"
-        }
-        
-        price_breakdown = calculate_price(
-            departure_trip, 
-            None, 
-            len(booking_data.passengers),
-            booking_data.ferry_class
-        )
-        
-        # 3. Prepare transaction data as dict
-        transaction_data = prepare_transaction_data(
-            booking_data, 
-            departure_trip, 
-            price_breakdown
-        )
-        
-        # 4. Call transaction service
-        transaction_response = await call_transaction_service(transaction_data)
-        # 5. Create Sindo booking (pseudo-code)
-        # sindo_booking_data = normalize_booking_for_sindo(booking_data)
-        # sindo_response = sindo_client.create_sindo_booking(sindo_booking_data)
-        
-        # For demonstration,create a mock Sindo response
-        sindo_booking_id = f"SINDO_{uuid.uuid4().hex[:8].upper()}"
-        # 6. Create booking record
-        internal_booking_id = str(uuid.uuid4())
-        expiry_time = datetime.now() + timedelta(hours=BOOKING_EXPIRY_HOURS)
-        
-        # Store booking in cache(replace with database in production)
-        bookings_cache[internal_booking_id] = {
-            "sindo_booking_id": booking_data.sindo_booking_id,
-            "status": BookingStatus.PENDING,
-            "total_amount": price_breakdown.total_amount,
-            "currency": "IDR",
-            "transaction_id": transaction_response.transaction_id, #access as dict
-            "passengers": booking_data.passengers,
-            "contact_info": booking_data.contact_info,
-            "expires_at": expiry_time,
-            "created_at": datetime.now()
-        }
-        
-        # 7. Return response
-        return FerryBookingResponse(
-            booking_id=internal_booking_id,
-            sindo_booking_id=sindo_booking_id,
-            status=BookingStatus.PENDING,
-            total_amount=price_breakdown.total_amount,
-            currency="IDR",
-            transaction_id=transaction_response["transaction_id"],  # Access as dict key
-            payment_url=transaction_response["payment_url"],  # Access as dict key
-            expires_at=expiry_time,
-            metadata={}
-        )
-        
-    except Exception as e:
-        logger.error(f"Error creating booking: {str(e)}", exc_info=True)
-        raise
-             
 
 # Add passenger details to an already created booking 
 def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
@@ -427,6 +345,9 @@ def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
         "mobile_phone": passenger_data.get("mobile_phone"),
         "whatsapp_no": passenger_data.get("whatsapp_no"),
     }
+
+    # Simpan di store (bisa diganti DB)
+    BOOKING_REQUIREMENTS_STORE[booking_id] = booking_requirements
 
     # Bungkus response supaya bisa dipakai lagi di get_ferry_booking_details
     return {
@@ -507,8 +428,8 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
     id_issue_date = passenger.get("identification", {}).get("issueDate")
     departure_date = trip_date or _normalize_date(id_issue_date)
 
-    # Cari email dari passenger record (hasil add_booking_detail)
-    booking_requirements = passenger.get("booking_requirements", {})
+    # 🔑 Ambil email dari BOOKING_REQUIREMENTS_STORE
+    booking_requirements = BOOKING_REQUIREMENTS_STORE.get(booking_id, {})
     customer_email = booking_requirements.get("email", "customer@example.com")
 
     # Buat item list
@@ -538,7 +459,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
     total = subtotal + tax - discount
 
     mapped_response = {
-        "email": customer_email,  # pakai dari add_booking_detail
+        "email": customer_email,  # ✅ email konsisten dari add_booking_detail
         "transaction_type": "BOOKING",
         "currency": "IDR",
         "service_type": "FERRIES",

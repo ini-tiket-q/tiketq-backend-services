@@ -128,39 +128,6 @@ async def search_roundtrip_trips(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# Create booking v2
-@router.post("/bookings/v2", response_model=FerryBookingResponse)
-async def create_booking(
-    booking_data: FerryBookingRequest,
-    background_tasks: BackgroundTasks
-):
-    """
-    Create a new ferry booking with transaction service integration.
-    """
-    try:
-        # Validate request
-        if booking_data.is_round_trip and not booking_data.return_schedule_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Return schedule ID is required for round trips"
-            )
-        
-        # Create booking
-        booking_result = await services.create_ferry_booking(booking_data)
-        
-        # Add background task for confirmation email
-        background_tasks.add_task(
-            send_booking_confirmation,
-            booking_data.contact_info.email,
-            booking_result.booking_id
-        )
-        
-        return booking_result
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 # create booking
 @router.post("/bookings")
