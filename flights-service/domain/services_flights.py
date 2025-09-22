@@ -95,33 +95,34 @@ class FlightService:
         result = flights
 
         if params.airline:
+            normalized_airline = params.airline.strip().lower()
             result = [
-                f
-                for f in result
-                if f.get("flight", "").lower() == params.airline.lower()
+                f for f in result
+                if f.get("flight", "").strip().lower() == normalized_airline
             ]
 
         if params.transit:
+            normalized_transit = params.transit.strip().lower()
             result = [
-                f
-                for f in result
-                if f.get("flight_transit", "").lower() == params.transit.lower()
+                f for f in result
+                if f.get("flight_transit", "").strip().lower() == normalized_transit
             ]
 
         if params.baggage:
+            normalized_baggage = params.baggage.replace(" ", "").lower()
             result = [
-                f
-                for f in result
-                if f.get("flight_baggage", "").lower() == params.baggage.lower()
+                f for f in result
+                if f.get("flight_baggage", "").replace(" ", "").lower() == normalized_baggage
             ]
 
         if params.flight_class:
+            normalized_class = params.flight_class.strip().lower()
             result = [
-                f
-                for f in result
-                if f.get("class", "").lower() == params.flight_class.lower()
+                f for f in result
+                if f.get("class", "").strip().lower() == normalized_class
             ]
 
+        # Sorting
         if params.sort_by == "harga_tertinggi":
             result.sort(key=lambda x: int(x.get("flight_price", "0")), reverse=True)
         elif params.sort_by == "harga_terendah":
@@ -130,6 +131,7 @@ class FlightService:
             result.sort(key=lambda x: x.get("score", 0), reverse=True)
 
         return result
+
     
     if MOCK_REMOTE:
         from adapters.fake_mmbc_flights import ExternalFlightAPI
