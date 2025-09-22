@@ -95,6 +95,8 @@ REDIS_URL=redis://localhost:6379
 ### 1. Build the container:
 ```bash
 docker compose build api-gateway flights-service
+or 
+docker compose up -d --build 
 ```
 
 ### 2. Run the container:
