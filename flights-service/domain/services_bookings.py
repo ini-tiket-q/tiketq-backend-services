@@ -1,6 +1,7 @@
 import os
 import inspect
 import json
+import logging
 from adapters.transaction_clients import create_transaction
 from adapters.mmbc_factory import mmbc
 from domain.schemas_bookings import (
@@ -12,7 +13,10 @@ from domain.schemas_bookings import (
     GetStatusBookingResponse, GetETicketRequest, GetETicketResponse
 )
 from fastapi import HTTPException
-from adapters.payment_db_reader import get_payment_status_by_order_id
+from adapters.transaction_clients import get_transaction_by_order_number
+
+logger = logging.getLogger("uvicorn")
+kodebooking_to_order_number = {}
 
 
 class PriceError(Exception):
@@ -36,6 +40,11 @@ class ETicketError(Exception):
     def __init__(self, reason: str):
         self.reason = reason        
 
+async def store_booking_mapping(kodebooking: str, order_number: str):
+    kodebooking_to_order_number[kodebooking] = order_number
+
+async def get_order_number_by_kodebooking(kodebooking: str) -> str:
+    return kodebooking_to_order_number.get(kodebooking)
 
 async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
     call_args = dict(
@@ -48,13 +57,18 @@ async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
         infant=req.infant,
     )
 
+    logger.info(f"Received get price request: {json.dumps(call_args)}")
+
     # If the method is a coroutine (async), await it
     if inspect.iscoroutinefunction(mmbc.get_price):
         result = await mmbc.get_price(**call_args)
     else:
         result = mmbc.get_price(**call_args)
 
+    logger.debug(f"MMBC get_price response: {json.dumps(result)}")
+
     if result.get("result") == "no":
+        logger.error(f"Price retrieval failed: {result.get('reason', 'No result')}")
         raise PriceError(result.get("reason", "No result"))
 
     return result
@@ -62,12 +76,17 @@ async def get_price_service(req: GetPriceRequest) -> GetPriceResponse:
 async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.0.1"):
     kwargs = req.dict(by_alias=True)
 
+    logger.info(f"Received post booking request from IP {client_ip} with payload: {json.dumps(kwargs)}")
+
     if inspect.iscoroutinefunction(mmbc.post_booking):
         result = await mmbc.post_booking(**kwargs)
     else:
         result = mmbc.post_booking(**kwargs)
 
+    logger.debug(f"MMBC post_booking response: {json.dumps(result)}")
+
     if result.get("result") == "no":
+        logger.error(f"Booking failed: {result.get('reason', 'Booking failed')}")
         raise BookingError(result.get("reason", "Booking failed"), result)
 
     try:
@@ -123,6 +142,8 @@ async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.
             },
         }
 
+        logger.info(f"Transaction payload to be sent: {json.dumps(transaction_payload)}")
+
         # ✅ Normalize payment status BEFORE sending to transaction-service
         raw_status = result.get("status", "PENDING")  # From MMBC/mock
         status_mapping = {
@@ -147,69 +168,83 @@ async def post_booking_service(req: PostBookingRequest, client_ip: str = "127.0.
         normalized_status = status_mapping.get(raw_status.upper(), "PROCESSING")
         transaction_payload["status"] = normalized_status
 
-        print(f"[DEBUG] Raw Status = {raw_status}, Normalized = {normalized_status}")
-
+        logger.debug(f"Raw Status = {raw_status}, Normalized = {normalized_status}")
 
         # 🔗 Send to transaction-service
         transaction_response = await create_transaction(transaction_payload)
+
+        order_number = transaction_response.get("order_number")
+
+        if order_number:
+            kodebooking_to_order_number[result["kodebooking"]] = order_number
+            logger.info(f"[MAP] Stored: {result['kodebooking']} → {order_number}")
+    
 
         # Store in result
         result["payment_status"] = normalized_status
         result["payment_response"] = transaction_response
 
+        logger.info(f"Booking processed successfully for kodebooking={result['kodebooking']} with status={normalized_status}")
+
     except Exception as e:
+        logger.exception(f"Exception during post booking processing: {e}")
         result["payment_status"] = "failed"
         result["payment_error"] = str(e)
 
     return result
 
 
-def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
-    order_id = f"FLIGHT-{kodebooking}"
-    pay_status = get_payment_status_by_order_id(order_id)
+async def reconcile_payment_status_if_needed(kodebooking: str, current_status: str) -> str:
+    order_number = await get_order_number_by_kodebooking(kodebooking)
 
-    print(f"[DEBUG] reconcile: order_id={order_id}, pay_status={pay_status}, current_status={current_status}")
-
-    if not pay_status:
+    if not order_number:
+        logger.warning(f"No order_number found for {kodebooking}")
         return current_status
 
-    normalized = pay_status.upper()
+    try:
+        trx = await get_transaction_by_order_number(order_number)
+        pay_status = trx.get("status", "").upper()
+        logger.debug(f"reconcile: order_number={order_number}, pay_status={pay_status}, current_status={current_status}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to fetch transaction for {order_number}: {e}")
+        return current_status  # Early return if error
+
+    # ✅ Only run this if pay_status was successfully set
     mapping = {
+        "PAID": "SUCCESS",
         "COMPLETED": "SUCCESS",
         "SETTLED": "SUCCESS",
         "SETTLEMENT": "SUCCESS",
         "CAPTURE": "SUCCESS",
-        "PAID": "SUCCESS",
-
+        "PENDING": "PROCESSING",
+        "IN_PROGRESS": "PROCESSING",
         "EXPIRE": "EXPIRED",
         "EXPIRED": "EXPIRED",
-
         "CANCEL": "CANCELED",
         "CANCELLED": "CANCELED",
-
         "FAILURE": "FAILED",
         "DENY": "FAILED",
     }
-    normalized = mapping.get(normalized, normalized)
 
-    if normalized in ("SUCCESS", "FAILED", "EXPIRED", "PROCESSING", "PENDING", "CANCELED", "REFUNDED"):
-        return normalized
-
-    return current_status
-
+    return mapping.get(pay_status, current_status)
 
 
 async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
+    logger.info(f"Received get status request for kodebooking={kodebooking}")
     result = await mmbc.get_status_booking(kodebooking=kodebooking)
 
+    logger.debug(f"MMBC get_status_booking response: {json.dumps(result)}")
+
     if result.get("result") == "no":
+        logger.error(f"Status retrieval failed for kodebooking={kodebooking}: {result.get('reason', '')}")
         raise HTTPException(status_code=404, detail=result)
 
     # MMBC's reported status
     mm_status = result.get("flight_statusbooking", "waiting")
 
     # Check payment status via payment-service
-    pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
+    pay_status = await reconcile_payment_status_if_needed(kodebooking, mm_status)
 
     # Build response aligned with schema
     response = GetStatusBookingResponse(
@@ -219,27 +254,35 @@ async def get_status_service(kodebooking: str) -> GetStatusBookingResponse:
         payment_status=pay_status
     )
 
+    logger.info(f"Status for kodebooking={kodebooking}: mm_status={mm_status}, payment_status={pay_status}")
+
     return response
 
 
 async def get_issued_service(kodebooking: str) -> GetIssuedResponseSuccess:
+    logger.info(f"Received get issued request for kodebooking={kodebooking}")
     # Check booking exists at MMBC
     status_resp = await mmbc.get_status_booking(kodebooking=kodebooking)
+    logger.debug(f"MMBC get_status_booking (for issued) response: {json.dumps(status_resp)}")
     if status_resp.get("result") == "no":
+        logger.error(f"Issued retrieval failed for kodebooking={kodebooking}: {status_resp.get('reason', '')}")
         raise HTTPException(status_code=404, detail=status_resp)
 
     # Reconcile payment first
     mm_status = status_resp.get("flight_statusbooking", "waiting")
-    pay_status = reconcile_payment_status_if_needed(kodebooking, mm_status)
+    pay_status = await reconcile_payment_status_if_needed(kodebooking, mm_status)
 
-    if pay_status != "PAID":
+    if pay_status != "SUCCESS":
+        logger.warning(f"Cannot issue ticket for kodebooking={kodebooking}: payment_status={pay_status}")
         raise HTTPException(status_code=402, detail="Payment not completed")
 
     # Call MMBC to issue ticket
     issued = await mmbc.get_issued(kodebooking=kodebooking)
+    logger.debug(f"MMBC get_issued response: {json.dumps(issued)}")
 
     if issued.get("result") == "no":
         # MMBC rejected issuance
+        logger.error(f"MMBC rejected issuance for kodebooking={kodebooking}: {issued.get('reason', 'Unknown error')}")
         raise IssuedError(issued.get("reason", "Unknown error"))
 
     # Build response aligned with API docs
@@ -275,18 +318,18 @@ async def get_issued_service(kodebooking: str) -> GetIssuedResponseSuccess:
         flight_issuedby_kodeagen=issued.get("flight_issuedby_kodeagen"),
         flight_statusbooking=issued.get("flight_statusbooking"),
     )
+    logger.info(f"Issued ticket for kodebooking={kodebooking} successfully.")
     return response
 
 
-
-
-
-
-
 async def get_eticket_service(kodebooking: str) -> GetETicketResponse:
+    logger.info(f"Received get eticket request for kodebooking={kodebooking}")
     result = await mmbc.get_eticket(kodebooking=kodebooking)
 
+    logger.debug(f"MMBC get_eticket response: {json.dumps(result)}")
+
     if result.get("result") == "no":
+        logger.error(f"ETicket retrieval failed for kodebooking={kodebooking}: {result.get('reason', '')}")
         raise ETicketError(result.get("reason", "Failed to retrieve e-ticket"))
 
     # Build response aligned with schema
@@ -294,9 +337,10 @@ async def get_eticket_service(kodebooking: str) -> GetETicketResponse:
         result=result.get("result", "no"),
         reason=result.get("reason", "")
     )
+    logger.info(f"ETicket retrieved for kodebooking={kodebooking}")
     return response
 
 
-
 async def reset_password_service(req: ResetPasswordRequest) -> ResetPasswordResponse:
+    logger.info(f"Received reset password request for email={req.email}")
     return await mmbc.reset_password(**req.dict())

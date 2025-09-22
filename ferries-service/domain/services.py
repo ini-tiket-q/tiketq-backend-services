@@ -41,11 +41,11 @@ def get_ferry_routes(search: str = None):
 
 # Get All Trips for users to choose
 # raw shedules from Sindo API
-def get_ferry_trips(departure: str, destination: str, date: str):
+def get_ferry_trips(origin: str, destination: str, date: str):
     """
     Ambil daftar trip / jadwal ferry dari API Sindo.
     """
-    data = sindo_client.get_sindo_trips(departure, destination, date)
+    data = sindo_client.get_sindo_trips(origin, destination, date)
 
     # Kalau API balikin list langsung
     if isinstance(data, list):
@@ -54,6 +54,19 @@ def get_ferry_trips(departure: str, destination: str, date: str):
         # fallback kalau ada format lain
         records = data.get("data", {}).get("records", [])
     return {"trips": records}
+
+def find_route_id(origin: str, destination: str) -> str:
+    """
+    Cari route_id berdasarkan origin & destination code.
+    """
+    routes_data = get_ferry_routes()
+    for route in routes_data.get("routes", []):
+        embark = route.get("embarkationPort", {}).get("code")
+        dest = route.get("destinationPort", {}).get("code")
+        if embark == origin and dest == destination:
+            return route.get("id")
+    return None
+
 
 def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
     """
@@ -80,54 +93,38 @@ def get_ferry_oneway(search_request: TripSearchRequest):
             raise ValueError("Number of passengers must be at least 1")
        
         sindo_date = search_request.depart_date.strftime("%Y%m%d")
-        
-        # Get raw data from Sindo API 
         trips = get_ferry_trips(search_request.origin, search_request.destination, sindo_date)
-        # Check if API returned an error
+
         if trips.get("status") == "error":
-            raise ValueError(trips.get("message", "Error fetching ferry data")) 
-        
+            raise ValueError(trips.get("message", "Error fetching ferry data"))
+
         trips_list = trips.get("trips", [])
-            
-        # Transform data for frontend consumption
-        display_trips = []      
+        display_trips = []
+
+        # cari route_id sesuai origin & destination
+        route_id = find_route_id(search_request.origin, search_request.destination)
+
         for trip_data in trips_list:
-            # Convert date objects to strings
-            depart_date_str = search_request.depart_date.isoformat()
-            return_date_str = search_request.return_date.isoformat() if search_request.return_date else None
-            
-            # Create a dictionary with all the data
-            model_data = {}
-            
-            # Convert API response fields from camelCase to snake_case
-            for key, value in trip_data.items():
-                snake_key = camel_to_snake(key)
-                model_data[snake_key] = value
-            
-            # Add search request fields (already in snake_case)
+            model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
-                'nationality': search_request.nationality,
-                'origin': search_request.origin,
-                'destination': search_request.destination,
-                'depart_date': depart_date_str,
-                'return_date': return_date_str,
-                'pax': search_request.pax,
-                'ferry_class': search_request.ferry_class.value,
-                'is_round_trip': search_request.is_round_trip,
+                "nationality": search_request.nationality,
+                "origin": search_request.origin,
+                "destination": search_request.destination,
+                "depart_date": search_request.depart_date.isoformat(),
+                "return_date": search_request.return_date.isoformat() if search_request.return_date else None,
+                "pax": search_request.pax,
+                "ferry_class": search_request.ferry_class.value,
+                "is_round_trip": search_request.is_round_trip,
+                "route_id": route_id   # <---- tambahkan ini
             })
-            
-            # Ensure all required fields have values
-            model_data.setdefault('trip_sched_id', '')
-            model_data.setdefault('departure_time', '')
-            model_data.setdefault('trip_id', '')
-            model_data.setdefault('used_seat', '0')
-            
-            
-            try:
-                display_trip = FerryTripDisplay(**model_data)
-                display_trips.append(display_trip)
-            except ValidationError as e:
-                raise     
+
+            model_data.setdefault("trip_sched_id", "")
+            model_data.setdefault("departure_time", "")
+            model_data.setdefault("trip_id", "")
+            model_data.setdefault("used_seat", "0")
+
+            display_trips.append(FerryTripDisplay(**model_data))
+
         return display_trips
     except ValidationError as e:
         logger.error(f"Validation error: {e.errors()}")
@@ -153,84 +150,61 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
         # Format and validate dates
         sindo_depart_date = search_request.depart_date.strftime("%Y%m%d")
         sindo_return_date = search_request.return_date.strftime("%Y%m%d")
-       
-        # Get departure trips (origin → destination)
-        depart_trips = get_ferry_trips(
-            search_request.origin, 
-            search_request.destination, 
-            sindo_depart_date
-        )
-        
-        # Get return trips (destination → origin)
-        return_trips = get_ferry_trips(
-            search_request.destination, 
-            search_request.origin, 
-            sindo_return_date
-        )
-        
-        # Check if API returned errors
+
+        depart_trips = get_ferry_trips(search_request.origin, search_request.destination, sindo_depart_date)
+        return_trips = get_ferry_trips(search_request.destination, search_request.origin, sindo_return_date)
+
         if depart_trips.get("status") == "error":
             raise ValueError(depart_trips.get("message", "Error fetching departure ferry data"))
-            
         if return_trips.get("status") == "error":
             raise ValueError(return_trips.get("message", "Error fetching return ferry data"))
-        
-        # Transform departure trips
+
+        # route_id untuk depart & return
+        depart_route_id = find_route_id(search_request.origin, search_request.destination)
+        return_route_id = find_route_id(search_request.destination, search_request.origin)
+
+        # transform departure trips
         depart_display_trips = []
-      
         for trip_data in depart_trips.get("trips", []):
-            model_data = {}
-            for key, value in trip_data.items():
-                snake_key = camel_to_snake(key)
-                model_data[snake_key] = value
-        
+            model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
-                'nationality': search_request.nationality,
-                'origin': search_request.origin,
-                'destination': search_request.destination,
-                'depart_date': search_request.depart_date.isoformat(),
-                'return_date': search_request.return_date.isoformat(),
-                'pax': search_request.pax,
-                'ferry_class': search_request.ferry_class.value,
-                'is_round_trip': search_request.is_round_trip,
+                "nationality": search_request.nationality,
+                "origin": search_request.origin,
+                "destination": search_request.destination,
+                "depart_date": search_request.depart_date.isoformat(),
+                "return_date": search_request.return_date.isoformat(),
+                "pax": search_request.pax,
+                "ferry_class": search_request.ferry_class.value,
+                "is_round_trip": search_request.is_round_trip,
+                "route_id": depart_route_id   # <---- ditambahkan
             })
-            
-            # Ensure required fields
-            model_data.setdefault('trip_sched_id', '')
-            model_data.setdefault('departure_time', '')
-            model_data.setdefault('trip_id', '')
-            model_data.setdefault('used_seat', '0')
-            
-            display_trip = FerryTripDisplay(**model_data)
-            depart_display_trips.append(display_trip)
-        
-        # Transform return trips
+            model_data.setdefault("trip_sched_id", "")
+            model_data.setdefault("departure_time", "")
+            model_data.setdefault("trip_id", "")
+            model_data.setdefault("used_seat", "0")
+            depart_display_trips.append(FerryTripDisplay(**model_data))
+
+        # transform return trips
         return_display_trips = []
         for trip_data in return_trips.get("trips", []):
-            model_data = {}
-            for key, value in trip_data.items():
-                snake_key = camel_to_snake(key)
-                model_data[snake_key] = value
-                
+            model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
-                'nationality': search_request.nationality,
-                'origin': search_request.destination,  # Note: swapped for return trip
-                'destination': search_request.origin,   # Note: swapped for return trip
-                'depart_date': search_request.return_date.isoformat(),  # Use return date for departure
-                'return_date': None,
-                'pax': search_request.pax,
-                'ferry_class': search_request.ferry_class.value,
-                'is_round_trip': search_request.is_round_trip,
+                "nationality": search_request.nationality,
+                "origin": search_request.destination,
+                "destination": search_request.origin,
+                "depart_date": search_request.return_date.isoformat(),
+                "return_date": None,
+                "pax": search_request.pax,
+                "ferry_class": search_request.ferry_class.value,
+                "is_round_trip": search_request.is_round_trip,
+                "route_id": return_route_id   # <---- ditambahkan
             })
-            
-            # Ensure required fields
-            model_data.setdefault('trip_sched_id', '')
-            model_data.setdefault('departure_time', '')
-            model_data.setdefault('trip_id', '')
-            model_data.setdefault('used_seat', '0')
-            
-            display_trip = FerryTripDisplay(**model_data)
-            return_display_trips.append(display_trip)
+            model_data.setdefault("trip_sched_id", "")
+            model_data.setdefault("departure_time", "")
+            model_data.setdefault("trip_id", "")
+            model_data.setdefault("used_seat", "0")
+            return_display_trips.append(FerryTripDisplay(**model_data))
+
         return {
             "departure_trips": depart_display_trips,
             "return_trips": return_display_trips
@@ -438,13 +412,28 @@ async def create_ferry_bookingv2(booking_data: FerryBookingRequest) -> FerryBook
         raise
              
 
-# Add passenger details to an already created booking
+# Add passenger details to an already created booking 
 def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
     """
-    Tambahkan detail penumpang ke booking Sindo.
+    Tambahkan detail penumpang ke booking Sindo + Booking Requirements.
     """
+    # Booking detail ke Sindo API
     data = sindo_client.add_sindo_booking_detail(booking_id, passenger_data)
-    return data
+
+    # Simpan info tambahan dari frontend (booking requirements)
+    booking_requirements = {
+        "email": passenger_data.get("email"),
+        "confirmation_email": passenger_data.get("confirmation_email"),
+        "mobile_phone": passenger_data.get("mobile_phone"),
+        "whatsapp_no": passenger_data.get("whatsapp_no"),
+    }
+
+    # Bungkus response supaya bisa dipakai lagi di get_ferry_booking_details
+    return {
+        "status": data.get("status", "Ok"),
+        "data": data.get("data"),
+        "booking_requirements": booking_requirements
+    }
 
 
 # Get Booking details 
@@ -457,7 +446,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
 
     passenger_count = len(records)
 
-    # --- Ambil harga tiket dari BookingTypePricings ---
+    # Ambil harga tiket dari BookingTypePricings
     pricing_data = sindo_client.get_booking_type_pricings()
     pricing_items = pricing_data.get("data", {}).get("records", [])
     default_price = 654000
@@ -467,7 +456,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         if isinstance(item.get("bookingType"), dict)
     }
 
-    # --- Nama penumpang utama ---
+    # Nama penumpang utama
     first_record = records[0]
     passenger_name = (
         first_record.get("passengerName")
@@ -475,7 +464,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         or "Unknown Passenger"
     )
 
-    # Coba ambil booking header (supaya dapat departureCoreApiTrip.date)
+    # Ambil booking header (departureCoreApiTrip.date)
     booking_header = {}
     try:
         header_resp = sindo_client.get_sindo_booking(booking_id)
@@ -484,7 +473,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         logger.warning("Gagal ambil booking header untuk %s: %s", booking_id, e)
         booking_header = {}
 
-    # helper untuk normalisasi tanggal ke YYYY-MM-DD
+    # Normalisasi tanggal
     def _normalize_date(date_str):
         if not date_str:
             return None
@@ -494,14 +483,11 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
                 return dt.strftime("%Y-%m-%d")
             except Exception:
                 pass
-        # fallback sederhana
         if "T" in date_str:
             return date_str.split("T")[0]
         return date_str.split(" ")[0]
 
-    # Coba beberapa key yang mungkin mengandung tanggal trip
     trip_date = None
-    # biasanya: booking_header.get("departureCoreApiTrip", {}).get("date")
     possible_keys = ["departureCoreApiTrip", "departureTrip", "departure", "coreApiTrip"]
     for k in possible_keys:
         trip = booking_header.get(k)
@@ -509,8 +495,6 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
             trip_date = _normalize_date(trip.get("date"))
             if trip_date:
                 break
-
-    # fallback: jika header berisi list trips / coreApiTrips
     if not trip_date:
         for list_key in ("trips", "coreApiTrips", "departureCoreApiTrips"):
             items = booking_header.get(list_key)
@@ -519,13 +503,15 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
                 if trip_date:
                     break
 
-    # terakhir fallback: pakai identification.issueDate dari passenger (sebelumnya dipakai)
     passenger = records[0]
     id_issue_date = passenger.get("identification", {}).get("issueDate")
     departure_date = trip_date or _normalize_date(id_issue_date)
 
+    # Cari email dari passenger record (hasil add_booking_detail)
+    booking_requirements = passenger.get("booking_requirements", {})
+    customer_email = booking_requirements.get("email", "customer@example.com")
 
-    # --- Ambil harga tiap penumpang (sementara 1 flight saja) ---
+    # Buat item list
     items = []
     subtotal = 0
     for i, rec in enumerate(records):
@@ -534,29 +520,25 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
             default_price
         )
         subtotal += price
-
         items.append({
             "name": f"Ferry Ticket {i+1}",
             "price": price,
             "quantity": 1,
             "description": f"Ferry ticket for passenger {passenger_name}",
             "metadata": {
-                "departure_date": departure_date,   # TODO: ambil dari rec kalau ada
-                "ferry_number": "SF-123",         # TODO: mapping ke data asli
-                "operator": "Sindo Ferry",        # fixed untuk sekarang
-                "class": "Economy"                # default sementara
+                "departure_date": departure_date,
+                "ferry_number": "SF-123",
+                "operator": "Sindo Ferry",
+                "class": "Economy"
             }
         })
 
-
-    # --- Hitung tax & discount ---
-    tax = int(subtotal * 0.1)    # contoh 10% pajak
-    discount = 0                 # sementara belum ada diskon
+    tax = int(subtotal * 0.1)
+    discount = 0
     total = subtotal + tax - discount
 
-    # --- Mapping ke format baru ---
     mapped_response = {
-        "email": "customer@example.com",
+        "email": customer_email,  # pakai dari add_booking_detail
         "transaction_type": "BOOKING",
         "currency": "IDR",
         "service_type": "FERRIES",
@@ -566,11 +548,11 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
         "discount": discount,
         "total": total,
         "payment_method": "credit_card",
-        "payment_gateway": "MIDTRANS",  # default sementara
+        "payment_gateway": "MIDTRANS",
         "transaction_metadata": {
             "order_id": booking_id,
             "passenger_name": passenger_name,
-            "booking_reference": f"TQ-FR-{booking_id[:6]}",  # contoh reference
+            "booking_reference": f"TQ-FR-{booking_id[:6]}",
             "ip_address": "192.168.1.100"
         },
         "payment_metadata": {
