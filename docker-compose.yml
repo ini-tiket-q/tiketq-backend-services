@@ -1,4 +1,5 @@
-version: '3.9'
+
+# version: '3.9'
 
 services:
   api-gateway:
@@ -17,6 +18,7 @@ services:
       - hotels-service
       - ppob-service
       - payment-service
+      - transaction-service
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -25,6 +27,8 @@ services:
     build:
       context: ./auth-service
     container_name: auth-service
+    ports:
+      - "8001:8000" # temporary expose for testing
     env_file:
       - .env
     networks:
@@ -53,6 +57,10 @@ services:
     build:
       context: ./ferries-service
     container_name: ferries-service
+    ports:
+      - "8005:8000" # temporary expose e.g. localhost:8003/docs
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped
@@ -77,6 +85,33 @@ services:
     build:
       context: ./payment-service
     container_name: payment-service
+    ports:
+      - "8003:8000" # temporary expose e.g. localhost:8003/docs
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=tiketq_db
+      - SERVICE_NAME=payment-service
+    depends_on:
+      - postgres
+    networks:
+      - tiketq-net
+    secrets:
+      - db_user
+      - db_password
+    restart: unless-stopped
+    volumes:
+      - ./payment-service:/app # For development hot reload
+
+  transaction-service:
+    build:
+      context: ./transaction-service
+    container_name: transaction-service
+    ports:
+      - "8004:8000" # temporary expose e.g. localhost:8004/docs
+    env_file:
+      - .env
     networks:
       - tiketq-net
     restart: unless-stopped

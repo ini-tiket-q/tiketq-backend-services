@@ -1,4 +1,5 @@
 -- Initialize database for TiketQ services
+-- Using default postgres superuser (no additional user creation needed)
 
 -- Create user_profiles table for user-service
 CREATE TABLE IF NOT EXISTS user_profiles (
@@ -28,4 +29,4 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- Create index on role for faster role-based queries
-CREATE INDEX IF NOT EXISTS idx_users_role ON users(role); 
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);

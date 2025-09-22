@@ -18,7 +18,7 @@ class UserTable(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    role = Column(SQLEnum(UserRole), default=UserRole.USER)
+    role = Column(String, default="user")
 
 class DBUserRepository(UserRepository):
     def get_user_by_email(self, email: str) -> UserInDB | None:
@@ -30,7 +30,7 @@ class DBUserRepository(UserRepository):
                     email=user.email, 
                     password="", 
                     hashed_password=user.hashed_password,
-                    role=user.role
+                    role=UserRole(user.role)  # Convert string back to enum
                 )
             return None
 
@@ -43,7 +43,7 @@ class DBUserRepository(UserRepository):
                     email=user.email, 
                     password="", 
                     hashed_password=user.hashed_password,
-                    role=user.role
+                    role=UserRole(user.role)  # Convert string back to enum
                 )
             return None
 
@@ -52,7 +52,7 @@ class DBUserRepository(UserRepository):
             db_user = UserTable(
                 email=user.email, 
                 hashed_password=user.hashed_password,
-                role=user.role
+                role=user.role.value  # Use the enum value (string)
             )
             db.add(db_user)
             db.commit()
@@ -62,7 +62,7 @@ class DBUserRepository(UserRepository):
                 email=db_user.email,
                 password="",
                 hashed_password=db_user.hashed_password,
-                role=db_user.role
+                role=UserRole(db_user.role)  # Convert string back to enum
             )
 
     def get_all_users(self) -> List[UserInDB]:
@@ -74,7 +74,7 @@ class DBUserRepository(UserRepository):
                     email=user.email,
                     password="",
                     hashed_password=user.hashed_password,
-                    role=user.role
+                    role=UserRole(user.role)  # Convert string back to enum
                 )
                 for user in users
             ]
@@ -85,7 +85,7 @@ class DBUserRepository(UserRepository):
             if not user:
                 return None
             
-            user.role = role
+            user.role = role.value  # Use enum value (string)
             db.commit()
             db.refresh(user)
             return UserInDB(
@@ -93,5 +93,5 @@ class DBUserRepository(UserRepository):
                 email=user.email,
                 password="",
                 hashed_password=user.hashed_password,
-                role=user.role
+                role=UserRole(user.role)  # Convert string back to enum
             )
