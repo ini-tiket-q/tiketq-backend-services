@@ -716,12 +716,9 @@ async def cancel_transaction(
                 detail=f"Cannot cancel transaction with status: {existing_transaction.status}"
             )
         
-        # Cancel transaction using validated request model
-        from domain.models import TransactionStatus
-        cancel_request = TransactionUpdateRequest(status=TransactionStatus.CANCELLED)
-        cancelled_transaction = service.update_transaction(
-            transaction_id=transaction_id,
-            update_request=cancel_request,
+        # Cancel transaction 
+        cancelled_transaction = service.cancel_transaction(
+            transaction=existing_transaction,
         )
         
         if not cancelled_transaction:
