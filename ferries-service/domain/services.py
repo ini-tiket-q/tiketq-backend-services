@@ -58,17 +58,22 @@ def get_ferry_trips(origin: str, destination: str, date: str):
         records = data.get("data", {}).get("records", [])
     return {"trips": records}
 
-def find_route_id(origin: str, destination: str) -> str:
+def find_route(origin: str, destination: str) -> dict:
     """
-    Cari route_id berdasarkan origin & destination code.
+    Cari route detail (id, code, name) berdasarkan origin & destination code.
     """
     routes_data = get_ferry_routes()
     for route in routes_data.get("routes", []):
         embark = route.get("embarkationPort", {}).get("code")
         dest = route.get("destinationPort", {}).get("code")
         if embark == origin and dest == destination:
-            return route.get("id")
+            return {
+                "id": route.get("id"),
+                "code": route.get("code"),
+                "name": route.get("name"),
+            }
     return None
+
 
 
 def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
@@ -87,14 +92,12 @@ def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
 
 def get_ferry_oneway(search_request: TripSearchRequest):
     try:
-         # Validate origin and destination
+        # Validasi origin & destination
         if search_request.origin == search_request.destination:
             raise ValueError("Origin and destination cannot be the same")
-            
-        # Validate pax count
         if search_request.pax < 1:
             raise ValueError("Number of passengers must be at least 1")
-       
+
         sindo_date = search_request.depart_date.strftime("%Y%m%d")
         trips = get_ferry_trips(search_request.origin, search_request.destination, sindo_date)
 
@@ -104,8 +107,8 @@ def get_ferry_oneway(search_request: TripSearchRequest):
         trips_list = trips.get("trips", [])
         display_trips = []
 
-        # cari route_id sesuai origin & destination
-        route_id = find_route_id(search_request.origin, search_request.destination)
+        # ambil route detail (id, code, name)
+        route = find_route(search_request.origin, search_request.destination)
 
         for trip_data in trips_list:
             model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
@@ -118,7 +121,14 @@ def get_ferry_oneway(search_request: TripSearchRequest):
                 "pax": search_request.pax,
                 "ferry_class": search_request.ferry_class.value,
                 "is_round_trip": search_request.is_round_trip,
-                "route_id": route_id   # <---- tambahkan ini
+                "route_id": route.get("id") if route else None,
+                "route": route.get("code") if route else None,
+                "route_name": route.get("name") if route else None,   # <---- tambahkan ini
+                "metadata": {
+                    "trip_sched_id": trip_data.get("tripSchedId"),
+                    "route": route.get("code") if route else None,
+                    "departure_time": trip_data.get("departureTime"),
+                }
             })
 
             model_data.setdefault("trip_sched_id", "")
