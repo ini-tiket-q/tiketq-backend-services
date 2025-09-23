@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from domain.models import (
     OrderInDB, OrderStatus,
-    OrderCreateRequest, OrderStatusUpdateRequest,
+    OrderStatusUpdateRequest,
     UserRole
 )
 from domain.services import (
@@ -28,7 +28,7 @@ def get_order_service(db: Session = Depends(get_database_session)) -> OrderServi
 # Order Endpoints based on documentation
 
 @router.get(
-    "/orders/", 
+    "/transactions/orders/",
     response_model=List[OrderInDB],
     summary="List orders",
     description="""
@@ -43,7 +43,7 @@ def get_order_service(db: Session = Depends(get_database_session)) -> OrderServi
     - skip: Number of records to skip (pagination)
     - limit: Maximum number of records to return (pagination)
     - status_filter: Optional filter by order status
-    """
+    """,
 )
 async def list_orders(
     skip: int = 0,
@@ -77,7 +77,7 @@ async def list_orders(
         )
 
 @router.get(
-    "/orders/{order_id}", 
+    "/transactions/orders/{order_id}",
     response_model=OrderInDB,
     summary="Get order by ID",
     description="""
@@ -87,7 +87,7 @@ async def list_orders(
     - Requires authentication
     - Users can only view their own orders
     - Admins can view any order
-    """
+    """,
 )
 async def get_order(
     order_id: int,
@@ -123,7 +123,7 @@ async def get_order(
         )
 
 @router.get(
-    "/orders/public/{order_number}", 
+    "/transactions/orders/public/{order_number}",
     response_model=OrderInDB,
     summary="Get order by order number (public)",
     description="""
@@ -132,7 +132,7 @@ async def get_order(
     ### Access Level: Public
     - No authentication required
     - Limited information may be shown for public access
-    """
+    """,
 )
 async def get_order_by_number(
     order_number: str,
@@ -158,7 +158,7 @@ async def get_order_by_number(
         )
 
 @router.put(
-    "/orders/{order_id}/status", 
+    "/transactions/orders/{order_id}/status",
     response_model=OrderInDB,
     summary="Update order status",
     description="""
@@ -167,7 +167,7 @@ async def get_order_by_number(
     ### Access Level: Admin Only
     - Requires admin privileges
     - Used for order status management
-    """
+    """,
 )
 async def update_order_status(
     order_id: int,

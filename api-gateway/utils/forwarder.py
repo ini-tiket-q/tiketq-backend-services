@@ -21,11 +21,11 @@ ROUTE_SERVICE_MAP = {
     "api/v1/flights": "flights",
     "api/v1/bookings": "flights",
     "api/v1/ferries": "ferries",
-    "/hotels": "hotels",
-    "/ppob": "ppob",
-    "/payments": "payment",
-    "/transactions": "transaction",
-    "/trains": "trains",
+    "hotels": "hotels",
+    "ppob": "ppob",
+    "payments": "payment",
+    "transactions": "transaction",
+    "trains": "trains",
 }
 
 def resolve_target_url(path: str) -> str | None:
