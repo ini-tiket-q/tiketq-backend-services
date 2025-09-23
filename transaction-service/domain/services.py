@@ -424,22 +424,79 @@ class TransactionService:
             logger.error(f"Error updating transaction {transaction_id}: {str(e)}")
             return None
     
-    def cancel_transaction(self, transaction_id: int) -> Optional[TransactionInDB]:
-        """Cancel a transaction with logging"""
+    def cancel_transaction(
+        self, transaction: TransactionInDB
+    ) -> Optional[TransactionInDB]:
+        """Cancel a transaction and its associated order and payment.
+
+        Args:
+            transaction: Transaction to cancel
+
+        Returns:
+            Cancelled TransactionInDB if successful, None otherwise
+        """
         try:
-            from domain.models import TransactionStatus
-            
+            from domain.models import TransactionStatus, OrderStatus, PaymentStatus
+
+            # First get the transaction to get the order number
+            transaction = self.transaction_repo.get_transaction(transaction.id)
+            if not transaction:
+                logger.error(f"Transaction not found: {transaction.id}")
+                return None
+
             # Create an update request to set status to cancelled
-            cancel_request = TransactionUpdateRequest(status=TransactionStatus.CANCELLED)
-            
-            result = self.update_transaction(transaction_id, cancel_request)
-            
-            if result:
-                logger.info(f"Transaction cancelled: transaction_id={transaction_id}")
-                
-            return result
+            cancel_request = TransactionUpdateRequest(
+                status=TransactionStatus.CANCELLED
+            )
+
+            # Update transaction status to CANCELLED
+            cancelled_transaction = self.update_transaction(
+                transaction.id, cancel_request
+            )
+
+            if not cancelled_transaction:
+                logger.error(f"Failed to update transaction status: {transaction.id}")
+                return None
+
+            try:
+                # Get and cancel the associated order
+                order = self.order_repo.get_order_by_order_number(
+                    transaction.order_number
+                )
+                if order:
+                    self.order_repo.update_order_status(
+                        order_id=order.id, status=OrderStatus.CANCELLED
+                    )
+                    logger.info(
+                        f"Order cancelled for transaction {transaction.id}: order_id={order.id}"
+                    )
+
+                # Get and cancel the associated payment
+                payment = self.payment_repo.get_payment_by_order_number(
+                    transaction.order_number
+                )
+                if payment:
+                    self.payment_repo.update_payment_status(
+                        payment_id=payment.id, status=PaymentStatus.CANCELLED
+                    )
+                    logger.info(
+                        f"Payment cancelled for transaction {transaction.id}: payment_id={payment.id}"
+                    )
+
+                logger.info(
+                    f"Transaction cancelled successfully: transaction_id={transaction.id}"
+                )
+                return cancelled_transaction
+
+            except Exception as e:
+                # Log the error but don't fail the transaction cancellation
+                logger.error(
+                    f"Error cancelling order/payment for transaction {transaction.id}: {str(e)}"
+                )
+                return cancelled_transaction
+
         except Exception as e:
-            logger.error(f"Failed to cancel transaction {transaction_id}: {str(e)}")
+            logger.error(f"Failed to cancel transaction {transaction.id}: {str(e)}")
             raise
     
     # Delete transaction with authorization check (should be admin)
