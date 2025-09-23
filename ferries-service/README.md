@@ -3,7 +3,36 @@
 Ferries Service is one of the microservices in the **TiketQ** project, responsible for handling ferry-related data and operations.  
 It is built with **FastAPI** and runs as a standalone container in Docker.
 
----
+
+
+## 🚀 Project Structure
+```
+.
+│   app.py                # Main application entry point
+│   Dockerfile            # Docker configuration
+│   README.md             # Project documentation
+│   requirements.txt      # Python dependencies
+│
+├───adapters
+│       external_api.py   # External ferry API integration
+│       ext_api_config.py # API configuration
+│       payment_client.py # Payment gateway client
+│
+├───domain
+│       db_models.py      # Database models
+│       models.py         # Domain models
+│       repository.py     # Database repository layer
+│       services.py       # Business logic layer
+│
+├───routes
+│       ferries.py        # API route handlers
+│
+├───utils
+│       date_utils.py     # Date/time utilities
+│
+└───__pycache__           # Compiled Python cache
+```
+
 
 ## 📋 Prerequisites
 
@@ -13,7 +42,7 @@ Before running this service, make sure you have:
 - **Docker** & **Docker Compose** (recommended for faster setup)
 - `.env` file at the project root containing the required environment variables
 
----
+
 
 ## ⚙️ Environment Configuration
 
@@ -32,6 +61,10 @@ To start the containers:
 ```bash
 docker-compose up -d --build
 ```
+
+The service will run at:
+👉 http://localhost:8000 -> api gateway and http://localhost:8005 -> for ferries service
+
 
 
 ### 2️⃣ Run Locally (Without Docker)
@@ -65,59 +98,45 @@ pip install --no-cache-dir -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
+
 ## 🔍 Checking Service Health
 
 Once the ferries-service is running, you can check the health check endpoint:
 
 ```bash
-curl http://localhost:8003/health
+curl http://localhost:8005/
 ```
 Sample response:
 
 ```json
 {
-"status": "ok",
-"port": 8003,
-"db_url_present": true,
-"api_key_present": true
+    "service": "Ferries Service",
+    "status": "running",
+    "version": "1.0.0"
 }
 ```
+
+## 🔑 Authentication
+All API requests require a Bearer Token in the Authorization header.
+Example:
+```bash
+--header 'Authorization: Bearer testdummy123'
+```
+
+
+
 ## 🔍 Basic Endpoints
 
 This project use real APIs provided by Sindo Ferry to create, display, update, and delete data
 
-### Agen Login (Mandatory)
-```bash
-POST https://api.test.sindoferry.com.sg/agent/Agent/Login
-```
-Request Body:
-```json
-{
-  "agentCode": "T900T63",
-  "username": "testparistvl",
-  "password": "j&o99?Pm2#Uj",
-  "rememberMe": "true"
-}
-```
-Response:
-```json
-{
-    "status": "Ok",
-    "data": {
-        "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjExMzU5MjkzRjZBQzkyODk3QkI4NjhENEQ5MTI2N0ZBQjczRTcyNUIiLCJ0eXAiOiJhdCtqd3QiLCJ4NXQiOiJFVFdTa19hc2tvbDd1R2pVMlJKbi1yYy1jbHMifQ.eyJuYmYiOjE3NTY2MTQ0OTAsImV4cCI6MTc1NzgyNDA5MCwiaXNzIjoiaHR0cDovL2FnZW50LWFwaSIsImF1ZCI6WyJhZ2VudCIsImJvb2tpbmciLCJjcmVkaXRtb25pdG9yaW5nIiwiZWFnbGUiLCJnbG9iYWwiLCJtYXN0ZXIiLCJvcmRlciIsInRyYXZlbGFnZW50Il0sImNsaWVudF9pZCI6InJvLmNsaWVudC4xNGQiLCJzdWIiOiI2YWNhYzJmNC00YzM4LTRlZTgtNWM0NS0wOGRkY2YzY2JlZDUiLCJhdXRoX3RpbWUiOjE3NTY2MTQ0OTAsImlkcCI6ImxvY2FsIiwiaWQiOiJ0ZXN0cGFyaXN0dmwiLCJhaWQiOiIwZTQ4MTRmZi1kYzdkLTQ0NzgtNGQ0ZS0wOGRkY2YzYjk3NTUiLCJpc19zdXBlcl9hZG1pbiI6IlRydWUiLCJpc19hZG1pbiI6IlRydWUiLCJlbWFpbCI6Im11bHlhZGlfcGFyaXNAeWFob28uY29tIiwic2NvcGUiOlsib3BlbmlkIiwiYWdlbnQiLCJib29raW5nIiwiY3JlZGl0bW9uaXRvcmluZyIsImVhZ2xlIiwiZ2xvYmFsIiwibWFzdGVyIiwib3JkZXIiLCJ0cmF2ZWxhZ2VudCJdLCJhbXIiOlsicHdkIl19.LYt9FfZiJqIuutYE_KhXgUWzC3DSbsFeUqwQiHcum9U3UFhYJFybuOTi_JwaX1-pAnNQOLBlLMWpt4F_8aKVL-D3wYULcQrlkQYDjB-370R2_sxYq_Z_MaoQUSklg_V7Ea8nizFJTL6OcZVRHQ0SIAlhYrkzs-N5-vTUClzAN-chniI0Y_QJq-g-g2KOs5wS6rgwRGENDrGh-vEAaoWgetDPlrySYltTSljdQt0qKfr_drZbWyFZKkpDjMV2ioWCKBh9lj21luVWjLPwJIBhaF5UuV5UxS3SJCu9QyMEmXmhCRua6PLyzManT6Iwhhu13MTxpLvt4tuqah5rT3sXuQ",
-        "expires_in": 1209600,
-        "token_type": "Bearer",
-        "scope": "agent booking creditmonitoring eagle global master openid order travelagent"
-    }
-}
-```
 
 ### Get Routes
 
 ```bash
-GET http://localhost:8003/ferries/routes
-```
+GET api/v1/ferries/routes' \
+--header 'Authorization: Bearer testdummy123'
 
+```
 Response:
 ```json
 {
@@ -166,48 +185,153 @@ Response:
 }
 ```
 
-### Get Trips (Schedule Search)
+### Get Trips Oneway (Schedule Search)
 Description: searching available schdules for user to choose
 ```bash
-GET http://localhost:8003/ferries/transactionshttp://localhost:8003/ferries/trips?origin={origin}&destination={destination}&date={date}
+GET api/v1/ferries/trips/search/oneway?nationality=ID&origin=HFC&destination=BTC&date=2025-09-24&pax=1&ferry_class=Economy%20Class' \
+--header 'Authorization: Bearer testdummy123' \
+--data ''
 ```
-Example
-```bash
-GET http://localhost:8003/ferries/transactionshttp://localhost:8003/ferries/trips?origin=HFC&destination=BTC&date=20250830
-```
+
 Response:
 ```json
 {
-    "trips": [
+    "status": "success",
+    "departure_trips": [
         {
-            "departureTime": "08:25",
-            "arrivalTime": "09:35",
+            "trip_sched_id": "21237",
+            "departure_time": "08:25",
+            "arrival_time": "09:35",
             "status": "OPEN",
-            "tripID": "RFPE0825",
+            "trip_id": "RFPE0825",
             "remarks": "",
-            "tripSchedID": 21137,
-            "usedSeat": 262,
-            "gateOpen": "07:40",
-            "gateClose": "08:10"
+            "used_seat": "265",
+            "gate_open": "07:40",
+            "gate_close": "08:10",
+            "nationality": "ID",
+            "origin": "HFC",
+            "destination": "BTC",
+            "depart_date": "2025-09-24",
+            "return_date": null,
+            "pax": 1,
+            "ferry_class": "Economy Class",
+            "is_round_trip": false,
+            "route_id": "8c813cc8-00bd-4778-15b0-08d7934ea487",
+            "route_name": "HarbourFront Centre Terminal - Batam Centre Terminal",
+            "route": "HFC-BTC",
+            "metadata": {
+                "trip_sched_id": "21237",
+                "route": "HFC-BTC",
+                "departure_time": "08:25"
+            }
         },
         {
-            "departureTime": "15:40",
-            "arrivalTime": "16:50",
+            "trip_sched_id": "21238",
+            "departure_time": "15:40",
+            "arrival_time": "16:50",
             "status": "OPEN",
-            "tripID": "RFPE1540",
+            "trip_id": "RFPE1540",
             "remarks": "",
-            "tripSchedID": 21138,
-            "usedSeat": 265,
-            "gateOpen": "12:55",
-            "gateClose": "15:25"
+            "used_seat": "266",
+            "gate_open": "12:55",
+            "gate_close": "15:25",
+            "nationality": "ID",
+            "origin": "HFC",
+            "destination": "BTC",
+            "depart_date": "2025-09-24",
+            "return_date": null,
+            "pax": 1,
+            "ferry_class": "Economy Class",
+            "is_round_trip": false,
+            "route_id": "8c813cc8-00bd-4778-15b0-08d7934ea487",
+            "route_name": "HarbourFront Centre Terminal - Batam Centre Terminal",
+            "route": "HFC-BTC",
+            "metadata": {
+                "trip_sched_id": "21238",
+                "route": "HFC-BTC",
+                "departure_time": "15:40"
+            }
         }
-    ]
+    ],
+    "return_trips": null
+}
+```
+### Get Trips Roundtrip (Schedule Search)
+Description: searching available schdules for user to choose
+```bash
+GET api/v1/ferries/trips/search/oneway?origin=BTC&destination=HFC&date=2025-09-24&nationality=ID&pax=1&ferry_class=Economy Class&return_date=2025-09-26' \
+--header 'Authorization: Bearer testdummy123' \
+--data ''
+```
+
+Response:
+```json
+{
+    "status": "success",
+    "departure_trips": [
+        {
+            "trip_sched_id": "21235",
+            "departure_time": "12:15",
+            "arrival_time": "13:25",
+            "status": "OPEN",
+            "trip_id": "490",
+            "remarks": "",
+            "used_seat": "265",
+            "gate_open": "11:30",
+            "gate_close": "12:00",
+            "nationality": "ID",
+            "origin": "BTC",
+            "destination": "HFC",
+            "depart_date": "2025-09-24",
+            "return_date": null,
+            "pax": 1,
+            "ferry_class": "Economy Class",
+            "is_round_trip": false,
+            "route_id": "07adda23-56e2-475d-15ac-08d7934ea487",
+            "route_name": "Batam Centre Terminal - HarbourFront Centre Terminal",
+            "route": "BTC-HFC",
+            "metadata": {
+                "trip_sched_id": "21235",
+                "route": "BTC-HFC",
+                "departure_time": "12:15"
+            }
+        },
+        {
+            "trip_sched_id": "21236",
+            "departure_time": "19:00",
+            "arrival_time": "20:10",
+            "status": "OPEN",
+            "trip_id": "394",
+            "remarks": "",
+            "used_seat": "264",
+            "gate_open": "18:00",
+            "gate_close": "18:45",
+            "nationality": "ID",
+            "origin": "BTC",
+            "destination": "HFC",
+            "depart_date": "2025-09-24",
+            "return_date": null,
+            "pax": 1,
+            "ferry_class": "Economy Class",
+            "is_round_trip": false,
+            "route_id": "07adda23-56e2-475d-15ac-08d7934ea487",
+            "route_name": "Batam Centre Terminal - HarbourFront Centre Terminal",
+            "route": "BTC-HFC",
+            "metadata": {
+                "trip_sched_id": "21236",
+                "route": "BTC-HFC",
+                "departure_time": "19:00"
+            }
+        }
+    ],
+    "return_trips": null
 }
 ```
 
 ### Post Booking
 ```bash
-POST http://localhost:8003/ferries/bookings
+POST api/v1/ferries/bookings
+--header 'Authorization: Bearer testdummy123'
 ```
 Request Body:
 ```json
@@ -215,7 +339,7 @@ Request Body:
   "isRoundTrip": false,
   "isReturnTripOpen": true,
   "departureCoreApiTrip": {
-    "date": "2025-09-01",
+    "date": "2025-09-24",
     "routeID": "07adda23-56e2-475d-15ac-08d7934ea487",
     "id": "398",
     "time": "0825",
@@ -236,132 +360,108 @@ Response:
 
 ### Add Booking Details
 ```bash
-POST http://localhost:8003/ferries/bookings/{booking_id}/details
+POST api/v1/ferries/bookings/{booking_id}/details
+--header 'Authorization: Bearer testdummy123'
 ```
 Example:
 ```bash
-POST http://localhost:8003/ferries/bookings/a78b4872-4a54-469e-8f98-08dde6d79212/details
+POST api/v1/ferries/bookings/21322f49-236b-425c-d690-08ddf9cd8722/details
+--header 'Authorization: Bearer testdummy123'
 ```
 Request Body:
 ```json
 {
-  "isRoundTrip": false,
-  "isReturnTripOpen": true,
-  "departureCoreApiTrip": {
-    "date": "2025-09-01",
-    "routeID": "07adda23-56e2-475d-15ac-08d7934ea487",
-    "id": "398",
-    "time": "0825",
-    "gateOpen": "0740",
-    "gateClose": "0810"
+  "identification": {
+    "type": 0,
+    "no": "A321123",
+    "fullName": "Lala",
+    "gender": 0,
+    "dateOfBirth": "1991-01-01",
+    "placeOfBirth": null,
+    "issueDate": "2020-09-01",
+    "expiryDate": "2027-09-01",
+    "nationalityID": "0dbe8cd6-cb51-4e34-ff90-08d7934c8bf2",
+    "issuanceCountryID": "0dbe8cd6-cb51-4e34-ff90-08d7934c8bf2"
   },
-  "returnCoreApiTrip": null
+  "email": "lala@example.com",
+  "confirmation_email": "lala@example.com",
+  "mobile_phone": "+628123456789",
+  "whatsapp_no": "+628123456789"
 }
+
 
 ```
 Response:
 ```bash
 {
     "status": "Ok",
-    "data": "bbd01c46-6f10-4b1e-f3b3-08dde6d799be"
+    "data": "4665341a-d5c9-4680-e013-08ddf9cda522",
+    "booking_requirements": {
+        "email": "lala@example.com",
+        "confirmation_email": "lala@example.com",
+        "mobile_phone": "+628123456789",
+        "whatsapp_no": "+628123456789"
 }
+
 ```
 
 ### GET Booking Details
 ```bash
-GET http://localhost:8003/ferries/bookings/{booking_id}/details
+GET api/v1/ferries/bookings/{booking_id}/details
+--header 'Authorization: Bearer testdummy123'
 ```
 Example:
 ```bash
-GET http://localhost:8003/ferries/bookings/a78b4872-4a54-469e-8f98-08dde6d79212/details
+GET api/v1/ferries/bookings/a78b4872-4a54-469e-8f98-08dde6d79212/details
+--header 'Authorization: Bearer testdummy123'
 ```
 
 Response:
 ```json
-
 {
-    "status": "Ok",
-    "data": {
-        "totalRecords": 1,
-        "records": [
-            {
-                "id": "8ce09e8a-ee1b-46ee-f3b4-08dde6d799be",
-                "identification": {
-                    "type": 0,
-                    "no": "A321123",
-                    "fullName": "ANDI",
-                    "gender": 0,
-                    "dateOfBirth": "1991-01-01T00:00:00",
-                    "placeOfBirth": null,
-                    "issueDate": "2020-09-01T00:00:00",
-                    "expiryDate": "2027-09-01T00:00:00",
-                    "nationality": {
-                        "id": "0dbe8cd6-cb51-4e34-ff90-08d7934c8bf2",
-                        "code": "ID",
-                        "code2": "INA",
-                        "name": "INDONESIA",
-                        "nationality": "INDONESIAN",
-                        "isSingaporeRequireVisa": false,
-                        "isIndonesiaRequireVisa": false
-                    },
-                    "issuanceCountry": {
-                        "id": "0dbe8cd6-cb51-4e34-ff90-08d7934c8bf2",
-                        "code": "ID",
-                        "code2": "INA",
-                        "name": "INDONESIA",
-                        "nationality": "INDONESIAN",
-                        "isSingaporeRequireVisa": false,
-                        "isIndonesiaRequireVisa": false
-                    }
-                },
-                "isCancelled": false,
-                "bookingType": {
-                    "id": "cce8e162-8fdf-4183-c766-08dbb4d0fd32",
-                    "code": "BTM1IDATEST",
-                    "name": "BATAM - SINGAPORE 1WAY INDONESIAN PASSPORT ADULT TEST TICKET (ALL IN)",
-                    "isRoundTrip": false,
-                    "isVTL": false,
-                    "hasDayGroupRestriction": false,
-                    "hasNationalityRestriction": true,
-                    "hasPaxTypeRestriction": false,
-                    "additionalCriteriaString": null,
-                    "departureSector": {
-                        "id": "dbea62f3-a27d-4a20-aa68-b3704c42dfab",
-                        "code": "BTM - SG",
-                        "name": "Batam - Singapore",
-                        "nextSector": {
-                            "id": "26ac1736-8822-4b90-a50a-eeaf1a190578",
-                            "code": "SG - BTM",
-                            "name": "Singapore - Batam",
-                            "hasGST": false
-                        },
-                        "hasGST": false
-                    },
-                    "allowedDayGroup": null,
-                    "allowedNationality": {
-                        "id": "0dbe8cd6-cb51-4e34-ff90-08d7934c8bf2",
-                        "code": "ID",
-                        "code2": "INA",
-                        "name": "INDONESIA",
-                        "nationality": "INDONESIAN",
-                        "isSingaporeRequireVisa": false,
-                        "isIndonesiaRequireVisa": false
-                    },
-                    "allowedPaxType": null
-                },
-                "departureVoucherCode": null,
-                "returnVoucherCode": null
+    "email": "lala@example.com",
+    "transaction_type": "BOOKING",
+    "currency": "IDR",
+    "service_type": "FERRIES",
+    "items": [
+        {
+            "name": "Ferry Ticket 1",
+            "price": 355000.0,
+            "quantity": 1,
+            "description": "Ferry ticket for passenger LALA",
+            "metadata": {
+                "departure_date": "2025-09-24",
+                "ferry_number": "SF-123",
+                "operator": "Sindo Ferry",
+                "class": "Economy"
             }
-        ]
+        }
+    ],
+    "subtotal": 355000.0,
+    "tax": 35500,
+    "discount": 0,
+    "total": 390500.0,
+    "payment_method": "credit_card",
+    "payment_gateway": "MIDTRANS",
+    "transaction_metadata": {
+        "order_id": "21322f49-236b-425c-d690-08ddf9cd8722",
+        "passenger_name": "LALA",
+        "booking_reference": "TQ-FR-21322f",
+        "ip_address": "192.168.1.100"
+    },
+    "payment_metadata": {
+        "bank_name": "BCA",
+        "card_last_digits": "1234",
+        "card_type": "visa"
     }
 }
-
 ```
 
 ### Get Countries
 
 ```bash
-GET http://localhost:8003/ferries/countries
+GET api/v1/ferries/countries
+--header 'Authorization: Bearer testdummy123'
 ```
 
 Response:
@@ -403,28 +503,172 @@ Response:
 }
 ```
 
+### Get Booking Type Pricing
 
-
-## 🗂 Folder Structure
-```graphql
-ferries-service/
-│   .env.example        # Example environment file
-│   app.py              # FastAPI entry point
-│   requirements.txt    # Python dependencies
-│   Dockerfile          # Docker build configuration
-|   Readme
-│
-├───adapters
-│       external_api.py # External ferry API integration
-│
-├───domain
-│       models.py       # Data models
-│       repository.py   # Database access
-│       services.py     # Business logic
-│
-└───routes
-        ferries.py      # API endpoints for ferry operations
+```bash
+GET api/v1/ferries/booking-type-pricings
+--header 'Authorization: Bearer testdummy123'
 ```
+
+Response:
+```json
+{
+    "status": "ok",
+    "total": 16,
+    "records": [
+        {
+            "id": "5b3be43a-22ba-4c68-e215-08ddcf3bc41c",
+            "code": "BATAM-1WA-SG",
+            "name": "1WA BATAM TO SINGAPORE FERRY TICKET (ALL NATIONALITIES)",
+            "isRoundTrip": false,
+            "departureSector": "Batam - Singapore",
+            "price": 440000.0,
+            "effectiveDate": "2025-07-29T16:00:00",
+            "expiryDate": null
+        },
+        {
+            "id": "fbda69f8-1f4e-4247-e217-08ddcf3bc41c",
+            "code": "BATAM-2WA-SG",
+            "name": "2WA BATAM FERRY TICKET (ALL NATIONALITIES)",
+            "isRoundTrip": true,
+            "departureSector": "Batam - Singapore",
+            "price": 885000.0,
+            "effectiveDate": "2025-07-29T16:00:00",
+            "expiryDate": null
+        },
+        {
+            "id": "6be4650c-c01b-4727-e211-08ddcf3bc41c",
+            "code": "BTM1IDATEST",
+            "name": "BATAM - SINGAPORE 1WAY INDONESIAN PASSPORT ADULT TEST TICKET (ALL IN)",
+            "isRoundTrip": false,
+            "departureSector": "Batam - Singapore",
+            "price": 355000.0,
+            "effectiveDate": "2025-07-29T16:00:00",
+            "expiryDate": null
+        },
+        {
+            "id": "c92c19a2-915e-4fa1-e213-08ddcf3bc41c",
+            "code": "BTM2IDATEST",
+            "name": "BATAM 2WAYS INDONESIAN PASSPORT ADULT TEST TICKET (ALL IN)",
+            "isRoundTrip": true,
+            "departureSector": "Batam - Singapore",
+            "price": 710000.0,
+            "effectiveDate": "2025-07-29T16:00:00",
+            "expiryDate": null
+        },
+        {
+            "id": "b70f2da6-9ee0-4c2c-e216-08ddcf3bc41c",
+            "code": "SG-1WA-BATAM",
+            "name": "1WA SINGAPORE TO BATAM FERRY TICKET (ALL NATIONALITIES)",
+            "isRoundTrip": false,
+            "departureSector": "Singapore - Batam",
+            "price": 445000.0,
+            "effectiveDate": "2025-07-29T16:00:00",
+            "expiryDate": null
+        },
+        {
+            "id": "94e8939f-d054-4f63-e21d-08ddcf3bc41c",
+            "code": "SG-1WA-TBL",
+            "name": "1WA SINGAPORE TO TANJUNG BALAI FERRY TICKET (ALL NATIONALITIES)",
+            "isRoundTrip": false,
+            "departureSector": "Singapore - Tanjung Balai Karimun",
+            "price": 515000.0,
+            "effectiveDate": "2025-07-29T16:00:00",
+            "expiryDate": null
+        },
+    ....
+    ]
+}
+```
+### Get Available Sectors
+
+```bash
+GET api/v1/ferries/sectors
+--header 'Authorization: Bearer testdummy123'
+```
+
+Response:
+```json
+{
+    "sectors": [
+        {
+            "id": "a128434c-fe0e-4792-8695-10f4b3ab80eb",
+            "code": "TBL - SG",
+            "name": "Tanjung Balai Karimun - Singapore",
+            "nextSector": {
+                "id": "530af832-c759-42e9-84f1-a110b6fb8bfa",
+                "code": "SG - TBL",
+                "name": "Singapore - Tanjung Balai Karimun",
+                "hasGST": false
+            },
+            "hasGST": false
+        },
+        {
+            "id": "2bd955ed-4a10-4e60-9e34-18844fb5957d",
+            "code": "TPI - SG",
+            "name": "Tanjung Pinang - Singapore",
+            "nextSector": {
+                "id": "f69fa122-1198-4984-a4c4-3337349e5fc5",
+                "code": "SG - TPI",
+                "name": "Singapore - Tanjung Pinang",
+                "hasGST": false
+            },
+            "hasGST": false
+        },
+        {
+            "id": "f69fa122-1198-4984-a4c4-3337349e5fc5",
+            "code": "SG - TPI",
+            "name": "Singapore - Tanjung Pinang",
+            "nextSector": {
+                "id": "2bd955ed-4a10-4e60-9e34-18844fb5957d",
+                "code": "TPI - SG",
+                "name": "Tanjung Pinang - Singapore",
+                "hasGST": false
+            },
+            "hasGST": false
+        },
+        {
+            "id": "530af832-c759-42e9-84f1-a110b6fb8bfa",
+            "code": "SG - TBL",
+            "name": "Singapore - Tanjung Balai Karimun",
+            "nextSector": {
+                "id": "a128434c-fe0e-4792-8695-10f4b3ab80eb",
+                "code": "TBL - SG",
+                "name": "Tanjung Balai Karimun - Singapore",
+                "hasGST": false
+            },
+            "hasGST": false
+        },
+        {
+            "id": "dbea62f3-a27d-4a20-aa68-b3704c42dfab",
+            "code": "BTM - SG",
+            "name": "Batam - Singapore",
+            "nextSector": {
+                "id": "26ac1736-8822-4b90-a50a-eeaf1a190578",
+                "code": "SG - BTM",
+                "name": "Singapore - Batam",
+                "hasGST": false
+            },
+            "hasGST": false
+        },
+        {
+            "id": "26ac1736-8822-4b90-a50a-eeaf1a190578",
+            "code": "SG - BTM",
+            "name": "Singapore - Batam",
+            "nextSector": {
+                "id": "dbea62f3-a27d-4a20-aa68-b3704c42dfab",
+                "code": "BTM - SG",
+                "name": "Batam - Singapore",
+                "hasGST": false
+            },
+            "hasGST": false
+        }
+    ]
+}
+```
+
+
+
 
 ## 🛠 Troubleshooting
 Database connection failed
