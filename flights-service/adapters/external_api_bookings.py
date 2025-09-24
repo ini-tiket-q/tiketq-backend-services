@@ -1,80 +1,83 @@
 import os
-import requests
-
+import httpx
+import asyncio
 
 class MMBCClient:
-    def __init__(self, base_url=None, user=None, password=None, agent=None, timeout: float = 15.0):
+    def __init__(self, base_url=None, username=None, user=None, password=None, agent=None, timeout: float = 15.0):
         self.base = base_url or os.getenv("MMBC_BASE_URL", "http://klikmbc.co.id/json")
+        self.username = username or os.getenv("MMBC_USERNAME")
         self.user = user or os.getenv("MMBC_USER_ID")
         self.password = password or os.getenv("MMBC_PASSWORD")
         self.agent = agent or os.getenv("MMBC_AGENT_CODE")
         self.timeout = timeout
-        self.headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "tiketq-flights-service/1.0",
+        self._client = httpx.AsyncClient(timeout=self.timeout)
+
+    async def _post(self, endpoint: str, payload: dict):
+        # Default credentials from env
+        base_payload = {
+            "username": self.username,
+            "password": self.password,
         }
 
-    def get_price(self, *, flight, from_, to, date, adult, child, infant):
-        url = f"{self.base}/getprice-json"
+        # Let incoming payload (e.g. from Postman) override defaults
+        merged = {**base_payload, **payload}
+        if "username" in payload:
+            merged["username"] = payload["username"]
+        if "password" in payload:
+            merged["password"] = payload["password"]
+
+        url = f"{self.base}/{endpoint}"
+        print(f"[MMBC] POST {url} | payload={merged}")
+
+        resp = await self._client.post(url, data=merged)
+
+        print(f"[MMBC] Status Code: {resp.status_code}")
+        print(f"[MMBC] Raw Response: {resp.text}")
+
+        try:
+            data = resp.json()
+        except Exception:
+            raise Exception(f"Non-JSON response from MMBC: {resp.text}")
+
+        if data.get("result") == "ok":
+            print(f"[MMBC] Parsed JSON: {data}")
+            return data
+
+        resp.raise_for_status()
+        return data
+
+
+
+
+
+    # === Example endpoints ===
+
+    async def get_price(self, flight: str, from_: str, to: str, date: str, adult: int, child: int, infant: int):
         payload = {
-            "username": "dummy",
-            "password": "dummy123",
             "flight": flight,
             "from": from_,
             "to": to,
-            "date": date,  # Must be dd-mm-yyyy
+            "date": date,
             "adult": str(adult),
             "child": str(child),
             "infant": str(infant),
         }
+        return await self._post("getprice-json", payload)
 
-        print(f"📡 [MMBC] POST {url} | payload={payload}")
+    async def post_booking(self, **kwargs):
+        return await self._post("postbooking-json", kwargs)
 
-        try:
-            r = requests.post(url, data=payload, headers=self.headers, timeout=self.timeout)
-            print(f"🔁 Status: {r.status_code}")
-            print(f"📄 Raw response: {r.text}")
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            print(f"❌ [MMBC] Error: {e}")
-            return {"result": "no", "reason": "upstream error"}
+    async def get_status_booking(self, **kwargs):
+        return await self._post("getstatusbooking-json", kwargs)
 
-    # The following endpoints still need async _post method, or migrate them to requests too
-    def post_booking(self, **body: dict):
-        url = f"{self.base}/postbooking-json"
-        print(f"📡 [MMBC] POST {url} | payload={body}")
+    async def get_issued(self, **kwargs):
+        return await self._post("getissued-json", kwargs)
 
-        try:
-            r = requests.post(url, data=body, headers=self.headers, timeout=self.timeout)
-            print(f"🔁 Status: {r.status_code}")
-            print(f"📄 Raw response: {r.text}")
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            print(f"❌ [MMBC] Error: {e}")
-            return {"result": "no", "reason": "upstream error"}
+    async def get_eticket(self, **kwargs):
+        return await self._post("getetiket-json", kwargs)
 
+    async def reset_password(self, **kwargs):
+        return await self._post("resetpassword", kwargs)
 
-
-    def get_issued(self, *, kodebooking):
-        return self._sync_post("/json/getissued-json", {"kodebooking": kodebooking})
-
-    def get_status_booking(self, *, kodebooking):
-        return self._sync_post("/json/getstatusbooking-json", {"kodebooking": kodebooking})
-
-    def get_eticket(self, *, kodebooking):
-        return self._sync_post("/json/getetiket-json", {"kodebooking": kodebooking})
-
-    def _sync_post(self, path: str, payload: dict) -> dict:
-        url = f"{self.base}{path}"
-        try:
-            r = requests.post(url, data=payload, headers=self.headers, timeout=self.timeout)
-            print(f"📡 [MMBC] POST {url} | payload={payload}")
-            print(f"🔁 Status: {r.status_code}")
-            print(f"📄 Raw response: {r.text}")
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            print(f"❌ [MMBC] Error: {e}")
-            return {"result": "no", "reason": "upstream error"}
+    async def close(self):
+        await self._client.aclose()

@@ -20,12 +20,12 @@ SERVICES = {
 ROUTE_SERVICE_MAP = {
     "api/v1/flights": "flights",
     "api/v1/bookings": "flights",
-    "/ferries": "ferries",
-    "/hotels": "hotels",
-    "/ppob": "ppob",
-    "/payments": "payment",
-    "/transactions": "transaction",
-    "/trains": "trains",
+    "api/v1/ferries": "ferries",
+    "hotels": "hotels",
+    "ppob": "ppob",
+    "payments": "payment",
+    "transactions": "transaction",
+    "trains": "trains",
 }
 
 def resolve_target_url(path: str) -> str | None:
@@ -60,7 +60,8 @@ async def forward_request(request: Request, full_path: str) -> Response:
                 method=request.method,
                 url=target_url,
                 headers=headers,
-                content=body,
+                params=request.query_params,
+                content=body if request.method.upper() != "GET" else None,
                 timeout=30
             )
             return Response(

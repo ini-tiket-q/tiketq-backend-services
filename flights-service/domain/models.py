@@ -11,6 +11,7 @@ PassengerType = Literal["ADULT", "CHILD", "INFANT"]
 FlightStatus = Literal["SCHEDULED", "DELAYED", "CANCELLED", "DEPARTED", "ARRIVED"]
 
 
+
 # -------------------------------
 # Data Classes for Domain Models
 # -------------------------------

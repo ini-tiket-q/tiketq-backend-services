@@ -51,7 +51,7 @@ async def confirm_payment(order_id: str, payment_token: str):
         ]
 
         for attempt, base_url in enumerate(urls_to_try, 1):
-            confirm_url = f"{base_url}/payments/{order_id}/confirm"
+            confirm_url = f"{base_url}/transactions/payments/{order_id}/confirm"
 
             logger.info(f"🚀 Attempt {attempt}: Trying transaction-service URL: {confirm_url}")
 
