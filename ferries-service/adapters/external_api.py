@@ -42,33 +42,76 @@ class SindoClient:
 
 # Agen Login (Mandatory)
     def _login(self):
-        url = f"{self.base_url}/Agent/Login"
-        payload = {
-            "agentCode": self.agent_code,
-            "username": self.username,
-            "password": self.password,
-        }
-        
-        # Temporary session without auth token for login
-        # Prevents infinite retry loops during failed login attempts
-        with requests.Session() as temp_session:
-            resp = temp_session.post(url, json=payload, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
+        try:
+            url = f"{self.base_url}/Agent/Login"
+            payload = {
+                "agentCode": self.agent_code,
+                "username": self.username,
+                "password": self.password,
+            }
+            # print(f"DEBUG: Attempting login to {url}")
+            # print(f"DEBUG: Using agentCode: {self.agent_code}, username: {self.username}")
             
-            if data.get("status") == "Ok":
-                self._access_token = data["data"]["access_token"]
-                # update session headers dengan token
-                self.session.headers.update({
-                    "Authorization": f"Bearer {self._access_token}"
-                    })
-                return self._access_token
-            raise Exception(f"Login gagal: {data}")
+            # Temporary session without auth token for login
+            # Prevents infinite retry loops during failed login attempts
+            with requests.Session() as temp_session:
+                resp = temp_session.post(url, json=payload, timeout=30)
+                
+                # Debug the response
+                # print(f"DEBUG: Login response status: {resp.status_code}")
+                # print(f"DEBUG: Login response headers: {dict(resp.headers)}")
+                # print(f"DEBUG: Login response text: {resp.text}")
+                # Handle 500 errors specifically
+                if resp.status_code == 500:
+                    error_msg = f"Sindo API login failed with 500 error. This usually indicates: "
+                    error_msg += "1. Invalid credentials\n"
+                    error_msg += "2. API server issue\n"
+                    error_msg += "3. Incorrect endpoint\n"
+                    error_msg += f"URL: {url}\n"
+                    error_msg += f"Payload: {payload}\n"
+                    error_msg += f"Response: {resp.text}"
+                    print(f"ERROR: {error_msg}")
+                    raise Exception(error_msg)
+                
+                resp.raise_for_status()
+                
+                data = resp.json()
+                # print(f"DEBUG: Login response JSON: {data}")
+                
+
+                if data.get("status") == "Ok":
+                    # Try different possible token field names
+                    token_data = data.get("data", {})
+                    token = token_data.get("access_token") or token_data.get("token")
+                    
+                    if token:
+                        self._access_token = data["data"]["access_token"]
+                        # update session headers dengan token
+                        self.session.headers.update({
+                            "Authorization": f"Bearer {self._access_token}"
+                            })
+                        return self._access_token
+                    else:
+                        raise Exception("No token found in login response")
+                else:
+                        error_message = data.get("message", "Unknown login error")
+                        raise Exception(f"Login failed: {error_message}")
+                        
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR: Sindo login request failed: {str(e)}")
+            raise Exception(f"Sindo API connection failed: {str(e)}")
+        except Exception as e:
+            print(f"ERROR: Sindo login error: {str(e)}")
+            raise
 
     def _ensure_token(self):
-        if not self._access_token:
-            self._login()
-
+        # if not self._access_token:
+        #     self._login()
+        if self._access_token:
+             return
+        
+        print("DEBUG: No token found, attempting login...")
+        self._login()
 
     def _request(self, method, endpoint, use_core_url=False, **kwargs):
         """Wrapper for requests with automatic token refresh"""
@@ -85,12 +128,21 @@ class SindoClient:
             if resp.status_code == 401:
                 print("Token expired, attempting to refresh...")
                 # token expired → login ulang sekali
+                self._access_token = None
                 self._login()  
                 # ulang request
                 resp = self.session.request(method, url, **kwargs)
             
             resp.raise_for_status()
-            return resp.json()
+            
+            # Try to parse JSON response
+            try:
+                result = resp.json()
+                print(f"DEBUG: Response JSON parsed successfully")
+                return result
+            except json.JSONDecodeError:
+                print(f"DEBUG: Response is not JSON, returning text")
+                return resp.text           
         except Exception as e:
             print(f"Request failed: {str(e)}")
             print(f"URL: {url}")
@@ -100,11 +152,9 @@ class SindoClient:
                 print(f"Response Text: {resp.text}")
             raise
 
-
     # ---------------------------
     # Public API methods
     # ---------------------------
-
 
     def get_sindo_routes(self, search: str=None, page_index: int=0, page_size: int=0):
         """Get list of Sindo routes"""

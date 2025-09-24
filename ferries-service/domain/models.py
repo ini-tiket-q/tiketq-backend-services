@@ -133,7 +133,7 @@ class FerryTripDisplay(BaseModel):
     ferry_class: str
     is_round_trip: bool
     route_id: Optional[str] = None
-    route_name: Optional[str]
+    # route_name: Optional[str]
     
     # Add a validator to convert numeric fields to strings
     @field_validator('trip_sched_id', 'used_seat', mode='before')
@@ -151,6 +151,7 @@ class FerryTripDisplay(BaseModel):
     def metadata(self) -> Dict[str, Any]:
         return {
         "trip_sched_id": self.trip_sched_id,
+        "route_id": self.route_id,
         "route": f"{self.origin}-{self.destination}",
         "departure_time": self.departure_time
         }
