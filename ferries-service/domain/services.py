@@ -25,6 +25,7 @@ _route_mapping_cache = None
 _route_cache_expiry = None
 ROUTE_CACHE_DURATION = 3600  # Cache for 1 hour
 
+routes = []
 # trips_cache = {}
 
 # Simpan booking_requirements secara lokal
@@ -46,84 +47,110 @@ def get_route_mapping() -> Dict[str, str]:
     # Fetch fresh data from Sindo
     try:
         logger.info("Fetching fresh route mapping from Sindo API")
-
-        # Now get routes
         routes_response = sindo_client.get_sindo_routes()
-        routes = routes_response.get("data", {}).get("records", [])
         
+         # Check if response has the expected structure
+        if (not routes_response or 
+            routes_response.get("status") != "Ok" or 
+            "data" not in routes_response or 
+            "records" not in routes_response["data"]):
+            logger.warning("Invalid API response structure, using mock data")
+            return _load_mock_route_mapping()
+            
+        records = routes_response["data"]["records"]
+        
+        if not records:
+            logger.warning("No routes found in API response, using mock data")
+            return _load_mock_route_mapping()
+        
+        records = routes_response["data"]["records"]
+        
+        if not records:
+            logger.warning("No routes found in API response, using mock data")
+            return _load_mock_route_mapping()
+        
+        routes = records
         _route_mapping_cache = {}
         
         for route in routes:
-            route_id = route.get("id", "").strip()
-            route_code = route.get("code", "").strip()  # e.g., "BTC - HFC"
-            
-            # Extract origin and destination from route code
-            if " - " in route_code:
-                parts = route_code.split(" - ")
-                if len(parts) == 2:
-                    origin_code = parts[0].strip().upper()
-                    dest_code = parts[1].strip().upper()
-                    
-                    # Create both possible keys for bidirectional mapping
-                    key_forward = f"{origin_code}-{dest_code}"  # "BTC-HFC"
-                    key_backward = f"{dest_code}-{origin_code}"  # "HFC-BTC"
-                    
-                    # Map both directions to the same route ID
-                    _route_mapping_cache[key_forward] = route_id
-                    _route_mapping_cache[key_backward] = route_id
-                    
-                    logger.debug(f"Mapped {key_forward} -> {route_id}")
-                    logger.debug(f"Mapped {key_backward} -> {route_id}")
-            
-            # Alternative: Also use port codes directly from the structure
-            origin_port = route.get("embarkationPort", {})
-            dest_port = route.get("destinationPort", {})
-            
-            origin_code_alt = origin_port.get("code", "").strip().upper()
-            dest_code_alt = dest_port.get("code", "").strip().upper()
-            
-            if origin_code_alt and dest_code_alt and route_id:
-                key_forward_alt = f"{origin_code_alt}-{dest_code_alt}"
-                key_backward_alt = f"{dest_code_alt}-{origin_code_alt}"
+            try:
+                route_id = route.get("id", "").strip()
+                route_name = route.get("name", "").strip()
                 
-                # Only add if not already added from route code
-                if key_forward_alt not in _route_mapping_cache:
-                    _route_mapping_cache[key_forward_alt] = route_id
-                    logger.debug(f"Alt mapped {key_forward_alt} -> {route_id}")
+                if not route_id:
+                    continue
                 
-                if key_backward_alt not in _route_mapping_cache:
-                    _route_mapping_cache[key_backward_alt] = route_id
-                    logger.debug(f"Alt mapped {key_backward_alt} -> {route_id}")
+                # Extract port codes from the exact structure in documentation
+                embarkation_port = route.get("embarkationPort", {})
+                destination_port = route.get("destinationPort", {})
+                
+                origin_code = embarkation_port.get("code", "").strip().upper()
+                dest_code = destination_port.get("code", "").strip().upper()
+                
+                if origin_code and dest_code:
+                    # Create mapping for both directions (one-way and round-trip)
+                    key_forward = f"{origin_code}-{dest_code}"
+                    key_backward = f"{dest_code}-{origin_code}"
+                    
+                    route_details = {
+                        "route_id": route_id,
+                        "route_name": route_name
+                    }
+                    
+                    _route_mapping_cache[key_forward] = route_details
+                    _route_mapping_cache[key_backward] = route_details
+                    
+                    logger.debug(f"Mapped {key_forward} -> {route_id}({route_name})")
+                
+            except Exception as e:
+                logger.warning(f"Error processing route {route.get('id', 'unknown')}: {str(e)}")
+                continue
         
-        # Log specific routes we care about
-        test_keys = ["HFC-BTC", "BTC-HFC", "HFC-SKP", "SKP-HFC", "HFC-WFC", "WFC-HFC"]
-        for key in test_keys:
-            if key in _route_mapping_cache:
-                logger.info(f"✓ Route {key} found: {_route_mapping_cache[key]}")
-            else:
-                logger.warning(f"✗ Route {key} NOT found in mapping")
-        
-        logger.info(f"Total routes in mapping: {len(_route_mapping_cache)}")
-        
+        logger.info(f"Successfully mapped {len(_route_mapping_cache)//2} routes from API")     
         # Set cache expiry
         _route_cache_expiry = datetime.now() + timedelta(seconds=ROUTE_CACHE_DURATION)
         return _route_mapping_cache
         
     except Exception as e:
-        logger.error(f"Error fetching route mapping with sectors: {str(e)}")
-        return {}
+        logger.error(f"Error fetching route mapping: {str(e)}")
+        logger.info("Falling back to mock route data")
+        return _load_mock_route_mapping()
 
 def _load_mock_route_mapping() -> Dict[str, str]:
     """Load fallback mock route data"""
     mock_routes = {
-        "HFC-BTC": "07adda23-56e2-475d-15ac-08d7934ea487",
-        "BTC-HFC": "07adda23-56e2-475d-15ac-08d7934ea487",
-        "HFC-SKP": "70695ec6-b859-4074-15ad-08d7934ea487", 
-        "SKP-HFC": "70695ec6-b859-4074-15ad-08d7934ea487",
-        "HFC-WFC": "ad320221-95ce-4b1d-15ae-08d7934ea487",
-        "WFC-HFC": "ad320221-95ce-4b1d-15ae-08d7934ea487",
-        "BTC-TMF": "29bcaf7b-a38e-4e32-b971-08d84405955f",
-        "TMF-BTC": "29bcaf7b-a38e-4e32-b971-08d84405955f"
+        "HFC-BTC": {
+            "route_id": "07adda23-56e2-475d-15ac-08d7934ea487",
+            "route_name": "HarbourFront Centre Terminal - Batam Centre Terminal"
+        },
+        "BTC-HFC": {
+            "route_id": "07adda23-56e2-475d-15ac-08d7934ea487", 
+            "route_name": "Batam Centre Terminal - HarbourFront Centre Terminal"
+        },
+        "HFC-SKP": {
+            "route_id": "70695ec6-b859-4074-15ad-08d7934ea487",
+            "route_name": "HarbourFront Centre Terminal - Sekupang Terminal"
+        },
+        "SKP-HFC": {
+            "route_id": "70695ec6-b859-4074-15ad-08d7934ea487",
+            "route_name": "Sekupang Terminal - HarbourFront Centre Terminal"
+        },
+        "HFC-WFC": {
+            "route_id": "ad320221-95ce-4b1d-15ae-08d7934ea487",
+            "route_name": "HarbourFront Centre Terminal - Waterfront City Terminal"
+        },
+        "WFC-HFC": {
+            "route_id": "ad320221-95ce-4b1d-15ae-08d7934ea487",
+            "route_name": "Waterfront City Terminal - HarbourFront Centre Terminal"
+        },
+        "BTC-TMF": {
+            "route_id": "29bcaf7b-a38e-4e32-b971-08d84405955f",
+            "route_name": "Batam Centre Terminal - Tanah Merah Ferry Terminal"
+        },
+        "TMF-BTC": {
+            "route_id": "29bcaf7b-a38e-4e32-b971-08d84405955f",
+            "route_name": "Tanah Merah Ferry Terminal - Batam Centre Terminal"
+        }
     }
     logger.info(f"Using mock route data with {len(mock_routes)} routes")
     return mock_routes
@@ -144,33 +171,65 @@ def get_ferry_routes(search: str = None):
     return {"routes": records}
 
 def get_route_id(origin: str, destination: str) -> str:
-    """
-    Get route ID for the given origin and destination.
-    Raises ValueError if route not found.
-    """
+    route_id = None
+    
+    try:
+        route_mapping = get_route_mapping()
+        route_key = f"{origin.upper()}-{destination.upper()}"
+        route_details = route_mapping.get(route_key)
+        
+        if not route_details:
+            available_routes = list(route_mapping.keys())
+            logger.error(f"Route {route_key} not found. Available routes: {available_routes}")
+            raise ValueError(f"Route from {origin} to {destination} not found in available routes")
+        
+        route_id = route_details.get("route_id")
+        
+        if not route_id:
+            logger.error(f"Route ID not found in route details for {route_key}")
+            raise ValueError(f"Route ID not found for route from {origin} to {destination}")
+        
+        logger.debug(f"Found route {route_key} -> {route_id}")
+        return route_id
+    except Exception as e:
+        logger.error(f"Error in get_route_id: {str(e)}")
+        raise
+
+def get_route_details(origin: str, destination: str) -> Dict[str, str]:
     route_mapping = get_route_mapping()
     route_key = f"{origin.upper()}-{destination.upper()}"
-    route_id = route_mapping.get(route_key)
+    route_details = route_mapping.get(route_key)
     
-    if not route_id:
+    if not route_details:
         available_routes = list(route_mapping.keys())
         logger.error(f"Route {route_key} not found. Available routes: {available_routes}")
         raise ValueError(f"Route from {origin} to {destination} not found in available routes")
     
-    logger.debug(f"Found route {route_key} -> {route_id}")
-    return route_id
+    logger.debug(f"Found route {route_key} -> {route_details}")
+    return route_details
 
-def get_roundtrip_route_ids(origin: str, destination: str) -> tuple[str, str]:
-    """
-    Get both outward and return route IDs for roundtrip.
-    Raises ValueError if either route is not found.
-    """
-    outward_route_id = get_route_id(origin, destination)
-    return_route_id = get_route_id(destination, origin)
-    
-    logger.info(f"Roundtrip routes: {origin}→{destination}: {outward_route_id}, {destination}→{origin}: {return_route_id}")
-    return outward_route_id, return_route_id
-
+def get_roundtrip_route_details(origin: str, destination: str) -> tuple[Dict[str, str], Dict[str, str]]:
+    try:
+        outward_route_details = get_route_details(origin, destination)
+        return_route_details = get_route_details(destination, origin)
+        
+        # Validate that we found both routes
+        if not outward_route_details or not return_route_details:
+            missing_routes = []
+            if not outward_route_details:
+                missing_routes.append(f"{origin} to {destination}")
+            if not return_route_details:
+                missing_routes.append(f"{destination} to {origin}")
+            
+            error_msg = f"Routes not found: {', '.join(missing_routes)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        logger.info(f"Roundtrip routes: {origin}→{destination}: {outward_route_details}, {destination}→{origin}: {return_route_details.get('route_id')}")
+        return outward_route_details, return_route_details
+    except Exception as e:
+        logger.error(f"Error getting roundtrip route details: {str(e)}")
+        raise
 
 # Get All Trips for users to choose
 # raw shedules from Sindo API
@@ -211,7 +270,8 @@ def get_ferry_oneway(search_request: TripSearchRequest):
         if search_request.pax < 1:
             raise ValueError("Number of passengers must be at least 1")
 
-        route_id = get_route_id(search_request.origin, search_request.destination)
+        #get route ID & name
+        route_details = get_route_details(search_request.origin, search_request.destination)
         
         sindo_date = search_request.depart_date.strftime("%Y%m%d")
         
@@ -225,7 +285,8 @@ def get_ferry_oneway(search_request: TripSearchRequest):
         for trip_data in trips_list:
             model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
-                "route_id": route_id,
+                "route_id": route_details.get("route_id"),
+                "route_name": route_details.get("route_name"),
                 "nationality": search_request.nationality,
                 "origin": search_request.origin,
                 "destination": search_request.destination,
@@ -273,13 +334,13 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
             raise ValueError("Number of passengers must be at least 1")
 
         # Get both route IDs in one call
-        depart_route_id, return_route_id = get_roundtrip_route_ids(
+        depart_details, return_details = get_roundtrip_route_details(
             search_request.origin, 
             search_request.destination
         )
 
-        logger.info(f"Processing roundtrip: {search_request.origin}→{search_request.destination} "
-                   f"(depart_route_id: {depart_route_id}, return_route_id: {return_route_id})")
+        # logger.info(f"Processing roundtrip: {search_request.origin}→{search_request.destination} "
+        #            f"(depart_route_id: {depart_route_id}, return_route_id: {return_route_id})")
 
         # Format and validate dates
         sindo_depart_date = search_request.depart_date.strftime("%Y%m%d")
@@ -307,7 +368,8 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
                 "pax": search_request.pax,
                 "ferry_class": search_request.ferry_class.value,
                 "is_round_trip": search_request.is_round_trip,
-                "route_id": depart_route_id   # <---- ditambahkan
+                "route_id": depart_details.get("route_id"),
+                "route_name": depart_details.get("route_name")
             })
             model_data.setdefault("trip_sched_id", "")
             model_data.setdefault("departure_time", "")
@@ -331,7 +393,8 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
                 "pax": search_request.pax,
                 "ferry_class": search_request.ferry_class.value,
                 "is_round_trip": search_request.is_round_trip,
-                "route_id": return_route_id   # <---- ditambahkan
+                "route_id": return_details.get("route_id"),
+                "route_name": return_details.get("route_name")
             })
             model_data.setdefault("trip_sched_id", "")
             model_data.setdefault("departure_time", "")
@@ -364,9 +427,14 @@ def search_ferry_trips(search_request: TripSearchRequest):
         else:
             return get_ferry_oneway(search_request)
 
+    except HTTPException:
+        raise  # Re-raise HTTPExceptions
+    except ValueError as e:
+        logger.error(f"ValueError in search_ferry_trips: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error in search_ferry_trips: {str(e)}")
-        raise ValueError(f"Failed to search ferry trips: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to search ferry trips: {str(e)}")
     
 #Transaction---------------------------------------------------------------------------------
 async def call_transaction_service(transaction_data: dict) -> dict:
