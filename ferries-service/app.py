@@ -41,7 +41,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(ferries_router, prefix="/api/v1/ferries")
-# app.include_router(ferries_router_mock)
+# app.include_router(ferries_router)
 
 health_router = APIRouter(prefix="/ferries")
 
