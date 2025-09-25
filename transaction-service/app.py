@@ -121,11 +121,11 @@ app.add_middleware(
 # Add transaction context middleware  
 app.add_middleware(TransactionContextMiddleware)
 
-# Register routers
+# Register routers (reports first to avoid path conflicts with parameterized routes)
+app.include_router(reports.router)      # Reports routes must come first
 app.include_router(payments.router)
 app.include_router(transactions.router)
 app.include_router(orders.router)
-app.include_router(reports.router)
 
 # Health check endpoint
 @app.get("/transactions/health")
