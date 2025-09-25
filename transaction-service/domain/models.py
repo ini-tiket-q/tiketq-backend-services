@@ -665,7 +665,7 @@ class TransactionReportData(BaseModel):
 
     transaction_id: int
     email: str
-    order_id: str
+    order_number: str  # Changed from order_id to match TransactionInDB
     transaction_type: TransactionType
     amount: float
     currency: str
@@ -715,7 +715,7 @@ class RefundReportData(BaseModel):
 
     refund_id: int
     transaction_id: int
-    email: str
+    email: Optional[str] = None  # Made optional since refunds don't directly store email
     amount: float
     reason: str
     status: RefundStatus

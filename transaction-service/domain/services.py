@@ -1188,7 +1188,7 @@ class ReportsService:
                 TransactionReportData(
                     transaction_id=t.id,
                     email=t.email,
-                    order_id=t.order_id,
+                    order_number=t.order_number,  # Changed from order_id to order_number
                     transaction_type=t.transaction_type,
                     amount=t.amount,
                     currency=t.currency,
@@ -1299,20 +1299,26 @@ class ReportsService:
                 "reason_breakdown": reason_breakdown
             }
             
-            # Convert to response format
-            refund_data = [
-                RefundReportData(
-                    refund_id=r.id,
-                    transaction_id=r.transaction_id,
-                    email=r.email if hasattr(r, 'email') else None,  # Get from transaction if needed
-                    amount=r.amount,
-                    reason=r.reason,
-                    status=r.status,
-                    processed_by=r.processed_by,
-                    processed_at=r.processed_at,
-                    created_at=r.created_at
-                ) for r in refunds
-            ]
+            # Convert to response format - get email from transaction for each refund
+            refund_data = []
+            for r in refunds:
+                # Get transaction to fetch email
+                transaction = self.transaction_repo.get_transaction(r.transaction_id)
+                email = transaction.email if transaction else None
+                
+                refund_data.append(
+                    RefundReportData(
+                        refund_id=r.id,
+                        transaction_id=r.transaction_id,
+                        email=email,  # Now properly fetched from transaction
+                        amount=r.amount,
+                        reason=r.reason,
+                        status=r.status,
+                        processed_by=r.processed_by,
+                        processed_at=r.processed_at,
+                        created_at=r.created_at
+                    )
+                )
             
             return RefundReportResponse(
                 summary=summary,
