@@ -1,15 +1,13 @@
-# Flights Service
+# ✈️ Flight-Service (TiketQ Backend)
 
-This microservice handles the flight-related functionalities for the TiketQ OTA platform. It follows the Hexagonal Architecture (Ports and Adapters) pattern for better maintainability and testability.
+## ✅ Booking + Transaction Integration (MMBC + Transaction-Service)
+This service handles communication with MMBC for flight-related operations such as pricing, booking, and issuing tickets. It now also integrates with the `transaction-service` to register bookings and verify payment status.
 
+✅ Bookings made via `/postbooking-json` will automatically trigger a transaction entry and return an `order_number`  
+✅ Issuance and status checks (via `/getissued-json`, `/getstatusbooking-json`) will automatically reconcile payment status using the latest transaction record  
+⚠️ This service **does not use a database** — in-memory mapping is used to store `kodebooking → order_number` during the session lifecycle. Redis integration is planned for persistence.
 
-
-## ✅ MMBC Payment Endpoints (via Flight-Service)
-
-This service handles communication with MMBC for flight-related operations such as pricing, booking, and issuing tickets. It does **not** use a database. All data comes from MMBC directly.
-
-These endpoints are defined under `routes/payments.py`, using FastAPI with `services.py` for the logic and `external_api.py` for MMBC communication.
-
+---
 
 
 ## 🧱 Folder Structure
@@ -72,7 +70,13 @@ MMBC_AGENT_CODE=your_agent_code_here
 MMBC_TIMEOUT_SECONDS=15
 MOCK_REMOTE=true or false (to connect mmbc)
 ```
+#### 🧠 Optional Redis ENV (Not Yet Active)
+If Redis is later enabled for caching:
 
+```env
+USE_REDIS=true
+REDIS_URL=redis://localhost:6379
+```
 
 
 ## ⚙️ Environment & Tooling
@@ -91,6 +95,8 @@ MOCK_REMOTE=true or false (to connect mmbc)
 ### 1. Build the container:
 ```bash
 docker compose build api-gateway flights-service
+or 
+docker compose up -d --build 
 ```
 
 ### 2. Run the container:

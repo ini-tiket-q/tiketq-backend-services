@@ -18,11 +18,142 @@ import logging
 logger = logging.getLogger(__name__)
 # Initialize the SindoClient instance
 sindo_client = SindoClient()
+
 # In-memory storage for demonstration (replace with database in production)
-bookings_cache = {}
-BOOKING_EXPIRY_HOURS = 1
-# Booking list local cache (opsional, bisa dipakai untuk debug)
-# _local_bookings = []
+# Route mapping cache
+_route_mapping_cache = None
+_route_cache_expiry = None
+ROUTE_CACHE_DURATION = 3600  # Cache for 1 hour
+
+routes = []
+# trips_cache = {}
+
+# Simpan booking_requirements secara lokal
+BOOKING_REQUIREMENTS_STORE = {}
+
+
+def get_route_mapping() -> Dict[str, str]:
+    """
+    Fetch route mapping from Sindo API and cache it.
+    Returns a dictionary like {"BTC-HFC": "route-guid-123", ...}
+    """
+    global _route_mapping_cache, _route_cache_expiry
+    
+    # Return cached data if still valid
+    if (_route_mapping_cache and _route_cache_expiry and 
+        datetime.now() < _route_cache_expiry):
+        return _route_mapping_cache
+    
+    # Fetch fresh data from Sindo
+    try:
+        logger.info("Fetching fresh route mapping from Sindo API")
+        routes_response = sindo_client.get_sindo_routes()
+        
+         # Check if response has the expected structure
+        if (not routes_response or 
+            routes_response.get("status") != "Ok" or 
+            "data" not in routes_response or 
+            "records" not in routes_response["data"]):
+            logger.warning("Invalid API response structure, using mock data")
+            return _load_mock_route_mapping()
+            
+        records = routes_response["data"]["records"]
+        
+        if not records:
+            logger.warning("No routes found in API response, using mock data")
+            return _load_mock_route_mapping()
+        
+        records = routes_response["data"]["records"]
+        
+        if not records:
+            logger.warning("No routes found in API response, using mock data")
+            return _load_mock_route_mapping()
+        
+        routes = records
+        _route_mapping_cache = {}
+        
+        for route in routes:
+            try:
+                route_id = route.get("id", "").strip()
+                route_name = route.get("name", "").strip()
+                
+                if not route_id:
+                    continue
+                
+                # Extract port codes from the exact structure in documentation
+                embarkation_port = route.get("embarkationPort", {})
+                destination_port = route.get("destinationPort", {})
+                
+                origin_code = embarkation_port.get("code", "").strip().upper()
+                dest_code = destination_port.get("code", "").strip().upper()
+                
+                if origin_code and dest_code:
+                    # Create mapping for both directions (one-way and round-trip)
+                    key_forward = f"{origin_code}-{dest_code}"
+                    key_backward = f"{dest_code}-{origin_code}"
+                    
+                    route_details = {
+                        "route_id": route_id,
+                        "route_name": route_name
+                    }
+                    
+                    _route_mapping_cache[key_forward] = route_details
+                    _route_mapping_cache[key_backward] = route_details
+                    
+                    logger.debug(f"Mapped {key_forward} -> {route_id}({route_name})")
+                
+            except Exception as e:
+                logger.warning(f"Error processing route {route.get('id', 'unknown')}: {str(e)}")
+                continue
+        
+        logger.info(f"Successfully mapped {len(_route_mapping_cache)//2} routes from API")     
+        # Set cache expiry
+        _route_cache_expiry = datetime.now() + timedelta(seconds=ROUTE_CACHE_DURATION)
+        return _route_mapping_cache
+        
+    except Exception as e:
+        logger.error(f"Error fetching route mapping: {str(e)}")
+        logger.info("Falling back to mock route data")
+        return _load_mock_route_mapping()
+
+def _load_mock_route_mapping() -> Dict[str, str]:
+    """Load fallback mock route data"""
+    mock_routes = {
+        "HFC-BTC": {
+            "route_id": "07adda23-56e2-475d-15ac-08d7934ea487",
+            "route_name": "HarbourFront Centre Terminal - Batam Centre Terminal"
+        },
+        "BTC-HFC": {
+            "route_id": "07adda23-56e2-475d-15ac-08d7934ea487", 
+            "route_name": "Batam Centre Terminal - HarbourFront Centre Terminal"
+        },
+        "HFC-SKP": {
+            "route_id": "70695ec6-b859-4074-15ad-08d7934ea487",
+            "route_name": "HarbourFront Centre Terminal - Sekupang Terminal"
+        },
+        "SKP-HFC": {
+            "route_id": "70695ec6-b859-4074-15ad-08d7934ea487",
+            "route_name": "Sekupang Terminal - HarbourFront Centre Terminal"
+        },
+        "HFC-WFC": {
+            "route_id": "ad320221-95ce-4b1d-15ae-08d7934ea487",
+            "route_name": "HarbourFront Centre Terminal - Waterfront City Terminal"
+        },
+        "WFC-HFC": {
+            "route_id": "ad320221-95ce-4b1d-15ae-08d7934ea487",
+            "route_name": "Waterfront City Terminal - HarbourFront Centre Terminal"
+        },
+        "BTC-TMF": {
+            "route_id": "29bcaf7b-a38e-4e32-b971-08d84405955f",
+            "route_name": "Batam Centre Terminal - Tanah Merah Ferry Terminal"
+        },
+        "TMF-BTC": {
+            "route_id": "29bcaf7b-a38e-4e32-b971-08d84405955f",
+            "route_name": "Tanah Merah Ferry Terminal - Batam Centre Terminal"
+        }
+    }
+    logger.info(f"Using mock route data with {len(mock_routes)} routes")
+    return mock_routes
 
 def camel_to_snake(name):
     """Convert camelCase to snake_case"""
@@ -39,6 +170,67 @@ def get_ferry_routes(search: str = None):
     records = data.get("data", {}).get("records", [])
     return {"routes": records}
 
+def get_route_id(origin: str, destination: str) -> str:
+    route_id = None
+    
+    try:
+        route_mapping = get_route_mapping()
+        route_key = f"{origin.upper()}-{destination.upper()}"
+        route_details = route_mapping.get(route_key)
+        
+        if not route_details:
+            available_routes = list(route_mapping.keys())
+            logger.error(f"Route {route_key} not found. Available routes: {available_routes}")
+            raise ValueError(f"Route from {origin} to {destination} not found in available routes")
+        
+        route_id = route_details.get("route_id")
+        
+        if not route_id:
+            logger.error(f"Route ID not found in route details for {route_key}")
+            raise ValueError(f"Route ID not found for route from {origin} to {destination}")
+        
+        logger.debug(f"Found route {route_key} -> {route_id}")
+        return route_id
+    except Exception as e:
+        logger.error(f"Error in get_route_id: {str(e)}")
+        raise
+
+def get_route_details(origin: str, destination: str) -> Dict[str, str]:
+    route_mapping = get_route_mapping()
+    route_key = f"{origin.upper()}-{destination.upper()}"
+    route_details = route_mapping.get(route_key)
+    
+    if not route_details:
+        available_routes = list(route_mapping.keys())
+        logger.error(f"Route {route_key} not found. Available routes: {available_routes}")
+        raise ValueError(f"Route from {origin} to {destination} not found in available routes")
+    
+    logger.debug(f"Found route {route_key} -> {route_details}")
+    return route_details
+
+def get_roundtrip_route_details(origin: str, destination: str) -> tuple[Dict[str, str], Dict[str, str]]:
+    try:
+        outward_route_details = get_route_details(origin, destination)
+        return_route_details = get_route_details(destination, origin)
+        
+        # Validate that we found both routes
+        if not outward_route_details or not return_route_details:
+            missing_routes = []
+            if not outward_route_details:
+                missing_routes.append(f"{origin} to {destination}")
+            if not return_route_details:
+                missing_routes.append(f"{destination} to {origin}")
+            
+            error_msg = f"Routes not found: {', '.join(missing_routes)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        logger.info(f"Roundtrip routes: {origin}→{destination}: {outward_route_details}, {destination}→{origin}: {return_route_details.get('route_id')}")
+        return outward_route_details, return_route_details
+    except Exception as e:
+        logger.error(f"Error getting roundtrip route details: {str(e)}")
+        raise
+
 # Get All Trips for users to choose
 # raw shedules from Sindo API
 def get_ferry_trips(origin: str, destination: str, date: str):
@@ -54,18 +246,6 @@ def get_ferry_trips(origin: str, destination: str, date: str):
         # fallback kalau ada format lain
         records = data.get("data", {}).get("records", [])
     return {"trips": records}
-
-def find_route_id(origin: str, destination: str) -> str:
-    """
-    Cari route_id berdasarkan origin & destination code.
-    """
-    routes_data = get_ferry_routes()
-    for route in routes_data.get("routes", []):
-        embark = route.get("embarkationPort", {}).get("code")
-        dest = route.get("destinationPort", {}).get("code")
-        if embark == origin and dest == destination:
-            return route.get("id")
-    return None
 
 
 def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
@@ -84,29 +264,29 @@ def calculate_base_price(item: Dict[str, Any], ferry_class: str) -> float:
 
 def get_ferry_oneway(search_request: TripSearchRequest):
     try:
-         # Validate origin and destination
+        # Validasi origin & destination
         if search_request.origin == search_request.destination:
             raise ValueError("Origin and destination cannot be the same")
-            
-        # Validate pax count
         if search_request.pax < 1:
             raise ValueError("Number of passengers must be at least 1")
-       
-        sindo_date = search_request.depart_date.strftime("%Y%m%d")
-        trips = get_ferry_trips(search_request.origin, search_request.destination, sindo_date)
 
+        #get route ID & name
+        route_details = get_route_details(search_request.origin, search_request.destination)
+        
+        sindo_date = search_request.depart_date.strftime("%Y%m%d")
+        
+        trips = get_ferry_trips(search_request.origin, search_request.destination, sindo_date)
         if trips.get("status") == "error":
             raise ValueError(trips.get("message", "Error fetching ferry data"))
 
         trips_list = trips.get("trips", [])
+        
         display_trips = []
-
-        # cari route_id sesuai origin & destination
-        route_id = find_route_id(search_request.origin, search_request.destination)
-
         for trip_data in trips_list:
             model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
+                "route_id": route_details.get("route_id"),
+                "route_name": route_details.get("route_name"),
                 "nationality": search_request.nationality,
                 "origin": search_request.origin,
                 "destination": search_request.destination,
@@ -115,7 +295,7 @@ def get_ferry_oneway(search_request: TripSearchRequest):
                 "pax": search_request.pax,
                 "ferry_class": search_request.ferry_class.value,
                 "is_round_trip": search_request.is_round_trip,
-                "route_id": route_id   # <---- tambahkan ini
+                # "base_price": calculate_base_price(trip_data, search_request.ferry_class.value)
             })
 
             model_data.setdefault("trip_sched_id", "")
@@ -123,7 +303,13 @@ def get_ferry_oneway(search_request: TripSearchRequest):
             model_data.setdefault("trip_id", "")
             model_data.setdefault("used_seat", "0")
 
-            display_trips.append(FerryTripDisplay(**model_data))
+            try:
+                display_trip = FerryTripDisplay(**model_data)
+                # trips_cache[display_trip.route_id] = display_trip
+                display_trips.append(display_trip)
+            except ValidationError as e:
+                logger.error(f"Validation error for trip data: {trip_data}. Error: {e}")
+                continue # Skip invalid entries   
 
         return display_trips
     except ValidationError as e:
@@ -147,6 +333,15 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
         if search_request.pax < 1:
             raise ValueError("Number of passengers must be at least 1")
 
+        # Get both route IDs in one call
+        depart_details, return_details = get_roundtrip_route_details(
+            search_request.origin, 
+            search_request.destination
+        )
+
+        # logger.info(f"Processing roundtrip: {search_request.origin}→{search_request.destination} "
+        #            f"(depart_route_id: {depart_route_id}, return_route_id: {return_route_id})")
+
         # Format and validate dates
         sindo_depart_date = search_request.depart_date.strftime("%Y%m%d")
         sindo_return_date = search_request.return_date.strftime("%Y%m%d")
@@ -159,12 +354,9 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
         if return_trips.get("status") == "error":
             raise ValueError(return_trips.get("message", "Error fetching return ferry data"))
 
-        # route_id untuk depart & return
-        depart_route_id = find_route_id(search_request.origin, search_request.destination)
-        return_route_id = find_route_id(search_request.destination, search_request.origin)
-
         # transform departure trips
         depart_display_trips = []
+        
         for trip_data in depart_trips.get("trips", []):
             model_data = {camel_to_snake(k): v for k, v in trip_data.items()}
             model_data.update({
@@ -176,13 +368,17 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
                 "pax": search_request.pax,
                 "ferry_class": search_request.ferry_class.value,
                 "is_round_trip": search_request.is_round_trip,
-                "route_id": depart_route_id   # <---- ditambahkan
+                "route_id": depart_details.get("route_id"),
+                "route_name": depart_details.get("route_name")
             })
             model_data.setdefault("trip_sched_id", "")
             model_data.setdefault("departure_time", "")
             model_data.setdefault("trip_id", "")
             model_data.setdefault("used_seat", "0")
-            depart_display_trips.append(FerryTripDisplay(**model_data))
+            
+            display_trip = (FerryTripDisplay(**model_data))
+            # trips_cache[display_trip.route_id] = display_trip #for booking later
+            depart_display_trips.append(display_trip)
 
         # transform return trips
         return_display_trips = []
@@ -197,13 +393,17 @@ def get_ferry_roundtrip(search_request: TripSearchRequest):
                 "pax": search_request.pax,
                 "ferry_class": search_request.ferry_class.value,
                 "is_round_trip": search_request.is_round_trip,
-                "route_id": return_route_id   # <---- ditambahkan
+                "route_id": return_details.get("route_id"),
+                "route_name": return_details.get("route_name")
             })
             model_data.setdefault("trip_sched_id", "")
             model_data.setdefault("departure_time", "")
             model_data.setdefault("trip_id", "")
             model_data.setdefault("used_seat", "0")
-            return_display_trips.append(FerryTripDisplay(**model_data))
+            
+            display_trip = (FerryTripDisplay(**model_data))
+            # trips_cache[display_trip.route_id] = display_trip
+            return_display_trips.append(display_trip)
 
         return {
             "departure_trips": depart_display_trips,
@@ -227,9 +427,14 @@ def search_ferry_trips(search_request: TripSearchRequest):
         else:
             return get_ferry_oneway(search_request)
 
+    except HTTPException:
+        raise  # Re-raise HTTPExceptions
+    except ValueError as e:
+        logger.error(f"ValueError in search_ferry_trips: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error in search_ferry_trips: {str(e)}")
-        raise ValueError(f"Failed to search ferry trips: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to search ferry trips: {str(e)}")
     
 #Transaction---------------------------------------------------------------------------------
 async def call_transaction_service(transaction_data: dict) -> dict:
@@ -316,6 +521,7 @@ def prepare_transaction_data(booking_data: FerryBookingRequest,
         "expiry_duration":24  # 24 hours
     }
 
+#booking---------------------------------------------------------------------------------------    
 #Create Booking
 def create_ferry_booking(booking_data: dict):
     """
@@ -325,92 +531,6 @@ def create_ferry_booking(booking_data: dict):
     # return the full response here 
     # so frontend can get booking ID and other info
     return data
-    
-#booking---------------------------------------------------------------------------------------    
-async def create_ferry_bookingv2(booking_data: FerryBookingRequest) -> FerryBookingResponse:
-    """
-    Create a ferry booking with transaction service integration
-    """
-    try:
-        # 1. Validate availability (pseudo-code)
-        # if not validate_availability(booking_data.departure_schedule_id, len(booking_data.passengers)):
-        #     raise ValueError("Not enough available seats")
-        
-        # if booking_data.is_round_trip and booking_data.return_schedule_id:
-        #     if not validate_availability(booking_data.return_schedule_id, len(booking_data.passengers)):
-        #         raise ValueError("Not enough available seats for return trip")
-        
-        # 2. Get trip details and calculate price (pseudo-code)
-        # departure_trip = get_trip_details(booking_data.departure_schedule_id)
-        # return_trip = None
-        # if booking_data.is_round_trip and booking_data.return_schedule_id:
-        #     return_trip = get_trip_details(booking_data.return_schedule_id)
-        
-        # For demonstration, create mock trip details
-        departure_trip = {
-            "departure_port": "BTC",
-            "arrival_port": "HFC", 
-            "vessel_name": "Fast Ferry",
-            "departure_time": "08:00",
-            "arrival_time": "10:00"
-        }
-        
-        price_breakdown = calculate_price(
-            departure_trip, 
-            None, 
-            len(booking_data.passengers),
-            booking_data.ferry_class
-        )
-        
-        # 3. Prepare transaction data as dict
-        transaction_data = prepare_transaction_data(
-            booking_data, 
-            departure_trip, 
-            price_breakdown
-        )
-        
-        # 4. Call transaction service
-        transaction_response = await call_transaction_service(transaction_data)
-        # 5. Create Sindo booking (pseudo-code)
-        # sindo_booking_data = normalize_booking_for_sindo(booking_data)
-        # sindo_response = sindo_client.create_sindo_booking(sindo_booking_data)
-        
-        # For demonstration,create a mock Sindo response
-        sindo_booking_id = f"SINDO_{uuid.uuid4().hex[:8].upper()}"
-        # 6. Create booking record
-        internal_booking_id = str(uuid.uuid4())
-        expiry_time = datetime.now() + timedelta(hours=BOOKING_EXPIRY_HOURS)
-        
-        # Store booking in cache(replace with database in production)
-        bookings_cache[internal_booking_id] = {
-            "sindo_booking_id": booking_data.sindo_booking_id,
-            "status": BookingStatus.PENDING,
-            "total_amount": price_breakdown.total_amount,
-            "currency": "IDR",
-            "transaction_id": transaction_response.transaction_id, #access as dict
-            "passengers": booking_data.passengers,
-            "contact_info": booking_data.contact_info,
-            "expires_at": expiry_time,
-            "created_at": datetime.now()
-        }
-        
-        # 7. Return response
-        return FerryBookingResponse(
-            booking_id=internal_booking_id,
-            sindo_booking_id=sindo_booking_id,
-            status=BookingStatus.PENDING,
-            total_amount=price_breakdown.total_amount,
-            currency="IDR",
-            transaction_id=transaction_response["transaction_id"],  # Access as dict key
-            payment_url=transaction_response["payment_url"],  # Access as dict key
-            expires_at=expiry_time,
-            metadata={}
-        )
-        
-    except Exception as e:
-        logger.error(f"Error creating booking: {str(e)}", exc_info=True)
-        raise
-             
 
 # Add passenger details to an already created booking 
 def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
@@ -427,6 +547,9 @@ def add_ferry_booking_detail(booking_id: str, passenger_data: dict):
         "mobile_phone": passenger_data.get("mobile_phone"),
         "whatsapp_no": passenger_data.get("whatsapp_no"),
     }
+
+    # Simpan di store (bisa diganti DB)
+    BOOKING_REQUIREMENTS_STORE[booking_id] = booking_requirements
 
     # Bungkus response supaya bisa dipakai lagi di get_ferry_booking_details
     return {
@@ -507,8 +630,8 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
     id_issue_date = passenger.get("identification", {}).get("issueDate")
     departure_date = trip_date or _normalize_date(id_issue_date)
 
-    # Cari email dari passenger record (hasil add_booking_detail)
-    booking_requirements = passenger.get("booking_requirements", {})
+    # 🔑 Ambil email dari BOOKING_REQUIREMENTS_STORE
+    booking_requirements = BOOKING_REQUIREMENTS_STORE.get(booking_id, {})
     customer_email = booking_requirements.get("email", "customer@example.com")
 
     # Buat item list
@@ -538,7 +661,7 @@ def get_ferry_booking_details(booking_id: str, search: str = None):
     total = subtotal + tax - discount
 
     mapped_response = {
-        "email": customer_email,  # pakai dari add_booking_detail
+        "email": customer_email,  # ✅ email konsisten dari add_booking_detail
         "transaction_type": "BOOKING",
         "currency": "IDR",
         "service_type": "FERRIES",

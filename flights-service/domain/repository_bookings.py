@@ -1,4 +1,4 @@
-# adapters/booking_repository.py
+
 from adapters.store import BOOKING_STATUS
 
 

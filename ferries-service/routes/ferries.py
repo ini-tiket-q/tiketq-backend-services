@@ -7,8 +7,11 @@ from domain.models import (
     TripSearchRequest,
     TripSearchResponse
 )
-from domain.services import search_ferry_trips, create_ferry_booking
-from domain import services
+from domain.services import (
+    search_ferry_trips, 
+    create_ferry_booking
+)
+from domain import services as services
 import logging
 
 logger = logging.getLogger(__name__)
@@ -57,7 +60,7 @@ async def search_oneway_trips(
     ferry_class: str = Query("Economy Class", description="Ferry class")
 ):
     try:
-        logger.info(f"Received search request: nationality={nationality}, origin={origin}, destination={destination}, date={date}, pax={pax}, ferry_class={ferry_class}")
+        # logger.info(f"Received search request: nationality={nationality}, origin={origin}, destination={destination}, date={date}, pax={pax}, ferry_class={ferry_class}")
 
         search_request = TripSearchRequest(
             nationality=nationality,
@@ -68,9 +71,9 @@ async def search_oneway_trips(
             ferry_class=ferry_class,
             is_round_trip=False
         )
-        logger.info(f"Created search request: {search_request.dict()}")
+        # logger.info(f"Created search request: {search_request.dict()}")
         result = search_ferry_trips(search_request)
-        logger.info(f"Found {len(result)} trips")       
+        # logger.info(f"Found {len(result)} trips")       
         # Create the response object
         response= TripSearchResponse(
             status="success",
@@ -98,7 +101,7 @@ async def search_roundtrip_trips(
     ferry_class: str = Query("Economy Class", description="Ferry class")
 ):
     try:
-        print("DEBUG: Starting roundtrip search")
+        # print("DEBUG: Starting roundtrip search")
         # Create search request
         search_request = TripSearchRequest(
             nationality=nationality,
@@ -110,57 +113,24 @@ async def search_roundtrip_trips(
             ferry_class=ferry_class,
             is_round_trip=True,
         )
-        print("DEBUG: Calling search_ferry_trips")
+        # print("DEBUG: Calling search_ferry_trips")
         result = services.search_ferry_trips(search_request)
-        print("DEBUG: Creating TripSearchResponse")
+        # print("DEBUG: Creating TripSearchResponse")
         response = TripSearchResponse(
             status="success",
             departure_trips=result["departure_trips"],
             return_trips=result["return_trips"]
         )
-        print("DEBUG: Roundtrip search completed successfully")
+        # print("DEBUG: Roundtrip search completed successfully")
         return response
     except ValueError as e:
-        print(f"DEBUG: ValueError in roundtrip route: {str(e)}")
+        # print(f"DEBUG: ValueError in roundtrip route: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"DEBUG: Exception in roundtrip route: {str(e)}")
+        # print(f"DEBUG: Exception in roundtrip route: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# Create booking v2
-@router.post("/bookings/v2", response_model=FerryBookingResponse)
-async def create_booking(
-    booking_data: FerryBookingRequest,
-    background_tasks: BackgroundTasks
-):
-    """
-    Create a new ferry booking with transaction service integration.
-    """
-    try:
-        # Validate request
-        if booking_data.is_round_trip and not booking_data.return_schedule_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Return schedule ID is required for round trips"
-            )
-        
-        # Create booking
-        booking_result = await services.create_ferry_booking(booking_data)
-        
-        # Add background task for confirmation email
-        background_tasks.add_task(
-            send_booking_confirmation,
-            booking_data.contact_info.email,
-            booking_result.booking_id
-        )
-        
-        return booking_result
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 # create booking
 @router.post("/bookings")
