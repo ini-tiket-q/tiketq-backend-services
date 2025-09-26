@@ -15,8 +15,8 @@ services:
       - user-service
       - flights-service
       - ferries-service
-      - hotels-service
-      - ppob-service
+      # - hotels-service
+      # - ppob-service
       - payment-service
       - transaction-service
     networks:
@@ -65,21 +65,21 @@ services:
       - tiketq-net
     restart: unless-stopped
 
-  hotels-service:
-    build:
-      context: ./hotels-service
-    container_name: hotels-service
-    networks:
-      - tiketq-net
-    restart: unless-stopped
+  # hotels-service:
+  #   build:
+  #     context: ./hotels-service
+  #   container_name: hotels-service
+  #   networks:
+  #     - tiketq-net
+  #   restart: unless-stopped
 
-  ppob-service:
-    build:
-      context: ./ppob-service
-    container_name: ppob-service
-    networks:
-      - tiketq-net
-    restart: unless-stopped
+  # ppob-service:
+  #   build:
+  #     context: ./ppob-service
+  #   container_name: ppob-service
+  #   networks:
+  #     - tiketq-net
+  #   restart: unless-stopped
 
   payment-service:
     build:
@@ -97,9 +97,9 @@ services:
       - postgres
     networks:
       - tiketq-net
-    secrets:
-      - db_user
-      - db_password
+    # secrets:
+    #   - db_user
+    #   - db_password
     restart: unless-stopped
     volumes:
       - ./payment-service:/app # For development hot reload
@@ -121,18 +121,14 @@ services:
     container_name: postgres
     environment:
       POSTGRES_DB: tiketq_db
-      POSTGRES_USER_FILE: /run/secrets/db_user
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - tiketq-net
-    secrets:
-      - db_user
-      - db_password
     restart: unless-stopped
 
   nginx:
@@ -141,16 +137,16 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/tiketq.conf:ro
     networks:
       - tiketq-net
     restart: unless-stopped
 
-secrets:
-  db_user:
-    file: ./secrets/db_user.txt
-  db_password:
-    file: ./secrets/db_password.txt
+# secrets:
+#   db_user:
+#     file: ./secrets/db_user.txt
+#   db_password:
+#     file: ./secrets/db_password.txt
 
 networks:
   tiketq-net:
