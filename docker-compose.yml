@@ -131,16 +131,16 @@ services:
       - tiketq-net
     restart: unless-stopped
 
-  nginx:
-    image: nginx:latest
-    container_name: nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/tiketq.conf:ro
-    networks:
-      - tiketq-net
-    restart: unless-stopped
+  # nginx:
+  #   image: nginx:latest
+  #   container_name: nginx
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/conf.d/tiketq.conf:ro
+  #   networks:
+  #     - tiketq-net
+  #   restart: unless-stopped
 
 # secrets:
 #   db_user:
