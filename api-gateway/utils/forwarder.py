@@ -18,6 +18,8 @@ SERVICES = {
 
 # Map prefixes to service keys
 ROUTE_SERVICE_MAP = {
+    "auth": "auth",                    # Add auth service mapping
+    "users": "user",                   # Add user service mapping
     "api/v1/flights": "flights",
     "api/v1/bookings": "flights",
     "api/v1/ferries": "ferries",
