@@ -51,7 +51,7 @@ class FlightSearchParams(BaseModel):
     origin: AirportCode = Field(..., alias="flight_from")
     destination: AirportCode = Field(..., alias="flight_to")
     date: date
-    airline: Optional[str] = None
+    flight: Optional[str] = None
     transit: Optional[str] = None
     baggage: Optional[str] = None
     flight_class: Optional[Literal["economy", "business", "first"]] = None

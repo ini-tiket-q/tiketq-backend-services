@@ -94,42 +94,61 @@ class FlightService:
     ) -> List[dict]:
         result = flights
 
-        if params.airline:
-            normalized_airline = params.airline.strip().lower()
+       
+
+        # Airline (strict equality)
+        if params.flight:
+            normalized_flight = params.flight.strip().lower()
             result = [
                 f for f in result
-                if f.get("flight", "").strip().lower() == normalized_airline
+                if normalized_flight in f.get("flight", "").strip().lower()
             ]
+            
 
+
+
+        # Transit (substring match, more tolerant)
         if params.transit:
             normalized_transit = params.transit.strip().lower()
             result = [
                 f for f in result
-                if f.get("flight_transit", "").strip().lower() == normalized_transit
+                if normalized_transit in f.get("flight_transit", "").strip().lower()
             ]
+            
 
+        # Baggage (substring match, more tolerant)
         if params.baggage:
             normalized_baggage = params.baggage.replace(" ", "").lower()
             result = [
                 f for f in result
-                if f.get("flight_baggage", "").replace(" ", "").lower() == normalized_baggage
+                if normalized_baggage in f.get("flight_baggage", "").replace(" ", "").lower()
             ]
+            
 
+        # Class (substring match, safer)
         if params.flight_class:
             normalized_class = params.flight_class.strip().lower()
             result = [
                 f for f in result
-                if f.get("class", "").strip().lower() == normalized_class
+                if normalized_class in f.get("class", "").strip().lower()
             ]
+            print("💺 DEBUG after class filter:", len(result))
 
         # Sorting
-        if params.sort_by == "harga_tertinggi":
+        sort_by = (params.sort_by or "").strip().lower()
+        if sort_by == "harga_tertinggi":
+            
             result.sort(key=lambda x: int(x.get("flight_price", "0")), reverse=True)
-        elif params.sort_by == "harga_terendah":
+            
+        elif sort_by == "harga_terendah":
+            
             result.sort(key=lambda x: int(x.get("flight_price", "0")))
-        elif params.sort_by == "waktu_terbaik":
+            
+        elif sort_by == "waktu_terbaik":
+            
             result.sort(key=lambda x: x.get("score", 0), reverse=True)
 
+        print("✅ DEBUG flights count after all filters:", len(result))
         return result
 
     
